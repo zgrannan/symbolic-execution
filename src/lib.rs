@@ -25,9 +25,7 @@ use context::SymExContext;
 use havoc::HavocData;
 use heap::SymbolicHeap;
 use pcs::{
-    borrows::domain::BorrowsDomain,
-    free_pcs::{FreePcsLocation, RepackOp},
-    FpcsOutput,
+    borrows::engine::BorrowsDomain, free_pcs::{FreePcsLocation, RepackOp}, FpcsOutput
 };
 use results::{ResultAssertion, ResultPath, SymbolicExecutionResult};
 use semantics::VerifierSemantics;

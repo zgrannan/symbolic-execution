@@ -3,7 +3,7 @@ use crate::{
     value::{Constant, SymValueData},
     VisFormat,
 };
-use pcs::{borrows::domain::BorrowsDomain, visualization::get_source_name_from_place};
+use pcs::{borrows::engine::BorrowsDomain, visualization::get_source_name_from_place};
 use crate::rustc_interface::middle::mir::{self, VarDebugInfo};
 use std::collections::BTreeMap;
 
