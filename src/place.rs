@@ -10,7 +10,6 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct Place<'tcx> {
     pub local: mir::Local,
@@ -22,6 +21,15 @@ impl<'tcx> From<mir::Local> for Place<'tcx> {
         Place {
             local: value,
             projection: Vec::new(),
+        }
+    }
+}
+
+impl<'tcx> From<pcs::utils::Place<'tcx>> for Place<'tcx> {
+    fn from(place: pcs::utils::Place<'tcx>) -> Self {
+        Place {
+            local: place.local,
+            projection: place.projection.iter().copied().collect(),
         }
     }
 }

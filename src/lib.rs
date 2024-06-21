@@ -1,6 +1,7 @@
 #![feature(rustc_private)]
 #![feature(box_patterns)]
 #![feature(associated_type_bounds)]
+#![feature(let_chains)]
 
 pub mod context;
 mod debug_info;
@@ -25,11 +26,14 @@ use context::SymExContext;
 use havoc::HavocData;
 use heap::SymbolicHeap;
 use pcs::{
-    borrows::engine::BorrowsDomain, free_pcs::{FreePcsLocation, RepackOp}, FpcsOutput
+    borrows::engine::{BorrowAction, BorrowsDomain},
+    free_pcs::{FreePcsLocation, RepackOp},
+    FpcsOutput,
 };
 use results::{ResultAssertion, ResultPath, SymbolicExecutionResult};
 use semantics::VerifierSemantics;
 use std::{collections::BTreeSet, ops::Deref};
+use value::SymValueKind;
 
 use self::{
     path::{AcyclicPath, Path},
@@ -242,6 +246,17 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 }
                 let fpcs_loc = &pcs_block.statements[stmt_idx];
                 self.handle_repacks(&fpcs_loc.repacks_start, &mut path.heap);
+                for action in fpcs_loc.extra.actions() {
+                    if let BorrowAction::RemoveBorrow(borrow) = action && borrow.is_mut {
+                        let reference = path.heap.take(&borrow.assigned_place.place().into());
+                        let val = match &reference.kind {
+                            SymValueKind::Ref(_, val) => val,
+                            SymValueKind::Aggregate(_, vec) => vec[0],
+                            _ => todo!(),
+                        };
+                        path.heap.insert(borrow.borrowed_place.place().into(), val)
+                    }
+                }
                 self.handle_stmt(stmt, &mut path.heap, fpcs_loc);
             }
             let last_fpcs_loc = pcs_block.statements.last().unwrap();
