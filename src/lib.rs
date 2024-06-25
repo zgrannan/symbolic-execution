@@ -275,7 +275,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             }
         }
         if self.debug {
-            eprintln!("!!!!");
             export_path_list(fn_name, &result_paths);
         }
         SymbolicExecutionResult {

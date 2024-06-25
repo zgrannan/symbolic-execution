@@ -87,8 +87,8 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for SymValueData<'sym, 'tcx, T> {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 enum PrecCategory {
     Atom,
-    Postfix,
     Prefix,
+    Field,
     Multiplicative,
     Additive,
     Shift,
@@ -128,7 +128,8 @@ impl<'sym, 'tcx, T> SymValueKind<'sym, 'tcx, T> {
             SymValueKind::UnaryOp(_, _, _) => PrecCategory::Prefix,
             SymValueKind::Projection(elem, _) => match elem {
                 ProjectionElem::Deref => PrecCategory::Prefix,
-                _ => PrecCategory::Postfix,
+                ProjectionElem::Field(..) => PrecCategory::Field,
+                _ => todo!()
             },
             SymValueKind::Aggregate(_, _) | SymValueKind::Discriminant(_) => PrecCategory::Atom,
             SymValueKind::Cast(_, _, _) => PrecCategory::Prefix,
@@ -146,8 +147,8 @@ const CATEGORIES: &[PrecCategory] = &[
     PrecCategory::Comparison,
     PrecCategory::LogicalAnd,
     PrecCategory::LogicalOr,
-    PrecCategory::Postfix,
     PrecCategory::Prefix,
+    PrecCategory::Field,
     PrecCategory::Atom,
 ];
 
@@ -161,7 +162,7 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
         let result = match &self.kind {
             SymValueKind::Var(idx, ty) => {
                 if *idx < debug_info.len() {
-                    format!("{}", debug_info[*idx].name)
+                    format!("{}_sym", debug_info[*idx].name)
                 } else {
                     format!("(s{}: {})", idx, ty)
                 }
