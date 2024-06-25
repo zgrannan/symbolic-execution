@@ -129,7 +129,11 @@ impl<'sym, 'tcx, T> SymValueKind<'sym, 'tcx, T> {
             SymValueKind::Projection(elem, _) => match elem {
                 ProjectionElem::Deref => PrecCategory::Prefix,
                 ProjectionElem::Field(..) => PrecCategory::Field,
-                _ => todo!()
+                ProjectionElem::Index(_) => todo!(),
+                ProjectionElem::ConstantIndex { offset, min_length, from_end } => todo!(),
+                ProjectionElem::Subslice { from, to, from_end } => todo!(),
+                ProjectionElem::Downcast(_, _) => PrecCategory::Prefix, // TODO
+                ProjectionElem::OpaqueCast(_) => todo!(),
             },
             SymValueKind::Aggregate(_, _) | SymValueKind::Discriminant(_) => PrecCategory::Atom,
             SymValueKind::Cast(_, _, _) => PrecCategory::Prefix,
@@ -222,7 +226,10 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                 ProjectionElem::Index(_) => todo!(),
                 ProjectionElem::ConstantIndex { offset, min_length, from_end } => todo!(),
                 ProjectionElem::Subslice { from, to, from_end } => todo!(),
-                ProjectionElem::Downcast(_, _) => todo!(),
+                ProjectionElem::Downcast(_, _) => format!(
+                    "downcast of {:?}",
+                    value.to_vis_string_prec(debug_info, self_category)
+                ),
                 ProjectionElem::OpaqueCast(_) => todo!(),
                 // ... handle other ProjectionElem variants ...
             },
