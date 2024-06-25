@@ -10,33 +10,30 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
-pub struct Place<'tcx> {
-    pub local: mir::Local,
-    pub projection: Vec<ProjectionElem<mir::Local, ty::Ty<'tcx>>>,
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct Place<'tcx>(pcs::utils::Place<'tcx>);
+
+impl<'tcx> std::fmt::Debug for Place<'tcx> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
 }
 
 impl<'tcx> From<mir::Local> for Place<'tcx> {
     fn from(value: mir::Local) -> Self {
-        Place {
-            local: value,
-            projection: Vec::new(),
-        }
+        Place(pcs::utils::Place::new(value, &[]))
     }
 }
 
 impl<'tcx> From<pcs::utils::Place<'tcx>> for Place<'tcx> {
     fn from(place: pcs::utils::Place<'tcx>) -> Self {
-        Place {
-            local: place.local,
-            projection: place.projection.iter().copied().collect(),
-        }
+        Place(place)
     }
 }
 
 impl<'tcx> From<mir::Place<'tcx>> for Place<'tcx> {
     fn from(place: mir::Place<'tcx>) -> Self {
-        Place::new(place.local, place.projection.iter().collect())
+        Place(place.into())
     }
 }
 
@@ -49,16 +46,22 @@ impl<'tcx> From<&mir::PlaceRef<'tcx>> for Place<'tcx> {
 impl<'tcx> Place<'tcx> {
     pub fn new(
         local: mir::Local,
-        projection: Vec<ProjectionElem<mir::Local, ty::Ty<'tcx>>>,
+        projection: &'tcx [ProjectionElem<mir::Local, ty::Ty<'tcx>>],
     ) -> Self {
-        Place { local, projection }
+        Place(pcs::utils::Place::new(local, projection))
+    }
+
+    pub fn local(&self) -> mir::Local {
+        self.0.local
+    }
+
+    pub fn projection(&self) -> &[ProjectionElem<mir::Local, ty::Ty<'tcx>>] {
+        &self.0.projection
     }
 
     pub fn deref_target(&self) -> Option<Self> {
-        if let Some(ProjectionElem::Deref) = self.projection.last() {
-            let mut projection = self.projection.clone();
-            projection.pop();
-            Some(Place::new(self.local, projection))
+        if let Some(ProjectionElem::Deref) = self.0.projection.last() {
+            Some(Place::new(self.0.local, &self.0.projection[0..self.0.projection.len() - 1]))
         } else {
             None
         }

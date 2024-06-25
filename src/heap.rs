@@ -24,7 +24,7 @@ impl<'sym, 'tcx, T: VisFormat> SymbolicHeap<'sym, 'tcx, T> {
                 (
                     format!(
                         "{}",
-                        get_source_name_from_place(place.local, &place.projection, debug_info)
+                        get_source_name_from_place(place.local(), &place.projection(), debug_info)
                             .unwrap_or_else(|| format!("{:?}", place))
                     ),
                     format!("{}", value.to_vis_string(debug_info)),

@@ -81,7 +81,84 @@ impl<'sym, 'tcx, T: VisFormat> std::fmt::Display for SymValueData<'sym, 'tcx, T>
 
 impl<'sym, 'tcx, T: VisFormat> VisFormat for SymValueData<'sym, 'tcx, T> {
     fn to_vis_string(&self, debug_info: &[VarDebugInfo]) -> String {
-        match &self.kind {
+        self.to_vis_string_prec(debug_info, PrecCategory::Bottom)
+    }
+}
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+enum PrecCategory {
+    Atom,
+    Postfix,
+    Prefix,
+    Multiplicative,
+    Additive,
+    Shift,
+    Bitwise,
+    Comparison,
+    LogicalAnd,
+    LogicalOr,
+    Bottom,
+}
+
+impl<'sym, 'tcx, T> SymValueKind<'sym, 'tcx, T> {
+    fn prec_category(&self) -> PrecCategory {
+        match self {
+            SymValueKind::Var(_, _) | SymValueKind::Constant(_) | SymValueKind::Synthetic(_) => {
+                PrecCategory::Atom
+            }
+            SymValueKind::Ref(_, _) => PrecCategory::Prefix,
+            SymValueKind::CheckedBinaryOp(_, op, _, _) | SymValueKind::BinaryOp(_, op, _, _) => {
+                match op {
+                    mir::BinOp::Mul | mir::BinOp::Div | mir::BinOp::Rem => {
+                        PrecCategory::Multiplicative
+                    }
+                    mir::BinOp::Add | mir::BinOp::Sub => PrecCategory::Additive,
+                    mir::BinOp::Shl | mir::BinOp::Shr => PrecCategory::Shift,
+                    mir::BinOp::BitAnd | mir::BinOp::BitXor | mir::BinOp::BitOr => {
+                        PrecCategory::Bitwise
+                    }
+                    mir::BinOp::Eq
+                    | mir::BinOp::Lt
+                    | mir::BinOp::Le
+                    | mir::BinOp::Ne
+                    | mir::BinOp::Ge
+                    | mir::BinOp::Gt => PrecCategory::Comparison,
+                    _ => PrecCategory::Bottom, // For any other binary ops
+                }
+            }
+            SymValueKind::UnaryOp(_, _, _) => PrecCategory::Prefix,
+            SymValueKind::Projection(elem, _) => match elem {
+                ProjectionElem::Deref => PrecCategory::Prefix,
+                _ => PrecCategory::Postfix,
+            },
+            SymValueKind::Aggregate(_, _) | SymValueKind::Discriminant(_) => PrecCategory::Atom,
+            SymValueKind::Cast(_, _, _) => PrecCategory::Prefix,
+            SymValueKind::InternalError(_, _) => PrecCategory::Atom,
+        }
+    }
+}
+
+const CATEGORIES: &[PrecCategory] = &[
+    PrecCategory::Bottom,
+    PrecCategory::Multiplicative,
+    PrecCategory::Additive,
+    PrecCategory::Shift,
+    PrecCategory::Bitwise,
+    PrecCategory::Comparison,
+    PrecCategory::LogicalAnd,
+    PrecCategory::LogicalOr,
+    PrecCategory::Postfix,
+    PrecCategory::Prefix,
+    PrecCategory::Atom,
+];
+
+impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
+    fn to_vis_string_prec(
+        &self,
+        debug_info: &[VarDebugInfo],
+        parent_category: PrecCategory,
+    ) -> String {
+        let self_category = self.kind.prec_category();
+        let result = match &self.kind {
             SymValueKind::Var(idx, ty) => {
                 if *idx < debug_info.len() {
                     format!("{}", debug_info[*idx].name)
@@ -89,58 +166,64 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for SymValueData<'sym, 'tcx, T> {
                     format!("(s{}: {})", idx, ty)
                 }
             }
-            SymValueKind::Ref(_, t) => format!("(&{})", t.to_vis_string(debug_info)),
+            SymValueKind::Ref(_, t) => {
+                format!("&{}", t.to_vis_string_prec(debug_info, self_category))
+            }
             SymValueKind::Constant(c) => format!("{}", c.literal()),
             SymValueKind::CheckedBinaryOp(_, op, lhs, rhs)
             | SymValueKind::BinaryOp(_, op, lhs, rhs) => {
-                let op = match op {
+                let op_str = match op {
                     mir::BinOp::Add => "+",
-                    mir::BinOp::AddUnchecked => "+",
                     mir::BinOp::Sub => "-",
-                    mir::BinOp::SubUnchecked => "-",
                     mir::BinOp::Mul => "*",
-                    mir::BinOp::MulUnchecked => "*",
-                    mir::BinOp::Div => todo!(),
-                    mir::BinOp::Rem => todo!(),
-                    mir::BinOp::BitXor => todo!(),
-                    mir::BinOp::BitAnd => todo!(),
-                    mir::BinOp::BitOr => todo!(),
-                    mir::BinOp::Shl => todo!(),
-                    mir::BinOp::ShlUnchecked => todo!(),
-                    mir::BinOp::Shr => todo!(),
-                    mir::BinOp::ShrUnchecked => todo!(),
+                    mir::BinOp::Div => "/",
+                    mir::BinOp::Rem => "%",
+                    mir::BinOp::BitXor => "^",
+                    mir::BinOp::BitAnd => "&",
+                    mir::BinOp::BitOr => "|",
+                    mir::BinOp::Shl => "<<",
+                    mir::BinOp::Shr => ">>",
                     mir::BinOp::Eq => "==",
                     mir::BinOp::Lt => "<",
                     mir::BinOp::Le => "<=",
                     mir::BinOp::Ne => "!=",
                     mir::BinOp::Ge => ">=",
                     mir::BinOp::Gt => ">",
-                    mir::BinOp::Offset => todo!(),
+                    _ => "?",
                 };
                 format!(
-                    "({} {} {})",
-                    lhs.to_vis_string(debug_info),
-                    op,
-                    rhs.to_vis_string(debug_info)
+                    "{} {} {}",
+                    lhs.to_vis_string_prec(debug_info, self_category),
+                    op_str,
+                    rhs.to_vis_string_prec(debug_info, self_category)
                 )
             }
             SymValueKind::UnaryOp(_, op, expr) => {
-                format!("({:?} {})", op, expr.to_vis_string(debug_info))
+                let op_str = match op {
+                    mir::UnOp::Not => "!",
+                    mir::UnOp::Neg => "-",
+                };
+                format!(
+                    "{}{}",
+                    op_str,
+                    expr.to_vis_string_prec(debug_info, self_category)
+                )
             }
-            SymValueKind::Projection(kind, value) => match &kind {
-                ProjectionElem::Deref => format!("*({})", value.to_vis_string(debug_info)),
-                ProjectionElem::Field(lhs, rhs) => {
-                    format!("({}.{:?})", value.to_vis_string(debug_info), lhs)
+            SymValueKind::Projection(kind, value) => match kind {
+                ProjectionElem::Deref => {
+                    format!("*{}", value.to_vis_string_prec(debug_info, self_category))
                 }
+                ProjectionElem::Field(lhs, _) => format!(
+                    "{}.{:?}",
+                    value.to_vis_string_prec(debug_info, self_category),
+                    lhs
+                ),
                 ProjectionElem::Index(_) => todo!(),
-                ProjectionElem::ConstantIndex {
-                    offset,
-                    min_length,
-                    from_end,
-                } => todo!(),
+                ProjectionElem::ConstantIndex { offset, min_length, from_end } => todo!(),
                 ProjectionElem::Subslice { from, to, from_end } => todo!(),
                 ProjectionElem::Downcast(_, _) => todo!(),
                 ProjectionElem::OpaqueCast(_) => todo!(),
+                // ... handle other ProjectionElem variants ...
             },
             SymValueKind::Aggregate(kind, values) => {
                 let values_str = values
@@ -150,11 +233,33 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for SymValueData<'sym, 'tcx, T> {
                     .join(", ");
                 format!("(compose [{}] to {:?})", values_str, kind)
             }
-            SymValueKind::Discriminant(val) => format!("discriminant({})", val.to_vis_string(debug_info)),
+            SymValueKind::Discriminant(val) => {
+                format!("discriminant({})", val.to_vis_string(debug_info))
+            }
             SymValueKind::Synthetic(s) => s.to_vis_string(debug_info),
-            SymValueKind::Cast(_, _, _) => todo!(),
+            SymValueKind::Cast(_, _, _) => "todo!()".to_string(),
+            SymValueKind::InternalError(err, _) => format!("INTERNAL ERROR: {}", err),
+        };
+
+        if needs_parens(self_category, parent_category) {
+            format!("({})", result)
+        } else {
+            result
         }
     }
+}
+
+fn needs_parens(child: PrecCategory, parent: PrecCategory) -> bool {
+    let child_index = CATEGORIES
+        .iter()
+        .position(|cats| cats == &child)
+        .unwrap();
+    let parent_index = CATEGORIES
+        .iter()
+        .position(|cats| cats == &parent)
+        .unwrap();
+
+    child_index < parent_index
 }
 
 #[derive(Copy, Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
@@ -197,6 +302,7 @@ pub enum SymValueKind<'sym, 'tcx, T> {
     Discriminant(SymValue<'sym, 'tcx, T>),
     Cast(CastKind, SymValue<'sym, 'tcx, T>, ty::Ty<'tcx>),
     Synthetic(T),
+    InternalError(String, ty::Ty<'tcx>),
 }
 
 #[derive(Debug)]
@@ -363,6 +469,7 @@ impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tc
                 let transformed_val = val.apply_transformer(arena, transformer);
                 transformer.transform_cast(arena, *kind, transformed_val, *ty)
             }
+            SymValueKind::InternalError(_, _) => self,
         }
     }
 }
@@ -435,6 +542,7 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueKind<'sym, 'tcx, T> {
             SymValueKind::UnaryOp(ty, op, val) => Ty::new(*ty, None),
             SymValueKind::Synthetic(sym_val) => sym_val.ty(tcx),
             SymValueKind::Cast(_, _, ty) => Ty::new(*ty, None),
+            SymValueKind::InternalError(_, ty) => Ty::new(*ty, None),
         }
     }
 }

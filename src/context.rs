@@ -35,6 +35,14 @@ impl SymExContext {
         self.mk_sym_value(SymValueKind::Ref(ty, val))
     }
 
+    pub fn mk_internal_error<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+        &'sym self,
+        err: String,
+        ty: ty::Ty<'tcx>,
+    ) -> SymValue<'sym, 'tcx, T> {
+        self.mk_sym_value(SymValueKind::InternalError(err, ty))
+    }
+
     pub fn mk_discriminant<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         val: SymValue<'sym, 'tcx, T>,

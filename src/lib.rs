@@ -14,6 +14,7 @@ pub mod results;
 mod rustc_interface;
 pub mod semantics;
 pub mod value;
+pub mod visualization;
 
 use crate::rustc_interface::{
     hir::def_id::DefId,
@@ -34,6 +35,7 @@ use results::{ResultAssertion, ResultPath, SymbolicExecutionResult};
 use semantics::VerifierSemantics;
 use std::{collections::BTreeSet, ops::Deref};
 use value::SymValueKind;
+use visualization::{export_path_json, export_path_list, VisFormat};
 
 use self::{
     path::{AcyclicPath, Path},
@@ -212,7 +214,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             let local = &self.body.local_decls[arg];
             let arg_ty = local.ty;
             self.symvars.push(arg_ty);
-            let place = Place::new(arg, Vec::new());
+            let place = Place::new(arg, &[]);
             let sym_var = self.arena.mk_var(idx, arg_ty);
             add_debug_note!(
                 sym_var.debug_info,
@@ -237,13 +239,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             }
             let pcs_block = self.fpcs_analysis.get_all_for_bb(block);
             let block_data = &self.body.basic_blocks[block];
-            if self.debug {
-                export_path_json(fn_name, &path, 0, &self.body.var_debug_info);
-            }
             for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
-                if self.debug {
-                    export_path_json(fn_name, &path, stmt_idx + 1, &self.body.var_debug_info);
-                }
                 let fpcs_loc = &pcs_block.statements[stmt_idx];
                 self.handle_repacks(&fpcs_loc.repacks_start, &mut path.heap);
                 for action in fpcs_loc.extra.actions() {
@@ -252,12 +248,16 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         let val = match &reference.kind {
                             SymValueKind::Ref(_, val) => val,
                             SymValueKind::Aggregate(_, vec) => vec[0],
+                            SymValueKind::InternalError(_, _) => todo!(),
                             _ => todo!(),
                         };
                         path.heap.insert(borrow.borrowed_place.place().into(), val)
                     }
                 }
                 self.handle_stmt(stmt, &mut path.heap, fpcs_loc);
+                if self.debug {
+                    export_path_json(fn_name, &path, stmt_idx, &self.body.var_debug_info);
+                }
             }
             let last_fpcs_loc = pcs_block.statements.last().unwrap();
             self.handle_repacks(&last_fpcs_loc.repacks_start, &mut path.heap);
@@ -273,6 +273,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             } else {
                 self.add_to_result_paths_if_feasible(&path, &mut result_paths);
             }
+        }
+        if self.debug {
+            eprintln!("!!!!");
+            export_path_list(fn_name, &result_paths);
         }
         SymbolicExecutionResult {
             paths: result_paths,
@@ -339,15 +343,18 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     mir::Rvalue::Discriminant(target) => self
                         .arena
                         .mk_discriminant(heap.get(&(*target).into()).unwrap()),
-                    mir::Rvalue::Ref(_, _, target_place) => self.arena.mk_ref(
-                        place.ty(&self.body.local_decls, self.tcx).ty,
-                        heap.get(&(*target_place).into()).unwrap_or_else(|| {
-                            panic!(
-                                "{:?} in {:?} at {:?}",
-                                target_place, self.body.span, stmt.source_info
+                    mir::Rvalue::Ref(_, _, target_place) => {
+                        let referred_value = heap.get(&(*target_place).into());
+                        if let Some(value) = referred_value {
+                            self.arena
+                                .mk_ref(place.ty(&self.body.local_decls, self.tcx).ty, value)
+                        } else {
+                            self.arena.mk_internal_error(
+                                format!("No value for {:?} in heap", target_place),
+                                place.ty(&self.body.local_decls, self.tcx).ty,
                             )
-                        }),
-                    ),
+                        }
+                    }
                     mir::Rvalue::UnaryOp(op, operand) => {
                         let operand = heap.encode_operand(self.arena, operand, &pcs.extra);
                         self.arena.mk_unary_op(
@@ -455,33 +462,4 @@ pub fn run_symbolic_execution<
     arena: &'sym SymExContext,
 ) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {
     SymbolicExecution::new(tcx, mir, fpcs_analysis, verifier_semantics, arena).execute()
-}
-
-fn export_path_json<'sym, 'tcx, T: VisFormat>(
-    fn_name: &str,
-    path: &Path<'sym, 'tcx, T>,
-    instruction_index: usize,
-    debug_info: &[VarDebugInfo],
-) {
-    let path_component = path
-        .path
-        .blocks()
-        .iter()
-        .map(|block| format!("{:?}", block))
-        .collect::<Vec<_>>()
-        .join("_");
-    let data_dir = std::env::var("PCS_VIS_DATA_DIR").expect("PCS_VIS_DATA_DIR not set");
-    let fn_dir = format!("{}/{}", data_dir, fn_name);
-    std::fs::create_dir_all(&fn_dir).expect("Unable to create directory");
-    let filename = format!(
-        "{}/path_{}_stmt_{}.json",
-        fn_dir, path_component, instruction_index
-    );
-    let heap_json = path.heap.to_json(debug_info);
-    std::fs::write(filename, serde_json::to_string_pretty(&heap_json).unwrap())
-        .expect("Unable to write file");
-}
-
-pub trait VisFormat {
-    fn to_vis_string(&self, debug_info: &[VarDebugInfo]) -> String;
 }
