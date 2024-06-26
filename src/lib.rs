@@ -15,6 +15,7 @@ mod rustc_interface;
 pub mod semantics;
 pub mod value;
 pub mod visualization;
+pub mod transform;
 
 use crate::rustc_interface::{
     hir::def_id::DefId,
@@ -55,9 +56,9 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     fpcs_analysis: FpcsOutput<'mir, 'tcx>,
     havoc: HavocData,
     symvars: Vec<ty::Ty<'tcx>>,
-    arena: &'sym SymExContext,
+    arena: &'sym SymExContext<'tcx>,
     verifier_semantics: S,
-    debug: bool,
+    debug_output_dir: Option<String>,
 }
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
@@ -68,7 +69,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         body: &'mir Body<'tcx>,
         fpcs_analysis: FpcsOutput<'mir, 'tcx>,
         verifier_semantics: S,
-        arena: &'sym SymExContext,
+        arena: &'sym SymExContext<'tcx>,
+        debug_output_dir: Option<String>,
     ) -> Self {
         SymbolicExecution {
             tcx,
@@ -78,7 +80,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             symvars: Vec::with_capacity(body.arg_count),
             verifier_semantics,
             arena,
-            debug: std::env::var("SYM_EX_DEBUG").map_or(false, |v| v == "true"),
+            debug_output_dir,
         }
     }
 
@@ -166,20 +168,28 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         Assertion::Precondition(*def_id, substs, args),
                     ));
 
-                    let result = self
-                        .verifier_semantics
-                        .encode_fn_call(self.arena, *def_id, substs, args)
-                        .unwrap_or_else(|| {
-                            let sym_var = self.mk_fresh_symvar(
-                                destination.ty(&self.body.local_decls, self.tcx).ty,
-                            );
-                            add_debug_note!(
-                                sym_var.debug_info,
-                                "Fresh symvar for call to {:?}",
-                                def_id
-                            );
-                            sym_var
-                        });
+                    let result = if self.tcx.def_path_str(*def_id).as_str()
+                        == "std::intrinsics::discriminant_value"
+                    {
+                        self.arena.mk_discriminant(
+                            self.arena
+                                .mk_projection(mir::ProjectionElem::Deref, args[0]),
+                        )
+                    } else {
+                        self.verifier_semantics
+                            .encode_fn_call(self.arena, *def_id, substs, args)
+                            .unwrap_or_else(|| {
+                                let sym_var = self.mk_fresh_symvar(
+                                    destination.ty(&self.body.local_decls, self.tcx).ty,
+                                );
+                                add_debug_note!(
+                                    sym_var.debug_info,
+                                    "Fresh symvar for call to {:?}",
+                                    def_id
+                                );
+                                sym_var
+                            })
+                    };
                     path.heap.insert((*destination).into(), result);
                     path.pcs.insert(PathConditionAtom::new(
                         result,
@@ -255,8 +265,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     }
                 }
                 self.handle_stmt(stmt, &mut path.heap, fpcs_loc);
-                if self.debug {
-                    export_path_json(fn_name, &path, stmt_idx, &self.body.var_debug_info);
+                eprintln!("Export heap: {:?}", path.heap);
+                if let Some(debug_output_dir) = &self.debug_output_dir {
+                    export_path_json(
+                        &debug_output_dir,
+                        &path,
+                        stmt_idx,
+                        &self.body.var_debug_info,
+                    );
                 }
             }
             let last_fpcs_loc = pcs_block.statements.last().unwrap();
@@ -274,8 +290,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 self.add_to_result_paths_if_feasible(&path, &mut result_paths);
             }
         }
-        if self.debug {
-            export_path_list(fn_name, &result_paths);
+        if let Some(debug_output_dir) = &self.debug_output_dir {
+            export_path_list(&debug_output_dir, &result_paths);
         }
         SymbolicExecutionResult {
             paths: result_paths,
@@ -368,6 +384,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     }
                     _ => todo!("{rvalue:?}"),
                 };
+                eprintln!("ASSIGN<{:?}>: {:?} = {}", pcs.location,  place, sym_value);
                 heap.insert((*place).into(), sym_value);
             }
             mir::StatementKind::StorageDead(_)
@@ -458,7 +475,16 @@ pub fn run_symbolic_execution<
     tcx: TyCtxt<'tcx>,
     fpcs_analysis: FpcsOutput<'mir, 'tcx>,
     verifier_semantics: S,
-    arena: &'sym SymExContext,
+    arena: &'sym SymExContext<'tcx>,
+    debug_output_dir: Option<&str>,
 ) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {
-    SymbolicExecution::new(tcx, mir, fpcs_analysis, verifier_semantics, arena).execute()
+    SymbolicExecution::new(
+        tcx,
+        mir,
+        fpcs_analysis,
+        verifier_semantics,
+        arena,
+        debug_output_dir.map(|s| s.to_string()),
+    )
+    .execute()
 }

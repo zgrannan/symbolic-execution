@@ -17,20 +17,21 @@ pub struct SymbolicHeap<'sym, 'tcx, T>(BTreeMap<Place<'tcx>, SymValue<'sym, 'tcx
 
 impl<'sym, 'tcx, T: VisFormat> SymbolicHeap<'sym, 'tcx, T> {
     pub fn to_json(&self, debug_info: &[VarDebugInfo]) -> serde_json::Value {
-        let map: BTreeMap<_, _> = self
-            .0
-            .iter()
-            .map(|(place, value)| {
-                (
-                    format!(
-                        "{}",
-                        get_source_name_from_place(place.local(), &place.projection(), debug_info)
-                            .unwrap_or_else(|| format!("{:?}", place))
-                    ),
-                    format!("{}", value.to_vis_string(debug_info)),
-                )
-            })
-            .collect();
+        let map = self.0.iter().fold(BTreeMap::new(), |mut acc, (place, value)| {
+            let key = format!(
+                "{}",
+                get_source_name_from_place(place.local(), &place.projection(), debug_info)
+                    .unwrap_or_else(|| format!("{:?}", place))
+            );
+            eprintln!("{:?} -> {:?}", place, key);
+            let value_str = format!("{}", value.to_vis_string(debug_info));
+
+            if acc.contains_key(&key) {
+                panic!("Duplicate key found: {} in {:?}", key, debug_info);
+            }
+            acc.insert(key, value_str);
+            acc
+        });
         serde_json::to_value(map).unwrap()
     }
 }
@@ -87,7 +88,7 @@ impl<'sym, 'tcx, T: Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
 {
     pub fn encode_operand(
         &self,
-        arena: &'sym SymExContext,
+        arena: &'sym SymExContext<'tcx>,
         operand: &mir::Operand<'tcx>,
         borrows: &BorrowsDomain<'tcx>
     ) -> SymValue<'sym, 'tcx, T> {

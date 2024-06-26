@@ -9,6 +9,7 @@ use crate::rustc_interface::{
     },
     span::{def_id::DefId, DUMMY_SP},
 };
+use crate::transform::SymValueTransformer;
 
 use std::{
     cmp::Ordering,
@@ -23,6 +24,16 @@ use super::SymExContext;
 
 #[derive(Copy, Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Ty<'tcx>(ty::Ty<'tcx>, Option<VariantIdx>);
+
+impl<'tcx> std::fmt::Display for Ty<'tcx> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)?;
+        if let Some(variant_index) = self.1 {
+            write!(f, "@{:?}", variant_index)?;
+        }
+        Ok(())
+    }
+}
 
 impl<'tcx> Ty<'tcx> {
     pub fn new(ty: ty::Ty<'tcx>, variant_index: Option<VariantIdx>) -> Self {
@@ -43,10 +54,10 @@ impl<'tcx> From<PlaceTy<'tcx>> for Ty<'tcx> {
 }
 
 pub trait SyntheticSymValue<'sym, 'tcx>: Sized {
-    fn optimize(self, arena: &'sym SymExContext, tcx: ty::TyCtxt<'tcx>) -> Self;
+    fn optimize(self, arena: &'sym SymExContext<'tcx>, tcx: ty::TyCtxt<'tcx>) -> Self;
     fn subst(
         self,
-        arena: &'sym SymExContext,
+        arena: &'sym SymExContext<'tcx>,
         tcx: ty::TyCtxt<'tcx>,
         substs: &Substs<'sym, 'tcx, Self>,
     ) -> Self;
@@ -59,215 +70,6 @@ pub type SymValue<'sym, 'tcx, T> = &'sym SymValueData<'sym, 'tcx, T>;
 pub struct SymValueData<'sym, 'tcx, T> {
     pub kind: SymValueKind<'sym, 'tcx, T>,
     pub debug_info: DebugInfo<'sym>,
-}
-
-impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tcx, T> {
-    pub fn new(kind: SymValueKind<'sym, 'tcx, T>, arena: &'sym SymExContext) -> Self {
-        SymValueData {
-            kind,
-            debug_info: DebugInfo::new(|t| arena.alloc(t)),
-        }
-    }
-
-    pub fn ty(&self, tcx: ty::TyCtxt<'tcx>) -> Ty<'tcx> {
-        self.kind.ty(tcx)
-    }
-}
-impl<'sym, 'tcx, T: VisFormat> std::fmt::Display for SymValueData<'sym, 'tcx, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_vis_string(&[]))
-    }
-}
-
-impl<'sym, 'tcx, T: VisFormat> VisFormat for SymValueData<'sym, 'tcx, T> {
-    fn to_vis_string(&self, debug_info: &[VarDebugInfo]) -> String {
-        self.to_vis_string_prec(debug_info, PrecCategory::Bottom)
-    }
-}
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-enum PrecCategory {
-    Atom,
-    Prefix,
-    Field,
-    Multiplicative,
-    Additive,
-    Shift,
-    Bitwise,
-    Comparison,
-    LogicalAnd,
-    LogicalOr,
-    Bottom,
-}
-
-impl<'sym, 'tcx, T> SymValueKind<'sym, 'tcx, T> {
-    fn prec_category(&self) -> PrecCategory {
-        match self {
-            SymValueKind::Var(_, _) | SymValueKind::Constant(_) | SymValueKind::Synthetic(_) => {
-                PrecCategory::Atom
-            }
-            SymValueKind::Ref(_, _) => PrecCategory::Prefix,
-            SymValueKind::CheckedBinaryOp(_, op, _, _) | SymValueKind::BinaryOp(_, op, _, _) => {
-                match op {
-                    mir::BinOp::Mul | mir::BinOp::Div | mir::BinOp::Rem => {
-                        PrecCategory::Multiplicative
-                    }
-                    mir::BinOp::Add | mir::BinOp::Sub => PrecCategory::Additive,
-                    mir::BinOp::Shl | mir::BinOp::Shr => PrecCategory::Shift,
-                    mir::BinOp::BitAnd | mir::BinOp::BitXor | mir::BinOp::BitOr => {
-                        PrecCategory::Bitwise
-                    }
-                    mir::BinOp::Eq
-                    | mir::BinOp::Lt
-                    | mir::BinOp::Le
-                    | mir::BinOp::Ne
-                    | mir::BinOp::Ge
-                    | mir::BinOp::Gt => PrecCategory::Comparison,
-                    _ => PrecCategory::Bottom, // For any other binary ops
-                }
-            }
-            SymValueKind::UnaryOp(_, _, _) => PrecCategory::Prefix,
-            SymValueKind::Projection(elem, _) => match elem {
-                ProjectionElem::Deref => PrecCategory::Prefix,
-                ProjectionElem::Field(..) => PrecCategory::Field,
-                ProjectionElem::Index(_) => todo!(),
-                ProjectionElem::ConstantIndex { offset, min_length, from_end } => todo!(),
-                ProjectionElem::Subslice { from, to, from_end } => todo!(),
-                ProjectionElem::Downcast(_, _) => PrecCategory::Prefix, // TODO
-                ProjectionElem::OpaqueCast(_) => todo!(),
-            },
-            SymValueKind::Aggregate(_, _) | SymValueKind::Discriminant(_) => PrecCategory::Atom,
-            SymValueKind::Cast(_, _, _) => PrecCategory::Prefix,
-            SymValueKind::InternalError(_, _) => PrecCategory::Atom,
-        }
-    }
-}
-
-const CATEGORIES: &[PrecCategory] = &[
-    PrecCategory::Bottom,
-    PrecCategory::Multiplicative,
-    PrecCategory::Additive,
-    PrecCategory::Shift,
-    PrecCategory::Bitwise,
-    PrecCategory::Comparison,
-    PrecCategory::LogicalAnd,
-    PrecCategory::LogicalOr,
-    PrecCategory::Prefix,
-    PrecCategory::Field,
-    PrecCategory::Atom,
-];
-
-impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
-    fn to_vis_string_prec(
-        &self,
-        debug_info: &[VarDebugInfo],
-        parent_category: PrecCategory,
-    ) -> String {
-        let self_category = self.kind.prec_category();
-        let result = match &self.kind {
-            SymValueKind::Var(idx, ty) => {
-                if *idx < debug_info.len() {
-                    format!("{}_sym", debug_info[*idx].name)
-                } else {
-                    format!("(s{}: {})", idx, ty)
-                }
-            }
-            SymValueKind::Ref(_, t) => {
-                format!("&{}", t.to_vis_string_prec(debug_info, self_category))
-            }
-            SymValueKind::Constant(c) => format!("{}", c.literal()),
-            SymValueKind::CheckedBinaryOp(_, op, lhs, rhs)
-            | SymValueKind::BinaryOp(_, op, lhs, rhs) => {
-                let op_str = match op {
-                    mir::BinOp::Add => "+",
-                    mir::BinOp::Sub => "-",
-                    mir::BinOp::Mul => "*",
-                    mir::BinOp::Div => "/",
-                    mir::BinOp::Rem => "%",
-                    mir::BinOp::BitXor => "^",
-                    mir::BinOp::BitAnd => "&",
-                    mir::BinOp::BitOr => "|",
-                    mir::BinOp::Shl => "<<",
-                    mir::BinOp::Shr => ">>",
-                    mir::BinOp::Eq => "==",
-                    mir::BinOp::Lt => "<",
-                    mir::BinOp::Le => "<=",
-                    mir::BinOp::Ne => "!=",
-                    mir::BinOp::Ge => ">=",
-                    mir::BinOp::Gt => ">",
-                    _ => "?",
-                };
-                format!(
-                    "{} {} {}",
-                    lhs.to_vis_string_prec(debug_info, self_category),
-                    op_str,
-                    rhs.to_vis_string_prec(debug_info, self_category)
-                )
-            }
-            SymValueKind::UnaryOp(_, op, expr) => {
-                let op_str = match op {
-                    mir::UnOp::Not => "!",
-                    mir::UnOp::Neg => "-",
-                };
-                format!(
-                    "{}{}",
-                    op_str,
-                    expr.to_vis_string_prec(debug_info, self_category)
-                )
-            }
-            SymValueKind::Projection(kind, value) => match kind {
-                ProjectionElem::Deref => {
-                    format!("*{}", value.to_vis_string_prec(debug_info, self_category))
-                }
-                ProjectionElem::Field(lhs, _) => format!(
-                    "{}.{:?}",
-                    value.to_vis_string_prec(debug_info, self_category),
-                    lhs
-                ),
-                ProjectionElem::Index(_) => todo!(),
-                ProjectionElem::ConstantIndex { offset, min_length, from_end } => todo!(),
-                ProjectionElem::Subslice { from, to, from_end } => todo!(),
-                ProjectionElem::Downcast(_, _) => format!(
-                    "downcast of {:?}",
-                    value.to_vis_string_prec(debug_info, self_category)
-                ),
-                ProjectionElem::OpaqueCast(_) => todo!(),
-                // ... handle other ProjectionElem variants ...
-            },
-            SymValueKind::Aggregate(kind, values) => {
-                let values_str = values
-                    .iter()
-                    .map(|v| v.to_vis_string(debug_info))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("(compose [{}] to {:?})", values_str, kind)
-            }
-            SymValueKind::Discriminant(val) => {
-                format!("discriminant({})", val.to_vis_string(debug_info))
-            }
-            SymValueKind::Synthetic(s) => s.to_vis_string(debug_info),
-            SymValueKind::Cast(_, _, _) => "todo!()".to_string(),
-            SymValueKind::InternalError(err, _) => format!("INTERNAL ERROR: {}", err),
-        };
-
-        if needs_parens(self_category, parent_category) {
-            format!("({})", result)
-        } else {
-            result
-        }
-    }
-}
-
-fn needs_parens(child: PrecCategory, parent: PrecCategory) -> bool {
-    let child_index = CATEGORIES
-        .iter()
-        .position(|cats| cats == &child)
-        .unwrap();
-    let parent_index = CATEGORIES
-        .iter()
-        .position(|cats| cats == &parent)
-        .unwrap();
-
-    child_index < parent_index
 }
 
 #[derive(Copy, Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
@@ -328,99 +130,10 @@ impl<'sym, 'tcx, T> Substs<'sym, 'tcx, T> {
     }
 }
 
-pub trait SymValueTransformer<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> {
-    fn transform_var(
-        &mut self,
-        arena: &'sym SymExContext,
-        idx: usize,
-        ty: ty::Ty<'tcx>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_var(idx, ty)
-    }
-    fn transform_ref(
-        &mut self,
-        arena: &'sym SymExContext,
-        ty: ty::Ty<'tcx>,
-        val: SymValue<'sym, 'tcx, T>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_ref(ty, val)
-    }
-    fn transform_constant(
-        &mut self,
-        arena: &'sym SymExContext,
-        c: &'sym Constant<'tcx>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_constant(c.clone())
-    }
-    fn transform_checked_binary_op(
-        &mut self,
-        arena: &'sym SymExContext,
-        ty: ty::Ty<'tcx>,
-        op: mir::BinOp,
-        lhs: SymValue<'sym, 'tcx, T>,
-        rhs: SymValue<'sym, 'tcx, T>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_checked_bin_op(ty, op, lhs, rhs)
-    }
-    fn transform_binary_op(
-        &mut self,
-        arena: &'sym SymExContext,
-        ty: ty::Ty<'tcx>,
-        op: mir::BinOp,
-        lhs: SymValue<'sym, 'tcx, T>,
-        rhs: SymValue<'sym, 'tcx, T>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_bin_op(ty, op, lhs, rhs)
-    }
-    fn transform_unary_op(
-        &mut self,
-        arena: &'sym SymExContext,
-        ty: ty::Ty<'tcx>,
-        op: mir::UnOp,
-        val: SymValue<'sym, 'tcx, T>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_unary_op(ty, op, val)
-    }
-    fn transform_projection(
-        &mut self,
-        arena: &'sym SymExContext,
-        elem: ProjectionElem<mir::Local, ty::Ty<'tcx>>,
-        val: SymValue<'sym, 'tcx, T>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_projection(elem, val)
-    }
-    fn transform_aggregate(
-        &mut self,
-        arena: &'sym SymExContext,
-        kind: AggregateKind<'tcx>,
-        vals: &'sym [SymValue<'sym, 'tcx, T>],
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_aggregate(kind, vals)
-    }
-    fn transform_discriminant(
-        &mut self,
-        arena: &'sym SymExContext,
-        val: SymValue<'sym, 'tcx, T>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_discriminant(val)
-    }
-    fn transform_cast(
-        &mut self,
-        arena: &'sym SymExContext,
-        kind: CastKind,
-        val: SymValue<'sym, 'tcx, T>,
-        ty: ty::Ty<'tcx>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_cast(kind, val, ty)
-    }
-
-    fn transform_synthetic(&mut self, arena: &'sym SymExContext, s: T) -> SymValue<'sym, 'tcx, T>;
-}
-
 impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tcx, T> {
     pub fn apply_transformer<F>(
         &'sym self,
-        arena: &'sym SymExContext,
+        arena: &'sym SymExContext<'tcx>,
         transformer: &mut F,
     ) -> SymValue<'sym, 'tcx, T>
     where
@@ -491,45 +204,48 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueKind<'sym, 'tcx, T> {
             SymValueKind::CheckedBinaryOp(ty, _, _, _) => Ty::new(*ty, None),
             SymValueKind::BinaryOp(ty, _, _, _) => Ty::new(*ty, None),
             SymValueKind::Projection(elem, val) => match elem {
-                ProjectionElem::Deref => match val.kind.ty(tcx).rust_ty().kind() {
-                    ty::TyKind::Bool => todo!(),
-                    ty::TyKind::Char => todo!(),
-                    ty::TyKind::Int(_) => todo!(),
-                    ty::TyKind::Uint(_) => todo!(),
-                    ty::TyKind::Float(_) => todo!(),
-                    ty::TyKind::Adt(def, substs) => {
-                        if let Some(box_def_id) = tcx.lang_items().owned_box() {
-                            if def.did() == box_def_id {
-                                Ty::new(substs.type_at(0), None)
+                ProjectionElem::Deref => {
+                    let ty = val.kind.ty(tcx);
+                    match ty.rust_ty().kind() {
+                        ty::TyKind::Bool => todo!(),
+                        ty::TyKind::Char => todo!(),
+                        ty::TyKind::Int(_) => todo!(),
+                        ty::TyKind::Uint(_) => todo!(),
+                        ty::TyKind::Float(_) => todo!(),
+                        ty::TyKind::Adt(def, substs) => {
+                            if let Some(box_def_id) = tcx.lang_items().owned_box() {
+                                if def.did() == box_def_id {
+                                    Ty::new(substs.type_at(0), None)
+                                } else {
+                                    panic!()
+                                }
                             } else {
                                 panic!()
                             }
-                        } else {
-                            panic!()
                         }
+                        ty::TyKind::Foreign(_) => todo!(),
+                        ty::TyKind::Str => todo!(),
+                        ty::TyKind::Array(_, _) => todo!(),
+                        ty::TyKind::Slice(_) => todo!(),
+                        ty::TyKind::RawPtr(_) => todo!(),
+                        ty::TyKind::Ref(_, target_ty, _) => Ty::new(*target_ty, ty.variant_index()),
+                        ty::TyKind::FnDef(_, _) => todo!(),
+                        ty::TyKind::FnPtr(_) => todo!(),
+                        ty::TyKind::Dynamic(_, _, _) => todo!(),
+                        ty::TyKind::Closure(_, _) => todo!(),
+                        ty::TyKind::Generator(_, _, _) => todo!(),
+                        ty::TyKind::GeneratorWitness(_) => todo!(),
+                        ty::TyKind::GeneratorWitnessMIR(_, _) => todo!(),
+                        ty::TyKind::Never => todo!(),
+                        ty::TyKind::Tuple(_) => todo!(),
+                        ty::TyKind::Alias(_, _) => todo!(),
+                        ty::TyKind::Param(_) => todo!(),
+                        ty::TyKind::Bound(_, _) => todo!(),
+                        ty::TyKind::Placeholder(_) => todo!(),
+                        ty::TyKind::Infer(_) => todo!(),
+                        ty::TyKind::Error(_) => todo!(),
                     }
-                    ty::TyKind::Foreign(_) => todo!(),
-                    ty::TyKind::Str => todo!(),
-                    ty::TyKind::Array(_, _) => todo!(),
-                    ty::TyKind::Slice(_) => todo!(),
-                    ty::TyKind::RawPtr(_) => todo!(),
-                    ty::TyKind::Ref(_, ty, _) => Ty::new(*ty, None),
-                    ty::TyKind::FnDef(_, _) => todo!(),
-                    ty::TyKind::FnPtr(_) => todo!(),
-                    ty::TyKind::Dynamic(_, _, _) => todo!(),
-                    ty::TyKind::Closure(_, _) => todo!(),
-                    ty::TyKind::Generator(_, _, _) => todo!(),
-                    ty::TyKind::GeneratorWitness(_) => todo!(),
-                    ty::TyKind::GeneratorWitnessMIR(_, _) => todo!(),
-                    ty::TyKind::Never => todo!(),
-                    ty::TyKind::Tuple(_) => todo!(),
-                    ty::TyKind::Alias(_, _) => todo!(),
-                    ty::TyKind::Param(_) => todo!(),
-                    ty::TyKind::Bound(_, _) => todo!(),
-                    ty::TyKind::Placeholder(_) => todo!(),
-                    ty::TyKind::Infer(_) => todo!(),
-                    ty::TyKind::Error(_) => todo!(),
-                },
+                }
                 ProjectionElem::Field(_, ty) => Ty::new(*ty, None),
                 ProjectionElem::Index(_) => todo!(),
                 ProjectionElem::ConstantIndex {
@@ -562,14 +278,14 @@ impl<'substs, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueTransformer<
 {
     fn transform_var(
         &mut self,
-        arena: &'sym SymExContext,
+        arena: &'sym SymExContext<'tcx>,
         idx: usize,
         ty: ty::Ty<'tcx>,
     ) -> SymValue<'sym, 'tcx, T> {
         self.1.get(&idx).unwrap_or(&arena.mk_var(idx, ty))
     }
 
-    fn transform_synthetic(&mut self, arena: &'sym SymExContext, s: T) -> SymValue<'sym, 'tcx, T> {
+    fn transform_synthetic(&mut self, arena: &'sym SymExContext<'tcx>, s: T) -> SymValue<'sym, 'tcx, T> {
         arena.mk_synthetic(s.subst(arena, self.0, self.1))
     }
 }
@@ -577,7 +293,7 @@ impl<'substs, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueTransformer<
 impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tcx, T> {
     pub fn subst<'substs>(
         &'sym self,
-        arena: &'sym SymExContext,
+        arena: &'sym SymExContext<'tcx>,
         tcx: ty::TyCtxt<'tcx>,
         substs: &'substs Substs<'sym, 'tcx, T>,
     ) -> SymValue<'sym, 'tcx, T> {
@@ -590,13 +306,13 @@ struct OptimizingTransformer<'tcx>(ty::TyCtxt<'tcx>);
 impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx>> SymValueTransformer<'sym, 'tcx, T>
     for OptimizingTransformer<'tcx>
 {
-    fn transform_synthetic(&mut self, arena: &'sym SymExContext, s: T) -> SymValue<'sym, 'tcx, T> {
+    fn transform_synthetic(&mut self, arena: &'sym SymExContext<'tcx>, s: T) -> SymValue<'sym, 'tcx, T> {
         arena.mk_synthetic(s.optimize(arena, self.0))
     }
 
     fn transform_projection(
         &mut self,
-        arena: &'sym SymExContext,
+        arena: &'sym SymExContext<'tcx>,
         elem: ProjectionElem<mir::Local, ty::Ty<'tcx>>,
         base: SymValue<'sym, 'tcx, T>,
     ) -> SymValue<'sym, 'tcx, T> {
@@ -616,7 +332,7 @@ impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx>> SymValueTransf
 impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tcx, T> {
     pub fn optimize(
         &'sym self,
-        arena: &'sym SymExContext,
+        arena: &'sym SymExContext<'tcx>,
         tcx: ty::TyCtxt<'tcx>,
     ) -> SymValue<'sym, 'tcx, T> {
         self.apply_transformer(arena, &mut OptimizingTransformer(tcx))

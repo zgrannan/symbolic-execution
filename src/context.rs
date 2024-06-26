@@ -1,21 +1,26 @@
-use crate::{rustc_interface::{
-    borrowck::consumers::BodyWithBorrowckFacts,
-    hir::def_id::DefId,
-    middle::{
-        mir::{self, Body, VarDebugInfo},
-        ty::{self, GenericArgsRef, TyCtxt},
-    },
-}, value::{AggregateKind, Constant}};
 use crate::value::{CastKind, SymValue, SymValueData, SymValueKind, SyntheticSymValue};
+use crate::{
+    rustc_interface::{
+        borrowck::consumers::BodyWithBorrowckFacts,
+        hir::def_id::DefId,
+        middle::{
+            mir::{self, Body, VarDebugInfo},
+            ty::{self, GenericArgsRef, TyCtxt},
+        },
+    },
+    value::{AggregateKind, Constant},
+};
 
-pub struct SymExContext {
+pub struct SymExContext<'tcx> {
     bump: bumpalo::Bump,
+    tcx: TyCtxt<'tcx>,
 }
 
-impl SymExContext {
-    pub fn new() -> Self {
+impl<'tcx> SymExContext<'tcx> {
+    pub fn new(tcx: TyCtxt<'tcx>) -> Self {
         Self {
             bump: bumpalo::Bump::new(),
+            tcx,
         }
     }
 
@@ -27,7 +32,7 @@ impl SymExContext {
         self.bump.alloc_slice_copy(t)
     }
 
-    pub fn mk_ref<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_ref<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         ty: ty::Ty<'tcx>,
         val: SymValue<'sym, 'tcx, T>,
@@ -35,7 +40,7 @@ impl SymExContext {
         self.mk_sym_value(SymValueKind::Ref(ty, val))
     }
 
-    pub fn mk_internal_error<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_internal_error<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         err: String,
         ty: ty::Ty<'tcx>,
@@ -43,21 +48,21 @@ impl SymExContext {
         self.mk_sym_value(SymValueKind::InternalError(err, ty))
     }
 
-    pub fn mk_discriminant<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_discriminant<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         val: SymValue<'sym, 'tcx, T>,
     ) -> SymValue<'sym, 'tcx, T> {
         self.mk_sym_value(SymValueKind::Discriminant(val))
     }
 
-    pub fn mk_sym_value<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_sym_value<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         kind: SymValueKind<'sym, 'tcx, T>,
     ) -> SymValue<'sym, 'tcx, T> {
         self.alloc(SymValueData::new(kind, self))
     }
 
-    pub fn mk_cast<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_cast<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         kind: CastKind,
         val: SymValue<'sym, 'tcx, T>,
@@ -66,7 +71,7 @@ impl SymExContext {
         self.mk_sym_value(SymValueKind::Cast(kind, val, ty))
     }
 
-    pub fn mk_var<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_var<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         idx: usize,
         ty: ty::Ty<'tcx>,
@@ -74,29 +79,40 @@ impl SymExContext {
         self.mk_sym_value(SymValueKind::Var(idx, ty))
     }
 
-    pub fn mk_constant<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_constant<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         c: Constant<'tcx>,
     ) -> SymValue<'sym, 'tcx, T> {
         self.mk_sym_value(SymValueKind::Constant(c))
     }
 
-    pub fn mk_synthetic<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_synthetic<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         t: T,
     ) -> SymValue<'sym, 'tcx, T> {
         self.mk_sym_value(SymValueKind::Synthetic(t))
     }
 
-    pub fn mk_projection<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_projection<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         kind: mir::ProjectionElem<mir::Local, ty::Ty<'tcx>>,
         val: SymValue<'sym, 'tcx, T>,
     ) -> SymValue<'sym, 'tcx, T> {
+        match kind {
+            mir::ProjectionElem::Field(_, _) => {
+                if val.kind.ty(self.tcx).rust_ty().is_enum() {
+                    assert!(
+                        val.kind.ty(self.tcx).variant_index().is_some(),
+                        "Enum value must have a variant index set"
+                    );
+                }
+            }
+            _ => {}
+        }
         self.mk_sym_value(SymValueKind::Projection(kind, val))
     }
 
-    pub fn mk_aggregate<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_aggregate<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         kind: AggregateKind<'tcx>,
         vals: &'sym [SymValue<'sym, 'tcx, T>],
@@ -104,7 +120,7 @@ impl SymExContext {
         self.mk_sym_value(SymValueKind::Aggregate(kind, vals))
     }
 
-    pub fn mk_bin_op<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_bin_op<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         ty: ty::Ty<'tcx>,
         bin_op: mir::BinOp,
@@ -114,7 +130,7 @@ impl SymExContext {
         self.mk_sym_value(SymValueKind::BinaryOp(ty, bin_op, lhs, rhs))
     }
 
-    pub fn mk_checked_bin_op<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_checked_bin_op<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         ty: ty::Ty<'tcx>,
         bin_op: mir::BinOp,
@@ -124,7 +140,7 @@ impl SymExContext {
         self.mk_sym_value(SymValueKind::CheckedBinaryOp(ty, bin_op, lhs, rhs))
     }
 
-    pub fn mk_unary_op<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_unary_op<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         ty: ty::Ty<'tcx>,
         unary_op: mir::UnOp,

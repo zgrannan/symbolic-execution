@@ -29,7 +29,7 @@ impl<'sym, 'tcx, T: Copy + Clone + SyntheticSymValue<'sym, 'tcx>>
 {
     pub fn subst(
         self,
-        arena: &'sym SymExContext,
+        arena: &'sym SymExContext<'tcx>,
         tcx: ty::TyCtxt<'tcx>,
         substs: &'sym Substs<'sym, 'tcx, T>,
     ) -> Self {
@@ -98,7 +98,7 @@ impl<'sym, 'tcx, T> PathConditionAtom<'sym, 'tcx, T> {
 impl<'sym, 'tcx, T: Copy + Clone + SyntheticSymValue<'sym, 'tcx>> PathConditionAtom<'sym, 'tcx, T> {
     pub fn subst(
         self,
-        arena: &'sym SymExContext,
+        arena: &'sym SymExContext<'tcx>,
         tcx: ty::TyCtxt<'tcx>,
         substs: &'sym Substs<'sym, 'tcx, T>,
     ) -> Self {
@@ -139,7 +139,7 @@ impl<'sym, 'tcx, T: Copy + Clone + Ord + SyntheticSymValue<'sym, 'tcx>>
 {
     pub fn subst(
         self,
-        arena: &'sym SymExContext,
+        arena: &'sym SymExContext<'tcx>,
         tcx: ty::TyCtxt<'tcx>,
         substs: &'sym Substs<'sym, 'tcx, T>,
     ) -> Self {

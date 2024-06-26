@@ -12,7 +12,7 @@ pub trait VerifierSemantics<'sym, 'tcx> {
     type SymValSynthetic: Clone + Ord + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>;
     fn encode_fn_call(
         &self,
-        arena: &'sym SymExContext,
+        arena: &'sym SymExContext<'tcx>,
         def_id: DefId,
         substs: GenericArgsRef<'tcx>,
         args: &'sym [SymValue<'sym, 'tcx, Self::SymValSynthetic>],
