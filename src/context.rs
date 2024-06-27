@@ -13,7 +13,7 @@ use crate::{
 
 pub struct SymExContext<'tcx> {
     bump: bumpalo::Bump,
-    tcx: TyCtxt<'tcx>,
+    pub tcx: TyCtxt<'tcx>,
 }
 
 impl<'tcx> SymExContext<'tcx> {

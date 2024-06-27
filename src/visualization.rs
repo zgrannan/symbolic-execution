@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use pcs::{borrows::engine::BorrowsDomain, free_pcs::FreePcsLocation, utils::PlaceRepacker};
+
 use crate::{
     context::SymExContext,
     debug_info::DebugInfo,
@@ -22,8 +24,9 @@ pub trait VisFormat {
 pub fn export_path_json<'sym, 'tcx, T: VisFormat>(
     debug_output_dir: &str,
     path: &Path<'sym, 'tcx, T>,
+    fpcs_loc: &FreePcsLocation<BorrowsDomain<'tcx>>,
     instruction_index: usize,
-    debug_info: &[VarDebugInfo],
+    repacker: PlaceRepacker<'_, 'tcx>,
 ) {
     let path_component = path
         .path
@@ -37,7 +40,30 @@ pub fn export_path_json<'sym, 'tcx, T: VisFormat>(
         "{}/path_{}_stmt_{}.json",
         debug_output_dir, path_component, instruction_index
     );
-    let heap_json = path.heap.to_json(debug_info);
+    let mut json_object = serde_json::Map::new();
+    json_object.insert("heap".to_string(), path.heap.to_json(&repacker.body().var_debug_info));
+    json_object.insert("borrows".to_string(), fpcs_loc.extra.after.to_json(repacker));
+    json_object.insert("repacks_start".to_string(), serde_json::Value::Array(
+        fpcs_loc.repacks_start.iter()
+            .map(|repack| serde_json::Value::String(format!("{:?}", repack)))
+            .collect()
+    ));
+    json_object.insert("repacks_middle".to_string(), serde_json::Value::Array(
+        fpcs_loc.repacks_middle.iter()
+            .map(|repack| serde_json::Value::String(format!("{:?}", repack)))
+            .collect()
+    ));
+    json_object.insert("borrow_actions_start".to_string(), serde_json::Value::Array(
+        fpcs_loc.extra.actions(true).iter()
+            .map(|action| action.to_json(repacker))
+            .collect()
+    ));
+    json_object.insert("borrow_actions_mid".to_string(), serde_json::Value::Array(
+        fpcs_loc.extra.actions(false).iter()
+            .map(|action| action.to_json(repacker))
+            .collect()
+    ));
+    let heap_json = serde_json::Value::Object(json_object);
     std::fs::write(filename, serde_json::to_string_pretty(&heap_json).unwrap())
         .expect("Unable to write file");
 }

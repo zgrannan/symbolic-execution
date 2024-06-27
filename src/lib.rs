@@ -13,9 +13,9 @@ pub mod place;
 pub mod results;
 mod rustc_interface;
 pub mod semantics;
+pub mod transform;
 pub mod value;
 pub mod visualization;
-pub mod transform;
 
 use crate::rustc_interface::{
     hir::def_id::DefId,
@@ -213,13 +213,37 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
     }
 
+    fn handle_borrow_actions<'a>(
+        &self,
+        actions: Vec<BorrowAction<'a, 'tcx>>,
+        heap: &mut SymbolicHeap<'sym, 'tcx, S::SymValSynthetic>,
+    ) {
+        for action in actions {
+            if let BorrowAction::RemoveBorrow(borrow) = action && borrow.is_mut {
+                let place_to_remove = &borrow.assigned_place.place().into();
+                let reference = heap.take(place_to_remove).unwrap_or_else(|| {
+                    self.arena.mk_internal_error(
+                        format!("Place {:?} not found in heap", place_to_remove),
+                        place_to_remove.ty(&self.body, self.tcx).ty,
+                    )
+                });
+                let val = match &reference.kind {
+                    SymValueKind::Ref(_, val) => val,
+                    SymValueKind::Aggregate(_, vec) => vec[0],
+                    SymValueKind::InternalError(_, _) => reference,
+                    _ => todo!(),
+                };
+                heap.insert(borrow.borrowed_place.place().into(), val)
+            }
+        }
+    }
+
     pub fn execute(&mut self) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {
         let mut result_paths: BTreeSet<ResultPath<'sym, 'tcx, S::SymValSynthetic>> =
             BTreeSet::new();
         let mut assertions: BTreeSet<ResultAssertion<'sym, 'tcx, S::SymValSynthetic>> =
             BTreeSet::new();
         let mut init_heap = SymbolicHeap::new();
-        let fn_name = &format!("{}", self.tcx.item_name(self.body.source.def_id()));
         for (idx, arg) in self.body.args_iter().enumerate() {
             let local = &self.body.local_decls[arg];
             let arg_ty = local.ty;
@@ -252,26 +276,16 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
                 let fpcs_loc = &pcs_block.statements[stmt_idx];
                 self.handle_repacks(&fpcs_loc.repacks_start, &mut path.heap);
-                for action in fpcs_loc.extra.actions() {
-                    if let BorrowAction::RemoveBorrow(borrow) = action && borrow.is_mut {
-                        let reference = path.heap.take(&borrow.assigned_place.place().into());
-                        let val = match &reference.kind {
-                            SymValueKind::Ref(_, val) => val,
-                            SymValueKind::Aggregate(_, vec) => vec[0],
-                            SymValueKind::InternalError(_, _) => todo!(),
-                            _ => todo!(),
-                        };
-                        path.heap.insert(borrow.borrowed_place.place().into(), val)
-                    }
-                }
+                self.handle_repacks(&fpcs_loc.repacks_middle, &mut path.heap);
+                self.handle_borrow_actions(fpcs_loc.extra.actions(true), &mut path.heap);
                 self.handle_stmt(stmt, &mut path.heap, fpcs_loc);
-                eprintln!("Export heap: {:?}", path.heap);
                 if let Some(debug_output_dir) = &self.debug_output_dir {
                     export_path_json(
                         &debug_output_dir,
                         &path,
+                        fpcs_loc,
                         stmt_idx,
-                        &self.body.var_debug_info,
+                        self.fpcs_analysis.repacker(),
                     );
                 }
             }
@@ -384,7 +398,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     }
                     _ => todo!("{rvalue:?}"),
                 };
-                eprintln!("ASSIGN<{:?}>: {:?} = {}", pcs.location,  place, sym_value);
                 heap.insert((*place).into(), sym_value);
             }
             mir::StatementKind::StorageDead(_)
@@ -426,10 +439,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) {
         match repack {
             RepackOp::StorageDead(_) => todo!(),
-            RepackOp::IgnoreStorageDead(_) => todo!(),
-            RepackOp::Weaken(_, _, _) => todo!(),
+            RepackOp::IgnoreStorageDead(_) => {}
+            RepackOp::Weaken(_, _, _) => {}
             RepackOp::Expand(place, guide, _) => {
-                let value = heap.take(&place.deref().into());
+                let value = heap.take(&place.deref().into()).unwrap_or_else(|| {
+                    self.arena.mk_internal_error(
+                        format!("Place {:?} not found in heap", place),
+                        place.ty(self.fpcs_analysis.repacker()).ty,
+                    )
+                });
                 let old_proj_len = place.projection.len();
                 let (field, rest, _) =
                     place.expand_one_level(*guide, self.fpcs_analysis.repacker());
@@ -442,11 +460,24 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 }
             }
             RepackOp::Collapse(place, from, _) => {
-                let places: Vec<_> = place
-                    .expand_field(None, self.fpcs_analysis.repacker())
-                    .iter()
-                    .map(|p| heap.take(&p.deref().into()))
-                    .collect();
+                eprintln!("Collapse: {:?} {:?}", place, from);
+                let places: Vec<_> = if let Some(_) = from.is_downcast_of(*place) {
+                    vec![heap.take(&((*from).into())).unwrap()]
+                } else {
+                    place
+                        .expand_field(None, self.fpcs_analysis.repacker())
+                        .iter()
+                        .map(|p| {
+                            let place_to_take = &p.deref().into();
+                            heap.take(place_to_take).unwrap_or_else(|| {
+                                self.arena.mk_internal_error(
+                                    format!("Place {:?} not found in heap", place_to_take),
+                                    place_to_take.ty(&self.body, self.tcx).ty,
+                                )
+                            })
+                        })
+                        .collect()
+                };
 
                 let place_ty = place.ty(self.fpcs_analysis.repacker());
                 heap.insert(

@@ -1,7 +1,7 @@
 use crate::rustc_interface::{
     data_structures::fx::FxHasher,
     middle::{
-        mir::{self, ProjectionElem},
+        mir::{self, ProjectionElem, tcx::PlaceTy},
         ty,
     },
 };
@@ -73,6 +73,10 @@ impl<'tcx> Place<'tcx> {
         } else {
             false
         }
+    }
+
+    pub fn ty(&self, body: &mir::Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> PlaceTy<'tcx> {
+        (*self.0).ty(body, tcx)
     }
 }
 

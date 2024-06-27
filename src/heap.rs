@@ -1,10 +1,16 @@
+use crate::rustc_interface::{
+    middle::{
+        mir::{self, VarDebugInfo},
+        ty::TyKind,
+    },
+    span::ErrorGuaranteed,
+};
 use crate::{
     place::Place,
     value::{Constant, SymValueData},
     VisFormat,
 };
 use pcs::{borrows::engine::BorrowsDomain, visualization::get_source_name_from_place};
-use crate::rustc_interface::middle::mir::{self, VarDebugInfo};
 use std::collections::BTreeMap;
 
 use super::{
@@ -17,21 +23,24 @@ pub struct SymbolicHeap<'sym, 'tcx, T>(BTreeMap<Place<'tcx>, SymValue<'sym, 'tcx
 
 impl<'sym, 'tcx, T: VisFormat> SymbolicHeap<'sym, 'tcx, T> {
     pub fn to_json(&self, debug_info: &[VarDebugInfo]) -> serde_json::Value {
-        let map = self.0.iter().fold(BTreeMap::new(), |mut acc, (place, value)| {
-            let key = format!(
-                "{}",
-                get_source_name_from_place(place.local(), &place.projection(), debug_info)
-                    .unwrap_or_else(|| format!("{:?}", place))
-            );
-            eprintln!("{:?} -> {:?}", place, key);
-            let value_str = format!("{}", value.to_vis_string(debug_info));
+        let map = self
+            .0
+            .iter()
+            .fold(BTreeMap::new(), |mut acc, (place, value)| {
+                let key = format!(
+                    "{}",
+                    get_source_name_from_place(place.local(), &place.projection(), debug_info)
+                        .unwrap_or_else(|| format!("{:?}", place))
+                );
+                eprintln!("{:?} -> {:?}", place, key);
+                let value_str = format!("{}", value.to_vis_string(debug_info));
 
-            if acc.contains_key(&key) {
-                panic!("Duplicate key found: {} in {:?}", key, debug_info);
-            }
-            acc.insert(key, value_str);
-            acc
-        });
+                if acc.contains_key(&key) {
+                    panic!("Duplicate key found: {} in {:?}", key, debug_info);
+                }
+                acc.insert(key, value_str);
+                acc
+            });
         serde_json::to_value(map).unwrap()
     }
 }
@@ -67,15 +76,15 @@ impl<'sym, 'tcx, T: std::fmt::Debug> SymbolicHeap<'sym, 'tcx, T> {
     }
 
     pub fn get_deref_of(&self, place: &Place<'tcx>) -> Option<SymValue<'sym, 'tcx, T>> {
-        self.0.iter().find(|(p, v)| {
-            p.is_deref_of(place)
-        }).map(|(_, v)| v).copied()
+        self.0
+            .iter()
+            .find(|(p, v)| p.is_deref_of(place))
+            .map(|(_, v)| v)
+            .copied()
     }
 
-    pub fn take(&mut self, place: &Place<'tcx>) -> SymValue<'sym, 'tcx, T> {
-        self.0
-            .remove(&place)
-            .unwrap_or_else(|| panic!("{place:?} not found in heap {:#?}", self.0))
+    pub fn take(&mut self, place: &Place<'tcx>) -> Option<SymValue<'sym, 'tcx, T>> {
+        self.0.remove(&place)
     }
 
     pub fn get_return_place_expr(&self) -> Option<SymValue<'sym, 'tcx, T>> {
@@ -90,12 +99,17 @@ impl<'sym, 'tcx, T: Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
         &self,
         arena: &'sym SymExContext<'tcx>,
         operand: &mir::Operand<'tcx>,
-        borrows: &BorrowsDomain<'tcx>
+        borrows: &BorrowsDomain<'tcx>,
     ) -> SymValue<'sym, 'tcx, T> {
         match *operand {
-            mir::Operand::Copy(place) | mir::Operand::Move(place) => self
-                .get(&place.into())
-                .unwrap_or_else(|| panic!("{place:?} not found in heap {:#?}", self.0)),
+            mir::Operand::Copy(place) | mir::Operand::Move(place) => {
+                self.get(&place.into()).unwrap_or_else(|| {
+                    arena.mk_internal_error(
+                        format!("Cannot place {:?}", place),
+                        arena.tcx.mk_ty_from_kind(TyKind::Error(ErrorGuaranteed::unchecked_claim_error_was_emitted())),
+                    )
+                })
+            }
             mir::Operand::Constant(box c) => arena.mk_constant(Constant(c.clone())),
         }
     }
