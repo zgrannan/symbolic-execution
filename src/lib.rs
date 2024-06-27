@@ -460,26 +460,26 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 }
             }
             RepackOp::Collapse(place, from, _) => {
-                eprintln!("Collapse: {:?} {:?}", place, from);
-                let places: Vec<_> = if let Some(_) = from.is_downcast_of(*place) {
-                    vec![heap.take(&((*from).into())).unwrap()]
-                } else {
-                    place
-                        .expand_field(None, self.fpcs_analysis.repacker())
-                        .iter()
-                        .map(|p| {
-                            let place_to_take = &p.deref().into();
-                            heap.take(place_to_take).unwrap_or_else(|| {
-                                self.arena.mk_internal_error(
-                                    format!("Place {:?} not found in heap", place_to_take),
-                                    place_to_take.ty(&self.body, self.tcx).ty,
-                                )
-                            })
-                        })
-                        .collect()
-                };
-
                 let place_ty = place.ty(self.fpcs_analysis.repacker());
+                let places: Vec<_> =
+                    if from.is_downcast_of(*place).is_some() || place_ty.ty.is_box() {
+                        vec![heap.take(&((*from).into())).unwrap()]
+                    } else {
+                        place
+                            .expand_field(None, self.fpcs_analysis.repacker())
+                            .iter()
+                            .map(|p| {
+                                let place_to_take = &p.deref().into();
+                                heap.take(place_to_take).unwrap_or_else(|| {
+                                    self.arena.mk_internal_error(
+                                        format!("Place {:?} not found in heap", place_to_take),
+                                        place_to_take.ty(&self.body, self.tcx).ty,
+                                    )
+                                })
+                            })
+                            .collect()
+                    };
+
                 heap.insert(
                     place.deref().into(),
                     self.arena.mk_aggregate(
