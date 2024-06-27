@@ -87,6 +87,10 @@ impl<'sym, 'tcx, T: std::fmt::Debug> SymbolicHeap<'sym, 'tcx, T> {
         self.0.remove(&place)
     }
 
+    pub fn remove(&mut self, place: &Place<'tcx>) {
+        self.0.remove(&place);
+    }
+
     pub fn get_return_place_expr(&self) -> Option<SymValue<'sym, 'tcx, T>> {
         self.get(&mir::RETURN_PLACE.into())
     }
