@@ -37,6 +37,14 @@ impl<'tcx> SymExContext<'tcx> {
         ty: ty::Ty<'tcx>,
         val: SymValue<'sym, 'tcx, T>,
     ) -> SymValue<'sym, 'tcx, T> {
+        if let ty::TyKind::Ref(_, ty, _) = ty.kind() {
+            assert_eq!(
+                self.tcx.erase_regions(val.kind.ty(self.tcx).rust_ty()),
+                self.tcx.erase_regions(*ty)
+            );
+        } else {
+            unreachable!()
+        }
         self.mk_sym_value(SymValueKind::Ref(ty, val))
     }
 
