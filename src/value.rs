@@ -282,10 +282,23 @@ impl<'substs, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueTransformer<
         idx: usize,
         ty: ty::Ty<'tcx>,
     ) -> SymValue<'sym, 'tcx, T> {
-        self.1.get(&idx).unwrap_or(&arena.mk_var(idx, ty))
+        let subst = self.1.get(&idx);
+        if let Some(val) = subst {
+            assert_eq!(
+                self.0.erase_regions(val.kind.ty(self.0).rust_ty()),
+                self.0.erase_regions(ty)
+            );
+            val
+        } else {
+            arena.mk_var(idx, ty)
+        }
     }
 
-    fn transform_synthetic(&mut self, arena: &'sym SymExContext<'tcx>, s: T) -> SymValue<'sym, 'tcx, T> {
+    fn transform_synthetic(
+        &mut self,
+        arena: &'sym SymExContext<'tcx>,
+        s: T,
+    ) -> SymValue<'sym, 'tcx, T> {
         arena.mk_synthetic(s.subst(arena, self.0, self.1))
     }
 }
@@ -306,7 +319,11 @@ struct OptimizingTransformer<'tcx>(ty::TyCtxt<'tcx>);
 impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx>> SymValueTransformer<'sym, 'tcx, T>
     for OptimizingTransformer<'tcx>
 {
-    fn transform_synthetic(&mut self, arena: &'sym SymExContext<'tcx>, s: T) -> SymValue<'sym, 'tcx, T> {
+    fn transform_synthetic(
+        &mut self,
+        arena: &'sym SymExContext<'tcx>,
+        s: T,
+    ) -> SymValue<'sym, 'tcx, T> {
         arena.mk_synthetic(s.optimize(arena, self.0))
     }
 

@@ -145,6 +145,10 @@ impl<'tcx> SymExContext<'tcx> {
         lhs: SymValue<'sym, 'tcx, T>,
         rhs: SymValue<'sym, 'tcx, T>,
     ) -> SymValue<'sym, 'tcx, T> {
+        assert_eq!(
+            lhs.kind.ty(self.tcx).rust_ty(),
+            rhs.kind.ty(self.tcx).rust_ty()
+        );
         self.mk_sym_value(SymValueKind::CheckedBinaryOp(ty, bin_op, lhs, rhs))
     }
 

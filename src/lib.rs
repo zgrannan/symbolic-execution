@@ -47,6 +47,7 @@ use self::{
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Assertion<'sym, 'tcx, T> {
+    False,
     Eq(SymValue<'sym, 'tcx, T>, bool),
     Precondition(DefId, GenericArgsRef<'tcx>, &'sym [SymValue<'sym, 'tcx, T>]),
 }
@@ -165,19 +166,28 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let encoded_args: &'sym [SymValue<'sym, 'tcx, S::SymValSynthetic>] =
                         self.alloc_slice(&encoded_args);
 
-                    assertions.insert((
-                        path.path.clone(),
-                        path.pcs.clone(),
-                        Assertion::Precondition(*def_id, substs, encoded_args),
-                    ));
+                    let fn_name = &self.tcx.def_path_str(*def_id);
+
+                    if fn_name == "core::panicking::panic" {
+                        assertions.insert((
+                            path.path.clone(),
+                            path.pcs.clone(),
+                            Assertion::False
+                        ));
+                        return
+                    } else {
+                        assertions.insert((
+                            path.path.clone(),
+                            path.pcs.clone(),
+                            Assertion::Precondition(*def_id, substs, encoded_args),
+                        ));
+                    }
 
                     for arg in args {
                         self.havoc_refs_in_operand(arg, &mut heap);
                     }
 
-                    let result = if self.tcx.def_path_str(*def_id).as_str()
-                        == "std::intrinsics::discriminant_value"
-                    {
+                    let result = if fn_name == "std::intrinsics::discriminant_value" {
                         self.arena.mk_discriminant(
                             self.arena
                                 .mk_projection(mir::ProjectionElem::Deref, encoded_args[0]),
@@ -188,6 +198,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             .unwrap_or_else(|| {
                                 let sym_var = self.mk_fresh_symvar(
                                     destination.ty(&self.body.local_decls, self.tcx).ty,
+                                );
+                                eprintln!(
+                                    "Making fresh symvar {:?} for call to {:?} at {:?}",
+                                    sym_var, def_id, loc.location
                                 );
                                 add_debug_note!(
                                     sym_var.debug_info,
@@ -525,8 +539,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         })
                         .collect()
                 };
-                eprintln!("Args for {:?}: {:?}", repack, args);
-
                 heap.insert(
                     place.deref().into(),
                     self.arena.mk_aggregate(
