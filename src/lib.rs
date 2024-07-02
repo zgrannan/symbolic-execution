@@ -169,12 +169,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let fn_name = &self.tcx.def_path_str(*def_id);
 
                     if fn_name == "core::panicking::panic" {
-                        assertions.insert((
-                            path.path.clone(),
-                            path.pcs.clone(),
-                            Assertion::False
-                        ));
-                        return
+                        assertions.insert((path.path.clone(), path.pcs.clone(), Assertion::False));
+                        return;
                     } else {
                         assertions.insert((
                             path.path.clone(),
@@ -243,7 +239,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) {
         for action in actions {
             if let BorrowAction::RemoveBorrow(borrow) = action && borrow.is_mut {
-                let place_to_remove = &borrow.assigned_place.place().into();
+                let place_to_remove = &borrow.assigned_place.place.into();
                 let reference = heap.0.take(place_to_remove).unwrap_or_else(|| {
                     self.arena.mk_internal_error(
                         format!("Place {:?} not found in heap", place_to_remove),
@@ -264,7 +260,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     SymValueKind::Cast(_, _, _) => todo!(),
                     SymValueKind::Synthetic(_) => todo!(),
                 };
-                heap.insert(borrow.borrowed_place.place().into(), val)
+                heap.insert(borrow.borrowed_place.place.into(), val)
             }
         }
     }
