@@ -36,7 +36,7 @@ use results::{ResultAssertion, ResultPath, SymbolicExecutionResult};
 use semantics::VerifierSemantics;
 use std::{collections::BTreeSet, ops::Deref};
 use value::SymValueKind;
-use visualization::{export_path_json, export_path_list, VisFormat};
+use visualization::{export_assertions, export_path_json, export_path_list, VisFormat};
 
 use self::{
     path::{AcyclicPath, Path},
@@ -51,6 +51,27 @@ pub enum Assertion<'sym, 'tcx, T> {
     Eq(SymValue<'sym, 'tcx, T>, bool),
     Precondition(DefId, GenericArgsRef<'tcx>, &'sym [SymValue<'sym, 'tcx, T>]),
 }
+
+impl<'sym, 'tcx, T: VisFormat> VisFormat for Assertion<'sym, 'tcx, T> {
+    fn to_vis_string(&self, debug_info: &[VarDebugInfo]) -> String {
+        match self {
+            Assertion::False => "false".to_string(),
+            Assertion::Eq(val, true) => val.to_vis_string(debug_info),
+            Assertion::Eq(val, false) => format!("!{}", val.to_vis_string(debug_info)),
+            Assertion::Precondition(def_id, substs, args) => {
+                format!(
+                    "{:?}({})",
+                    def_id,
+                    args.iter()
+                        .map(|arg| arg.to_vis_string(debug_info))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+        }
+    }
+}
+
 pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>> {
     tcx: TyCtxt<'tcx>,
     body: &'mir Body<'tcx>,
@@ -195,10 +216,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 let sym_var = self.mk_fresh_symvar(
                                     destination.ty(&self.body.local_decls, self.tcx).ty,
                                 );
-                                eprintln!(
-                                    "Making fresh symvar {:?} for call to {:?} at {:?}",
-                                    sym_var, def_id, loc.location
-                                );
                                 add_debug_note!(
                                     sym_var.debug_info,
                                     "Fresh symvar for call to {:?}",
@@ -341,6 +358,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             }
         }
         if let Some(debug_output_dir) = &self.debug_output_dir {
+            export_assertions(&debug_output_dir, &assertions, &self.body.var_debug_info);
             export_path_list(&debug_output_dir, &result_paths);
         }
         SymbolicExecutionResult {
@@ -370,7 +388,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let place_ty = place.ty(&self.body.local_decls, self.tcx).ty;
                 if let ty::TyKind::Ref(_, ty, mutbl) = place_ty.kind() && mutbl.is_mut()
                 {
-                    eprintln!("Havocing {:?}", place);
                     heap.insert(
                         (*place).into(),
                         self.arena.mk_ref(place_ty, self.mk_fresh_symvar(*ty)),

@@ -1,12 +1,13 @@
 use std::collections::BTreeSet;
 
 use pcs::{borrows::engine::BorrowsDomain, free_pcs::FreePcsLocation, utils::PlaceRepacker};
+use serde_json::json;
 
 use crate::{
     context::SymExContext,
     debug_info::DebugInfo,
-    path::Path,
-    results::ResultPath,
+    path::{AcyclicPath, Path},
+    results::{ResultAssertion, ResultPath},
     rustc_interface::{
         hir::def_id::DefId,
         middle::{
@@ -41,31 +42,91 @@ pub fn export_path_json<'sym, 'tcx, T: VisFormat>(
         debug_output_dir, path_component, instruction_index
     );
     let mut json_object = serde_json::Map::new();
-    json_object.insert("heap".to_string(), path.heap.to_json(&repacker.body().var_debug_info));
-    json_object.insert("borrows".to_string(), fpcs_loc.extra.after.to_json(repacker));
-    json_object.insert("repacks_start".to_string(), serde_json::Value::Array(
-        fpcs_loc.repacks_start.iter()
-            .map(|repack| serde_json::Value::String(format!("{:?}", repack)))
-            .collect()
-    ));
-    json_object.insert("repacks_middle".to_string(), serde_json::Value::Array(
-        fpcs_loc.repacks_middle.iter()
-            .map(|repack| serde_json::Value::String(format!("{:?}", repack)))
-            .collect()
-    ));
-    json_object.insert("borrow_actions_start".to_string(), serde_json::Value::Array(
-        fpcs_loc.extra.actions(true).iter()
-            .map(|action| action.to_json(repacker))
-            .collect()
-    ));
-    json_object.insert("borrow_actions_mid".to_string(), serde_json::Value::Array(
-        fpcs_loc.extra.actions(false).iter()
-            .map(|action| action.to_json(repacker))
-            .collect()
-    ));
+    json_object.insert(
+        "pcs".to_string(),
+        path.pcs.to_json(&repacker.body().var_debug_info),
+    );
+    json_object.insert(
+        "heap".to_string(),
+        path.heap.to_json(&repacker.body().var_debug_info),
+    );
+    json_object.insert(
+        "borrows".to_string(),
+        fpcs_loc.extra.after.to_json(repacker),
+    );
+    json_object.insert(
+        "repacks_start".to_string(),
+        serde_json::Value::Array(
+            fpcs_loc
+                .repacks_start
+                .iter()
+                .map(|repack| serde_json::Value::String(format!("{:?}", repack)))
+                .collect(),
+        ),
+    );
+    json_object.insert(
+        "repacks_middle".to_string(),
+        serde_json::Value::Array(
+            fpcs_loc
+                .repacks_middle
+                .iter()
+                .map(|repack| serde_json::Value::String(format!("{:?}", repack)))
+                .collect(),
+        ),
+    );
+    json_object.insert(
+        "borrow_actions_start".to_string(),
+        serde_json::Value::Array(
+            fpcs_loc
+                .extra
+                .actions(true)
+                .iter()
+                .map(|action| action.to_json(repacker))
+                .collect(),
+        ),
+    );
+    json_object.insert(
+        "borrow_actions_mid".to_string(),
+        serde_json::Value::Array(
+            fpcs_loc
+                .extra
+                .actions(false)
+                .iter()
+                .map(|action| action.to_json(repacker))
+                .collect(),
+        ),
+    );
     let heap_json = serde_json::Value::Object(json_object);
     std::fs::write(filename, serde_json::to_string_pretty(&heap_json).unwrap())
         .expect("Unable to write file");
+}
+
+fn path_to_vec(path: &AcyclicPath) -> Vec<usize> {
+    path.blocks().iter().map(|&bb| bb.index()).collect()
+}
+
+pub fn export_assertions<'sym, 'tcx, T: VisFormat>(
+    debug_output_dir: &str,
+    assertions: &BTreeSet<ResultAssertion<'sym, 'tcx, T>>,
+    debug_info: &[VarDebugInfo],
+) {
+    let assertions_json: Vec<serde_json::Value> = assertions
+        .iter()
+        .map(|(path, pcs, assertion)| {
+            json!({
+                "path": path_to_vec(path),
+                "pcs": pcs.to_json(debug_info),
+                "assertion": assertion.to_vis_string(debug_info)
+            })
+        })
+        .collect();
+
+    let json_string = serde_json::to_string_pretty(&assertions_json)
+        .expect("Failed to serialize result paths to JSON");
+
+    let filename = format!("{}/assertions.json", debug_output_dir);
+
+    std::fs::write(filename, json_string).expect("Failed to write assertions.json file");
 }
 
 pub fn export_path_list<'sym, 'tcx, T: VisFormat>(
@@ -74,7 +135,7 @@ pub fn export_path_list<'sym, 'tcx, T: VisFormat>(
 ) {
     let result_paths_json: Vec<Vec<usize>> = result_paths
         .iter()
-        .map(|(path, _, _)| path.blocks().iter().map(|&bb| bb.index()).collect())
+        .map(|(path, _, _)| path_to_vec(path))
         .collect();
 
     let json_string = serde_json::to_string_pretty(&result_paths_json)
@@ -198,9 +259,9 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                         .map_or(false, |arg_idx| arg_idx == (*idx + 1) as u16)
                 });
                 if let Some(info) = info {
-                    format!("{}_sym", info.name)
+                    format!("α<sub>{}</sub>", info.name)
                 } else {
-                    format!("(s{}: {})", idx, ty)
+                    format!("α<sub>{}</sub>: {}", idx, ty)
                 }
             }
             SymValueKind::Ref(_, t) => {

@@ -1,5 +1,7 @@
 use std::collections::{btree_set::Iter, BTreeSet};
 
+use serde_json::{json, Value};
+
 use crate::VisFormat;
 
 use super::{
@@ -8,7 +10,10 @@ use super::{
 };
 use crate::rustc_interface::{
     hir::def_id::DefId,
-    middle::ty::{self, GenericArgsRef},
+    middle::{
+        mir::VarDebugInfo,
+        ty::{self, GenericArgsRef, TyKind},
+    },
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
@@ -57,17 +62,42 @@ pub struct PathConditionAtom<'sym, 'tcx, T> {
     pub predicate: PathConditionPredicate<'sym, 'tcx, T>,
 }
 
-impl<'sym, 'tcx, T: std::fmt::Display + std::fmt::Debug + VisFormat> std::fmt::Display for PathConditionAtom<'sym, 'tcx, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'sym, 'tcx, T: VisFormat> PathConditionAtom<'sym, 'tcx, T> {
+    pub fn to_json(&self, debug_info: &[VarDebugInfo]) -> Value {
+        let json_string = self.to_vis_string(debug_info);
+        serde_json::Value::String(json_string)
+    }
+}
+
+impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditionAtom<'sym, 'tcx, T> {
+    fn to_vis_string(&self, debug_info: &[VarDebugInfo]) -> String {
         match &self.predicate {
-            PathConditionPredicate::Eq(v, ty) => {
-                write!(f, "({} = {} as {})", self.expr, v, ty)
-            }
+            PathConditionPredicate::Eq(v, ty) => match ty.kind() {
+                TyKind::Bool if *v == 0 => {
+                    format!("!({})", self.expr.to_vis_string(debug_info),)
+                }
+                _ => format!(
+                    "({} = {} as {})",
+                    self.expr.to_vis_string(debug_info),
+                    v,
+                    ty
+                ),
+            },
+            PathConditionPredicate::Ne(vs, ty) if vs.len() == 1 => match ty.kind() {
+                TyKind::Bool if vs[0] == 0 => self.expr.to_vis_string(debug_info),
+                _ => {
+                    format!(
+                        "({} != {}: {})",
+                        self.expr.to_vis_string(debug_info),
+                        vs[0],
+                        ty
+                    )
+                }
+            },
             PathConditionPredicate::Ne(vs, ty) => {
-                write!(
-                    f,
+                format!(
                     "({} does not equal any of [{}] as {})",
-                    self.expr,
+                    self.expr.to_vis_string(debug_info),
                     vs.iter()
                         .map(|v| v.to_string())
                         .collect::<Vec<_>>()
@@ -76,10 +106,15 @@ impl<'sym, 'tcx, T: std::fmt::Display + std::fmt::Debug + VisFormat> std::fmt::D
                 )
             }
             PathConditionPredicate::Postcondition(def_id, _, values) => {
-                write!(
-                    f,
+                format!(
                     "({} satisfies the postcondition of {:?} applied to args [{}])",
-                    self.expr, def_id, values.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(", ")
+                    self.expr.to_vis_string(debug_info),
+                    def_id,
+                    values
+                        .iter()
+                        .map(|v| v.to_vis_string(debug_info))
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 )
             }
         }
@@ -111,6 +146,15 @@ impl<'sym, 'tcx, T: Copy + Clone + SyntheticSymValue<'sym, 'tcx>> PathConditionA
 #[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct PathConditions<'sym, 'tcx, T> {
     pub atoms: BTreeSet<PathConditionAtom<'sym, 'tcx, T>>,
+}
+
+impl<'sym, 'tcx, T: VisFormat> PathConditions<'sym, 'tcx, T> {
+    pub fn to_json(&self, debug_info: &[VarDebugInfo]) -> Value {
+        self.atoms
+            .iter()
+            .map(|atom| atom.to_json(debug_info))
+            .collect()
+    }
 }
 
 impl<'sym, 'tcx, T> PathConditions<'sym, 'tcx, T> {
