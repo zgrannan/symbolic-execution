@@ -1,6 +1,6 @@
 use crate::rustc_interface::middle::mir::{BasicBlock, START_BLOCK};
 
-use super::{heap::SymbolicHeap, path_conditions::PathConditions};
+use super::{heap::HeapData, path_conditions::PathConditions};
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct AcyclicPath(Vec<BasicBlock>);
@@ -53,7 +53,7 @@ impl AcyclicPath {
 pub struct Path<'sym, 'tcx, T> {
     pub path: AcyclicPath,
     pub pcs: PathConditions<'sym, 'tcx, T>,
-    pub heap: SymbolicHeap<'sym, 'tcx, T>,
+    pub heap: HeapData<'sym, 'tcx, T>,
 }
 
 
@@ -61,7 +61,7 @@ impl<'sym, 'tcx, T> Path<'sym, 'tcx, T> {
     pub fn new(
         path: AcyclicPath,
         pcs: PathConditions<'sym, 'tcx, T>,
-        heap: SymbolicHeap<'sym, 'tcx, T>,
+        heap: HeapData<'sym, 'tcx, T>,
     ) -> Self {
         Path { path, pcs, heap }
     }

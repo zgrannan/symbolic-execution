@@ -1,6 +1,7 @@
 use crate::value::{CastKind, SymValue, SymValueData, SymValueKind, SyntheticSymValue};
 use crate::{
     rustc_interface::{
+        ast::Mutability,
         borrowck::consumers::BodyWithBorrowckFacts,
         hir::def_id::DefId,
         middle::{
@@ -30,22 +31,6 @@ impl<'tcx> SymExContext<'tcx> {
 
     pub fn alloc_slice<T: Copy>(&self, t: &[T]) -> &[T] {
         self.bump.alloc_slice_copy(t)
-    }
-
-    pub fn mk_ref<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
-        &'sym self,
-        ty: ty::Ty<'tcx>,
-        val: SymValue<'sym, 'tcx, T>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        if let ty::TyKind::Ref(_, ty, _) = ty.kind() {
-            assert_eq!(
-                self.tcx.erase_regions(val.kind.ty(self.tcx).rust_ty()),
-                self.tcx.erase_regions(*ty)
-            );
-        } else {
-            unreachable!()
-        }
-        self.mk_sym_value(SymValueKind::Ref(ty, val))
     }
 
     pub fn mk_internal_error<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
@@ -118,6 +103,14 @@ impl<'tcx> SymExContext<'tcx> {
             _ => {}
         }
         self.mk_sym_value(SymValueKind::Projection(kind, val))
+    }
+
+    pub fn mk_ref<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
+        &'sym self,
+        val: SymValue<'sym, 'tcx, T>,
+        mutability: Mutability,
+    ) -> SymValue<'sym, 'tcx, T> {
+        self.mk_sym_value(SymValueKind::Ref(val, mutability))
     }
 
     pub fn mk_aggregate<'sym, T: SyntheticSymValue<'sym, 'tcx>>(

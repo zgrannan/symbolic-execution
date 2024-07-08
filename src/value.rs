@@ -1,6 +1,7 @@
 use crate::debug_info::DebugInfo;
 use crate::rustc_interface::{
     abi::VariantIdx,
+    ast::Mutability,
     const_eval::interpret::ConstValue,
     data_structures::fx::FxHasher,
     middle::{
@@ -17,8 +18,6 @@ use std::{
     hash::{Hash, Hasher},
     rc::Rc,
 };
-
-use crate::VisFormat;
 
 use super::SymExContext;
 
@@ -89,7 +88,6 @@ impl From<mir::CastKind> for CastKind {
 #[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub enum SymValueKind<'sym, 'tcx, T> {
     Var(usize, ty::Ty<'tcx>),
-    Ref(ty::Ty<'tcx>, SymValue<'sym, 'tcx, T>),
     Constant(Constant<'tcx>),
     CheckedBinaryOp(
         ty::Ty<'tcx>,
@@ -108,6 +106,7 @@ pub enum SymValueKind<'sym, 'tcx, T> {
         ProjectionElem<mir::Local, ty::Ty<'tcx>>,
         SymValue<'sym, 'tcx, T>,
     ),
+    Ref(SymValue<'sym, 'tcx, T>, Mutability),
     Aggregate(AggregateKind<'tcx>, &'sym [SymValue<'sym, 'tcx, T>]),
     Discriminant(SymValue<'sym, 'tcx, T>),
     Cast(CastKind, SymValue<'sym, 'tcx, T>, ty::Ty<'tcx>),
@@ -141,10 +140,6 @@ impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tc
     {
         match &self.kind {
             SymValueKind::Var(idx, ty, ..) => transformer.transform_var(arena, *idx, *ty),
-            SymValueKind::Ref(ty, val) => {
-                let transformed_val = val.apply_transformer(arena, transformer);
-                transformer.transform_ref(arena, *ty, transformed_val)
-            }
             SymValueKind::Constant(c) => transformer.transform_constant(arena, c),
             SymValueKind::CheckedBinaryOp(ty, op, lhs, rhs) => {
                 let transformed_lhs = lhs.apply_transformer(arena, transformer);
@@ -191,6 +186,10 @@ impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tc
                 transformer.transform_cast(arena, *kind, transformed_val, *ty)
             }
             SymValueKind::InternalError(_, _) => self,
+            SymValueKind::Ref(val, mutability) => {
+                let transformed_val = val.apply_transformer(arena, transformer);
+                transformer.transform_ref(arena, transformed_val, *mutability)
+            }
         }
     }
 }
@@ -199,7 +198,6 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueKind<'sym, 'tcx, T> {
     pub fn ty(&self, tcx: ty::TyCtxt<'tcx>) -> Ty<'tcx> {
         match self {
             SymValueKind::Var(_, ty, ..) => Ty::new(*ty, None),
-            SymValueKind::Ref(ty, _) => Ty::new(*ty, None),
             SymValueKind::Constant(c) => Ty::new(c.ty(), None),
             SymValueKind::CheckedBinaryOp(ty, _, _, _) => Ty::new(*ty, None),
             SymValueKind::BinaryOp(ty, _, _, _) => Ty::new(*ty, None),
@@ -267,6 +265,15 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueKind<'sym, 'tcx, T> {
             SymValueKind::Synthetic(sym_val) => sym_val.ty(tcx),
             SymValueKind::Cast(_, _, ty) => Ty::new(*ty, None),
             SymValueKind::InternalError(_, ty) => Ty::new(*ty, None),
+            SymValueKind::Ref(val, mutability) => {
+                let base_ty = val.kind.ty(tcx).rust_ty();
+                let ty = tcx.mk_ty_from_kind(ty::TyKind::Ref(
+                    tcx.lifetimes.re_erased,
+                    base_ty,
+                    *mutability
+                ));
+                Ty::new(ty, None)
+            }
         }
     }
 }
@@ -325,24 +332,6 @@ impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx>> SymValueTransf
         s: T,
     ) -> SymValue<'sym, 'tcx, T> {
         arena.mk_synthetic(s.optimize(arena, self.0))
-    }
-
-    fn transform_projection(
-        &mut self,
-        arena: &'sym SymExContext<'tcx>,
-        elem: ProjectionElem<mir::Local, ty::Ty<'tcx>>,
-        base: SymValue<'sym, 'tcx, T>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        match elem {
-            ProjectionElem::Deref => {
-                if let SymValueKind::Ref(_, inner) = base.kind {
-                    inner
-                } else {
-                    arena.mk_projection(elem, base.optimize(arena, self.0))
-                }
-            }
-            _ => arena.mk_projection(elem, base.optimize(arena, self.0)),
-        }
     }
 }
 

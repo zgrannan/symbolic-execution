@@ -9,6 +9,7 @@ use crate::{
     path::{AcyclicPath, Path},
     results::{ResultAssertion, ResultPath},
     rustc_interface::{
+        ast::Mutability,
         hir::def_id::DefId,
         middle::{
             mir::{self, Body, ProjectionElem, VarDebugInfo},
@@ -79,7 +80,7 @@ pub fn export_path_json<'sym, 'tcx, T: VisFormat>(
         serde_json::Value::Array(
             fpcs_loc
                 .extra
-                .actions(true)
+                .borrow_actions(true)
                 .iter()
                 .map(|action| action.to_json(repacker))
                 .collect(),
@@ -90,7 +91,7 @@ pub fn export_path_json<'sym, 'tcx, T: VisFormat>(
         serde_json::Value::Array(
             fpcs_loc
                 .extra
-                .actions(false)
+                .borrow_actions(false)
                 .iter()
                 .map(|action| action.to_json(repacker))
                 .collect(),
@@ -190,7 +191,6 @@ impl<'sym, 'tcx, T> SymValueKind<'sym, 'tcx, T> {
             SymValueKind::Var(_, _) | SymValueKind::Constant(_) | SymValueKind::Synthetic(_) => {
                 PrecCategory::Atom
             }
-            SymValueKind::Ref(_, _) => PrecCategory::Prefix,
             SymValueKind::CheckedBinaryOp(_, op, _, _) | SymValueKind::BinaryOp(_, op, _, _) => {
                 match op {
                     mir::BinOp::Mul | mir::BinOp::Div | mir::BinOp::Rem => {
@@ -227,6 +227,7 @@ impl<'sym, 'tcx, T> SymValueKind<'sym, 'tcx, T> {
             SymValueKind::Aggregate(_, _) | SymValueKind::Discriminant(_) => PrecCategory::Atom,
             SymValueKind::Cast(_, _, _) => PrecCategory::Prefix,
             SymValueKind::InternalError(_, _) => PrecCategory::Atom,
+            SymValueKind::Ref(_, _) => PrecCategory::Prefix,
         }
     }
 }
@@ -263,9 +264,6 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                 } else {
                     format!("α<sub>{}</sub>: {}", idx, ty)
                 }
-            }
-            SymValueKind::Ref(_, t) => {
-                format!("&{}", t.to_vis_string_prec(debug_info, self_category))
             }
             SymValueKind::Constant(c) => format!("{}", c.literal()),
             SymValueKind::CheckedBinaryOp(_, op, lhs, rhs)
@@ -345,7 +343,7 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                     crate::value::AggregateKind::Rust(_, _) => "R",
                     crate::value::AggregateKind::PCS(_, _) => "P",
                 };
-                format!("pack[{}]<{}>({})", pack_ty, kind.ty(), values_str)
+                format!("pack[{}]&lt;{}&gt;({})", pack_ty, kind.ty(), values_str)
             }
             SymValueKind::Discriminant(val) => {
                 format!("discriminant({})", val.to_vis_string(debug_info))
@@ -353,6 +351,12 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
             SymValueKind::Synthetic(s) => s.to_vis_string(debug_info),
             SymValueKind::Cast(_, _, _) => "todo!()".to_string(),
             SymValueKind::InternalError(err, _) => format!("INTERNAL ERROR: {}", err),
+            SymValueKind::Ref(val, Mutability::Mut) => {
+                format!("&mut{}", val.to_vis_string(debug_info))
+            }
+            SymValueKind::Ref(val, Mutability::Not) => {
+                format!("&{}", val.to_vis_string(debug_info))
+            }
         };
 
         if needs_parens(self_category, parent_category) {

@@ -1,7 +1,7 @@
 use crate::rustc_interface::{
     data_structures::fx::FxHasher,
     middle::{
-        mir::{self, ProjectionElem, tcx::PlaceTy},
+        mir::{self, tcx::PlaceTy, ProjectionElem},
         ty,
     },
 };
@@ -11,7 +11,7 @@ use std::{
 };
 
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct Place<'tcx>(pcs::utils::Place<'tcx>);
+pub struct Place<'tcx>(pub pcs::utils::Place<'tcx>);
 
 impl<'tcx> std::fmt::Debug for Place<'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -55,13 +55,20 @@ impl<'tcx> Place<'tcx> {
         self.0.local
     }
 
-    pub fn projection(&self) -> &[ProjectionElem<mir::Local, ty::Ty<'tcx>>] {
+    pub fn projection(&self) -> &'tcx [ProjectionElem<mir::Local, ty::Ty<'tcx>>] {
         &self.0.projection
+    }
+
+    pub fn project_deref(&self, tcx: ty::TyCtxt<'tcx>) -> Self {
+        Place(self.0.project_deref(tcx))
     }
 
     pub fn deref_target(&self) -> Option<Self> {
         if let Some(ProjectionElem::Deref) = self.0.projection.last() {
-            Some(Place::new(self.0.local, &self.0.projection[0..self.0.projection.len() - 1]))
+            Some(Place::new(
+                self.0.local,
+                &self.0.projection[0..self.0.projection.len() - 1],
+            ))
         } else {
             None
         }

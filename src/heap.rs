@@ -1,11 +1,14 @@
-use crate::rustc_interface::{
-    middle::{
-        mir::{self, Body, VarDebugInfo},
-        ty::{TyCtxt, TyKind},
-    },
-    span::ErrorGuaranteed,
-};
 use crate::{place::Place, value::Constant, VisFormat};
+use crate::{
+    rustc_interface::{
+        middle::{
+            mir::{self, Body, VarDebugInfo},
+            ty::{TyCtxt, TyKind},
+        },
+        span::ErrorGuaranteed,
+    },
+    util::assert_tys_match,
+};
 use pcs::{borrows::engine::BorrowsDomain, visualization::get_source_name_from_place};
 use std::collections::BTreeMap;
 
@@ -14,58 +17,34 @@ use super::{
     SymExContext,
 };
 
-pub(crate) struct HeapWrapper<'heap, 'sym, 'tcx, T>(
-    pub &'heap mut SymbolicHeap<'sym, 'tcx, T>,
+pub(crate) struct SymbolicHeap<'mir, 'sym, 'tcx, T>(
+    pub &'mir mut HeapData<'sym, 'tcx, T>,
     TyCtxt<'tcx>,
-    &'heap Body<'tcx>,
+    &'mir Body<'tcx>,
 );
 
-impl<'heap, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
-    HeapWrapper<'heap, 'sym, 'tcx, T>
+impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
+    SymbolicHeap<'mir, 'sym, 'tcx, T>
 {
     pub fn new(
-        heap: &'heap mut SymbolicHeap<'sym, 'tcx, T>,
+        heap: &'mir mut HeapData<'sym, 'tcx, T>,
         tcx: TyCtxt<'tcx>,
-        body: &'heap Body<'tcx>,
+        body: &'mir Body<'tcx>,
     ) -> Self {
-        HeapWrapper(heap, tcx, body)
+        SymbolicHeap(heap, tcx, body)
     }
     pub fn insert(&mut self, place: Place<'tcx>, value: SymValue<'sym, 'tcx, T>) {
         let place_ty = place.ty(self.2, self.1);
         let value_ty = value.kind.ty(self.1);
-        assert_eq!(
-            self.1.erase_regions(place_ty.ty),
-            self.1.erase_regions(value_ty.rust_ty())
-        );
+        assert_tys_match(self.1, place_ty.ty, value_ty.rust_ty());
         self.0.insert(place, value);
-    }
-
-    pub fn encode_operand(
-        &self,
-        arena: &'sym SymExContext<'tcx>,
-        operand: &mir::Operand<'tcx>,
-        borrows: &BorrowsDomain<'tcx>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        match *operand {
-            mir::Operand::Copy(place) | mir::Operand::Move(place) => {
-                self.0.get(&place.into()).unwrap_or_else(|| {
-                    arena.mk_internal_error(
-                        format!("Cannot place {:?}", place),
-                        arena.tcx.mk_ty_from_kind(TyKind::Error(
-                            ErrorGuaranteed::unchecked_claim_error_was_emitted(),
-                        )),
-                    )
-                })
-            }
-            mir::Operand::Constant(box c) => arena.mk_constant(Constant(c.clone())),
-        }
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct SymbolicHeap<'sym, 'tcx, T>(BTreeMap<Place<'tcx>, SymValue<'sym, 'tcx, T>>);
+pub struct HeapData<'sym, 'tcx, T>(BTreeMap<Place<'tcx>, SymValue<'sym, 'tcx, T>>);
 
-impl<'sym, 'tcx, T: VisFormat> SymbolicHeap<'sym, 'tcx, T> {
+impl<'sym, 'tcx, T: VisFormat> HeapData<'sym, 'tcx, T> {
     pub fn to_json(&self, debug_info: &[VarDebugInfo]) -> serde_json::Value {
         let map = self
             .0
@@ -88,7 +67,7 @@ impl<'sym, 'tcx, T: VisFormat> SymbolicHeap<'sym, 'tcx, T> {
     }
 }
 
-impl<'sym, 'tcx, T: std::fmt::Debug> SymbolicHeap<'sym, 'tcx, T> {
+impl<'sym, 'tcx, T: std::fmt::Debug> HeapData<'sym, 'tcx, T> {
     // pub fn check_eq_debug(&self, other: &Self) {
     //     for (p, v) in self.0.iter() {
     //         if !other.0.contains_key(&p) {
@@ -107,10 +86,10 @@ impl<'sym, 'tcx, T: std::fmt::Debug> SymbolicHeap<'sym, 'tcx, T> {
     // }
 
     pub fn new() -> Self {
-        SymbolicHeap(BTreeMap::new())
+        HeapData(BTreeMap::new())
     }
 
-    pub fn insert(&mut self, place: Place<'tcx>, value: SymValue<'sym, 'tcx, T>) {
+    fn insert(&mut self, place: Place<'tcx>, value: SymValue<'sym, 'tcx, T>) {
         self.0.insert(place, value);
     }
 

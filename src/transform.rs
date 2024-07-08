@@ -1,4 +1,5 @@
 use crate::{rustc_interface::{
+    ast::Mutability,
     abi::VariantIdx,
     const_eval::interpret::ConstValue,
     data_structures::fx::FxHasher,
@@ -18,14 +19,6 @@ pub trait SymValueTransformer<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> {
         ty: ty::Ty<'tcx>,
     ) -> SymValue<'sym, 'tcx, T> {
         arena.mk_var(idx, ty)
-    }
-    fn transform_ref(
-        &mut self,
-        arena: &'sym SymExContext<'tcx>,
-        ty: ty::Ty<'tcx>,
-        val: SymValue<'sym, 'tcx, T>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_ref(ty, val)
     }
     fn transform_constant(
         &mut self,
@@ -94,6 +87,14 @@ pub trait SymValueTransformer<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> {
         ty: ty::Ty<'tcx>,
     ) -> SymValue<'sym, 'tcx, T> {
         arena.mk_cast(kind, val, ty)
+    }
+    fn transform_ref(
+        &mut self,
+        arena: &'sym SymExContext<'tcx>,
+        val: SymValue<'sym, 'tcx, T>,
+        mutability: Mutability,
+    ) -> SymValue<'sym, 'tcx, T> {
+        arena.mk_ref(val, mutability)
     }
 
     fn transform_synthetic(&mut self, arena: &'sym SymExContext<'tcx>, s: T) -> SymValue<'sym, 'tcx, T>;
