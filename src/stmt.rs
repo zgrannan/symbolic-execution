@@ -20,7 +20,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         pcs: &FreePcsLocation<'tcx, BorrowsDomain<'tcx>>,
     ) {
-        let reborrows = &pcs.extra.after.reborrows;
+        let reborrows = &pcs.extra.after.reborrows();
         match &stmt.kind {
             mir::StatementKind::Assign(box (place, rvalue)) => {
                 match place.ty(&self.body.local_decls, self.tcx).ty.kind() {

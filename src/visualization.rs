@@ -76,6 +76,28 @@ pub fn export_path_json<'sym, 'tcx, T: VisFormat>(
         ),
     );
     json_object.insert(
+        "reborrow_actions_start".to_string(),
+        serde_json::Value::Array(
+            fpcs_loc
+                .extra
+                .reborrow_actions(true)
+                .iter()
+                .map(|action| action.to_json(repacker))
+                .collect(),
+        ),
+    );
+    json_object.insert(
+        "reborrow_actions_mid".to_string(),
+        serde_json::Value::Array(
+            fpcs_loc
+                .extra
+                .reborrow_actions(false)
+                .iter()
+                .map(|action| action.to_json(repacker))
+                .collect(),
+        ),
+    );
+    json_object.insert(
         "borrow_actions_start".to_string(),
         serde_json::Value::Array(
             fpcs_loc

@@ -85,6 +85,13 @@ impl<'tcx> Place<'tcx> {
     pub fn ty(&self, body: &mir::Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> PlaceTy<'tcx> {
         (*self.0).ty(body, tcx)
     }
+
+    pub fn is_mut_ref(&self, body: &mir::Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> bool {
+        match self.ty(body, tcx).ty.kind() {
+            ty::TyKind::Ref(_, _, mutbl) => mutbl.is_mut(),
+            _ => false,
+        }
+    }
 }
 
 fn hash<T: Hash>(t: T) -> u64 {

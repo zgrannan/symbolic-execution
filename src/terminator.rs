@@ -26,7 +26,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         loc: &FreePcsLocation<'tcx, BorrowsDomain<'tcx>>,
     ) {
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
-        let reborrows = &loc.extra.after.reborrows;
+        let reborrows = &loc.extra.after.reborrows();
         match &terminator.kind {
             mir::TerminatorKind::Drop { target, .. }
             | mir::TerminatorKind::FalseEdge {
@@ -125,10 +125,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 let sym_var = self.mk_fresh_symvar(
                                     destination.ty(&self.body.local_decls, self.tcx).ty,
                                 );
-                                eprintln!(
-                                    "Call to {:?} with substs {:?} resulted in fresh symvar {:?}",
-                                    def_id, substs, sym_var
-                                );
                                 add_debug_note!(
                                     sym_var.debug_info,
                                     "Fresh symvar for call to {:?}",
@@ -142,8 +138,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         result,
                         PathConditionPredicate::Postcondition(*def_id, substs, encoded_args),
                     ));
-                    self.handle_reborrow_actions(loc.extra.reborrow_actions(true), &mut heap);
-                    self.handle_reborrow_actions(loc.extra.reborrow_actions(false), &mut heap);
+                    // self.handle_reborrow_actions(loc.extra.reborrow_actions(true), &mut heap);
+                    // self.handle_reborrow_actions(loc.extra.reborrow_actions(false), &mut heap);
                     if let Some(target) = target {
                         if let Some(path) = path.push_if_acyclic(*target) {
                             paths.push(path);
