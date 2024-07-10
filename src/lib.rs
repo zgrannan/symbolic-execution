@@ -137,23 +137,25 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         place: &Place<'tcx>,
         reborrows: &ReborrowingDag<'tcx>,
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
-        // let deref_of_place = place.project_deref(self.tcx);
-        // let value = if let Some((target, Mutability::Mut)) = reborrows.get_source(place.0) {
-        //     match target {
-        //         pcs::borrows::domain::MaybeOldPlace::Current { place } => {
-        //             self.encode_place(heap, &Place(place), reborrows)
-        //         }
-        //         pcs::borrows::domain::MaybeOldPlace::OldPlace(_) => todo!(),
-        //     }
-        // } else if let Some((target, Mutability::Mut)) = reborrows.get_source(deref_of_place.0) {
-        //     match target {
-        //         pcs::borrows::domain::MaybeOldPlace::Current { place } => {
-        //             let base = self.encode_place(heap, &Place(place), reborrows);
-        //             self.arena.mk_ref(base, Mutability::Mut)
-        //         }
-        //         pcs::borrows::domain::MaybeOldPlace::OldPlace(_) => todo!(),
-        //     }
-        // } else {
+        if place.is_mut_ref(self.body, self.tcx) {
+            return self.arena.mk_ref(
+                heap.get(&place.project_deref(self.tcx))
+                    .unwrap_or(self.arena.mk_internal_error(
+                        format!("Heap lookup failed for place: {:?}", place),
+                        self.arena.tcx.mk_ty_from_kind(TyKind::Error(
+                            ErrorGuaranteed::unchecked_claim_error_was_emitted(),
+                        )),
+                    )),
+                Mutability::Mut,
+            );
+        } else {
+            return heap.get(place).unwrap_or(self.arena.mk_internal_error(
+                format!("Heap lookup failed for place: {:?}", place),
+                self.arena.tcx.mk_ty_from_kind(TyKind::Error(
+                    ErrorGuaranteed::unchecked_claim_error_was_emitted(),
+                )),
+            ));
+        }
         let value = {
             let mut idx = 0;
             for (place, projection) in place.0.iter_projections() {
@@ -336,6 +338,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 }
             }
             let last_fpcs_loc = pcs_block.statements.last().unwrap();
+            assert!(pcs_block.statements.len() == block_data.statements.len() + 1);
             let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
             self.handle_repacks(&last_fpcs_loc.repacks_start, &mut heap);
             self.handle_terminator(
@@ -344,7 +347,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 &mut assertions,
                 &mut result_paths,
                 &mut path,
-                last_fpcs_loc,
+                pcs_block.terminator,
             );
             if let Some(debug_output_dir) = &self.debug_output_dir {
                 export_path_json(
@@ -386,19 +389,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => {
                 let place: Place<'tcx> = (*place).into();
-                if let Some((target, Mutability::Mut)) =
-                    reborrows.get_source(place.project_deref(self.tcx).0)
+                if let ty::TyKind::Ref(_, ty, Mutability::Mut) =
+                    place.ty(self.body, self.tcx).ty.kind()
                 {
-                    match target {
-                        pcs::borrows::domain::MaybeOldPlace::Current { place } => {
-                            heap.insert(
-                                place.deref().into(),
-                                self.mk_fresh_symvar((*place).ty(self.body, self.tcx).ty),
-                            );
-                        }
-                        pcs::borrows::domain::MaybeOldPlace::OldPlace(_) => {}
-                    }
-                }
+                    heap.insert(
+                        place.project_deref(self.tcx).into(),
+                        self.mk_fresh_symvar(*ty),
+                    );
+                };
             }
             mir::Operand::Constant(_) => {}
         }

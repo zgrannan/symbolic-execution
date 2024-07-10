@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use pcs::borrows::engine::BorrowsDomain;
-use pcs::free_pcs::FreePcsLocation;
+use pcs::free_pcs::{FreePcsLocation, FreePcsTerminator};
 
 use crate::heap::SymbolicHeap;
 use crate::path::Path;
@@ -23,10 +23,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         assertions: &mut BTreeSet<ResultAssertion<'sym, 'tcx, S::SymValSynthetic>>,
         result_paths: &mut BTreeSet<ResultPath<'sym, 'tcx, S::SymValSynthetic>>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
-        loc: &FreePcsLocation<'tcx, BorrowsDomain<'tcx>>,
+        loc: FreePcsTerminator<'tcx, BorrowsDomain<'tcx>>,
     ) {
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
-        let reborrows = &loc.extra.after.reborrows();
         match &terminator.kind {
             mir::TerminatorKind::Drop { target, .. }
             | mir::TerminatorKind::FalseEdge {
@@ -44,11 +43,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             }
             mir::TerminatorKind::SwitchInt { discr, targets } => {
                 let ty = discr.ty(&self.body.local_decls, self.tcx);
-                for (value, target) in targets.iter() {
+                for ((value, target), loc) in targets.iter().zip(loc.succs.iter()) {
                     let pred = PathConditionPredicate::Eq(value, ty);
                     if let Some(mut path) = path.push_if_acyclic(target) {
                         path.pcs.insert(PathConditionAtom::new(
-                            self.encode_operand(&path.heap, discr, reborrows),
+                            self.encode_operand(&path.heap, discr, &loc.extra.after.reborrows()),
                             pred.clone(),
                         ));
                         paths.push(path);
@@ -58,7 +57,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let pred =
                         PathConditionPredicate::Ne(targets.iter().map(|t| t.0).collect(), ty);
                     path.pcs.insert(PathConditionAtom::new(
-                        self.encode_operand(&path.heap, discr, reborrows),
+                        self.encode_operand(
+                            &path.heap,
+                            discr,
+                            loc.succs.last().unwrap().extra.after.reborrows(),
+                        ),
                         pred.clone(),
                     ));
                     paths.push(path);
@@ -70,7 +73,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 target,
                 ..
             } => {
-                let cond = self.encode_operand(&path.heap, cond, reborrows);
+                let cond = self.encode_operand(
+                    &path.heap,
+                    cond,
+                    &loc.succs.first().unwrap().extra.after.reborrows(),
+                );
                 assertions.insert((
                     path.path.clone(),
                     path.pcs.clone(),
@@ -88,6 +95,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 ..
             } => match func.ty(&self.body.local_decls, self.tcx).kind() {
                 ty::TyKind::FnDef(def_id, substs) => {
+                    let reborrows = &loc.succs.first().unwrap().extra.after.reborrows();
                     let encoded_args: Vec<_> = args
                         .iter()
                         .map(|arg| self.encode_operand(heap.0, arg, reborrows))
