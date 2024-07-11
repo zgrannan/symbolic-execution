@@ -1,20 +1,26 @@
 use pcs::{borrows::engine::BorrowsDomain, free_pcs::FreePcsLocation};
 
-use crate::{heap::SymbolicHeap, place::Place, rustc_interface::{
-    ast::Mutability,
-    hir::def_id::DefId,
-    middle::{
-        mir::{self, Body, ProjectionElem, VarDebugInfo},
-        ty::{self, GenericArgsRef, TyCtxt, TyKind},
+use crate::{
+    heap::SymbolicHeap,
+    place::Place,
+    rustc_interface::{
+        ast::Mutability,
+        hir::def_id::DefId,
+        middle::{
+            mir::{self, Body, ProjectionElem, VarDebugInfo},
+            ty::{self, GenericArgsRef, TyCtxt, TyKind},
+        },
+        span::ErrorGuaranteed,
     },
-    span::ErrorGuaranteed,
-}, value::AggregateKind};
+    value::AggregateKind,
+    LookupGet,
+};
 use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExecution};
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
-    pub fn handle_stmt(
+    pub(crate) fn handle_stmt(
         &mut self,
         stmt: &mir::Statement<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
@@ -64,10 +70,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     }
                     mir::Rvalue::Discriminant(target) => self
                         .arena
-                        .mk_discriminant(self.encode_place(heap.0, &(*target).into(), reborrows)),
+                        .mk_discriminant(self.encode_place::<LookupGet>(heap.0, &(*target).into())),
                     mir::Rvalue::Ref(_, kind, place) => match kind {
                         mir::BorrowKind::Shared => {
-                            let base = self.encode_place(heap.0, &(*place).into(), reborrows);
+                            let base = self.encode_place::<LookupGet>(heap.0, &(*place).into());
                             self.arena.mk_ref(base, Mutability::Not)
                         }
                         _ => return,

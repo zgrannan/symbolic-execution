@@ -2,6 +2,7 @@
 #![feature(box_patterns)]
 #![feature(associated_type_bounds)]
 #![feature(let_chains)]
+#![feature(anonymous_lifetime_in_impl_trait)]
 
 pub mod context;
 mod debug_info;
@@ -38,7 +39,7 @@ use pcs::{
         engine::{BorrowAction, BorrowsDomain, ReborrowAction},
         reborrowing_dag::ReborrowingDag,
     },
-    combined_pcs::{PlaceCapabilitySummary, UnblockTree},
+    combined_pcs::{PlaceCapabilitySummary, UnblockAction, UnblockEdgeType, UnblockGraph},
     free_pcs::{CapabilitySummary, FreePcsLocation, RepackOp},
     FpcsOutput,
 };
@@ -96,6 +97,39 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     debug_output_dir: Option<String>,
 }
 
+trait LookupType {
+    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym>;
+    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug>(
+        heap: Self::Heap<'heap, 'sym, 'tcx, S>,
+        place: &Place<'tcx>,
+    ) -> Option<SymValue<'sym, 'tcx, S>>;
+}
+
+struct LookupGet;
+struct LookupTake;
+
+impl LookupType for LookupGet {
+    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym> = &'heap HeapData<'sym, 'tcx, S>;
+
+    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug>(
+        heap: Self::Heap<'heap, 'sym, 'tcx, S>,
+        place: &Place<'tcx>,
+    ) -> Option<SymValue<'sym, 'tcx, S>> {
+        heap.get(place)
+    }
+}
+
+impl LookupType for LookupTake {
+    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym> = &'heap mut HeapData<'sym, 'tcx, S>;
+
+    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug>(
+        heap: Self::Heap<'heap, 'sym, 'tcx, S>,
+        place: &Place<'tcx>,
+    ) -> Option<SymValue<'sym, 'tcx, S>> {
+        heap.take(place)
+    }
+}
+
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
@@ -119,97 +153,38 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
     }
 
-    fn heap_lookup_error(&self, message: String) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
-        self.arena.mk_internal_error(
-            message,
-            self.arena.tcx.mk_ty_from_kind(TyKind::Error(
-                ErrorGuaranteed::unchecked_claim_error_was_emitted(),
-            )),
-        )
-    }
-
     /// Encodes the symbolic value that the place currently holds. In the most
-    /// simple cases, this is simply a heap lookup. For projections from shared
-    /// references, the projection after the deref is encoded into the symval
-    fn encode_place(
-        &mut self,
-        heap: &HeapData<'sym, 'tcx, S::SymValSynthetic>,
+    /// simple cases, this is simply a heap lookup. If the place to lookup is a
+    /// reference, we return a reference to the dereferenced value in the heap.
+    fn encode_place<'heap, T: LookupType>(
+        &self,
+        heap: T::Heap<'heap, 'sym, 'tcx, S::SymValSynthetic>,
         place: &Place<'tcx>,
-        reborrows: &ReborrowingDag<'tcx>,
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
-        if place.is_mut_ref(self.body, self.tcx) {
+        if place.0.is_ref(self.body, self.tcx) {
             return self.arena.mk_ref(
-                heap.get(&place.project_deref(self.tcx))
-                    .unwrap_or(self.arena.mk_internal_error(
-                        format!("Heap lookup failed for place: {:?}", place),
+                T::lookup(heap, &place.project_deref(self.tcx)).unwrap_or(
+                    self.arena.mk_internal_error(
+                        format!("Heap lookup failed for place [{:?}]", place),
                         self.arena.tcx.mk_ty_from_kind(TyKind::Error(
                             ErrorGuaranteed::unchecked_claim_error_was_emitted(),
                         )),
-                    )),
-                Mutability::Mut,
+                    ),
+                ),
+                if place.0.is_mut_ref(self.body, self.tcx) {
+                    Mutability::Mut
+                } else {
+                    Mutability::Not
+                },
             );
         } else {
-            return heap.get(place).unwrap_or(self.arena.mk_internal_error(
-                format!("Heap lookup failed for place: {:?}", place),
+            return T::lookup(heap, place).unwrap_or(self.arena.mk_internal_error(
+                format!("Heap lookup failed for place: [{:?}]", place),
                 self.arena.tcx.mk_ty_from_kind(TyKind::Error(
                     ErrorGuaranteed::unchecked_claim_error_was_emitted(),
                 )),
             ));
         }
-        let value = {
-            let mut idx = 0;
-            for (place, projection) in place.0.iter_projections() {
-                if matches!(projection, ProjectionElem::Deref) {
-                    let ty = place.ty(&self.body.local_decls, self.tcx).ty;
-                    if ty.is_box() {
-                        idx += 1;
-                        continue;
-                    }
-                    match place.ty(&self.body.local_decls, self.tcx).ty.kind() {
-                        ty::TyKind::Ref(_, _, Mutability::Mut) => {
-                            // For mutable references, the dereference should be
-                            // a key in the heap, but for immutable references,
-                            // the place is encoded as a "reference to" a
-                            // symbolic value
-                            idx += 1;
-                        }
-                        _ => {}
-                    }
-                    break;
-                }
-                idx += 1;
-            }
-            let (projection_to_lookup, projection_to_encode) = place.projection().split_at(idx);
-            let place_to_lookup = Place::new(place.local(), projection_to_lookup);
-            let mut v = heap.get(&place_to_lookup).unwrap_or_else(|| {
-                self.heap_lookup_error(format!(
-                    "Heap lookup failed for place: {:?} when encoding place {place:?}",
-                    place_to_lookup
-                ))
-            });
-
-            for proj in projection_to_encode {
-                v = self.arena.mk_projection(proj.clone(), v);
-            }
-            // TODO: comment why this is necessary when encoding args
-            // to function calls taking mutrefs as args
-            if matches!(
-                v.ty(self.tcx).rust_ty().kind(),
-                ty::TyKind::Ref(_, _, Mutability::Mut)
-            ) && projection_to_encode.is_empty()
-            {
-                v = self.arena.mk_ref(
-                    heap.get(&place.project_deref(self.tcx)).unwrap(),
-                    Mutability::Mut,
-                );
-            }
-            v
-        };
-        // assert_eq!(
-        //     self.tcx.erase_regions(value.ty(self.tcx).rust_ty()),
-        //     self.tcx.erase_regions(place.ty(&self.body, self.tcx).ty)
-        // );
-        value
     }
 
     fn encode_operand(
@@ -221,37 +196,34 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => {
                 let place: Place<'tcx> = (*place).into();
-                self.encode_place(heap, &place, reborrows)
+                self.encode_place::<LookupGet>(heap, &place)
             }
             mir::Operand::Constant(c) => self.arena.mk_constant(c.into()),
         }
     }
 
-    pub fn apply_tree(
+    fn apply_unblock_actions(
         &mut self,
-        tree: &UnblockTree<'tcx>,
+        actions: Vec<UnblockAction<'tcx>>,
+        reborrows: &ReborrowingDag<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
     ) {
-        match tree {
-            UnblockTree::Reborrow(reborrow, rest) => {
-                if let Some(rest) = rest {
-                    self.apply_tree(rest, heap);
+        for action in actions {
+            match action {
+                UnblockAction::TerminateReborrow {
+                    blocked_place,
+                    assigned_place,
+                } => {
+                    let reborrow = reborrows
+                        .iter()
+                        .find(|rb| {
+                            rb.assigned_place == assigned_place && rb.blocked_place == blocked_place
+                        })
+                        .unwrap();
+                    self.handle_removed_reborrow(reborrow, heap);
                 }
-                self.handle_removed_reborrow(reborrow, heap);
-            }
-            UnblockTree::Collapse(place, rest) => {
-                for rest in rest {
-                    self.apply_tree(rest, heap);
-                }
-                if !rest.is_empty() {
-                    self.handle_repack(
-                        &RepackOp::Collapse(
-                            *place,
-                            rest[0].root_place().place(),
-                            pcs::free_pcs::CapabilityKind::Exclusive,
-                        ),
-                        heap,
-                    );
+                UnblockAction::Collapse(place, places) => {
+                    self.collapse_place_from(&place.place(), &places[0].place(), heap);
                 }
             }
         }
@@ -280,7 +252,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
              * dereference. TODO: Explain why
              */
             match sym_var.ty(self.tcx).rust_ty().kind() {
-                ty::TyKind::Ref(_, _, Mutability::Mut) => {
+                ty::TyKind::Ref(_, _, _) => {
                     heap.insert(
                         place.project_deref(self.tcx),
                         self.arena.mk_projection(ProjectionElem::Deref, sym_var),
@@ -311,21 +283,25 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let fpcs_loc = &pcs_block.statements[stmt_idx];
                 let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
                 let reborrow_actions_start = fpcs_loc.extra.reborrow_actions(true);
-                self.handle_reborrow_actions(
+                let g1 = self.handle_reborrow_actions(
                     reborrow_actions_start,
-                    &fpcs_loc.extra.after, // TODO: Check
-                    &fpcs_loc.state,       // TODO: Not the state at the start
+                    &fpcs_loc.extra.before_start, // TODO: Check
+                    &fpcs_loc.state,              // TODO: Not the state at the start
                     &mut heap,
                 );
+                eprintln!("g1: {block:?} {stmt_idx:?} {:?}", g1);
+                eprintln!("Actions: {:?}", g1.clone().actions());
+                eprintln!("{:?}", fpcs_loc.extra.before_start);
                 self.handle_repacks(&fpcs_loc.repacks_start, &mut heap);
                 self.handle_repacks(&fpcs_loc.repacks_middle, &mut heap);
                 let reborrow_actions_end = fpcs_loc.extra.reborrow_actions(false);
-                self.handle_reborrow_actions(
+                let g2 = self.handle_reborrow_actions(
                     reborrow_actions_end,
-                    &fpcs_loc.extra.after, // TODO: Check
-                    &fpcs_loc.state,       // TODO: Not the state at the start
+                    &fpcs_loc.extra.before_after, // TODO: Check
+                    &fpcs_loc.state,              // TODO: Not the state at the start
                     &mut heap,
                 );
+                eprintln!("g2: {:?}", g2);
                 self.handle_stmt(stmt, &mut heap, fpcs_loc);
                 if let Some(debug_output_dir) = &self.debug_output_dir {
                     export_path_json(
@@ -426,17 +402,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         match reborrow.assigned_place {
             pcs::borrows::domain::MaybeOldPlace::Current { place } => {
                 let heap_value = if reborrow.mutability.is_mut() {
-                    heap.0.take(&place.deref().into())
+                    self.encode_place::<LookupTake>(heap.0, &place.deref().into())
                 } else {
-                    heap.0.get(&place.deref().into())
+                    self.encode_place::<LookupGet>(heap.0, &place.deref().into())
                 };
-                if let Some(value) = heap_value {
-                    match reborrow.blocked_place {
-                        pcs::borrows::domain::MaybeOldPlace::Current { place } => {
-                            heap.insert(place.deref().into(), value);
-                        }
-                        pcs::borrows::domain::MaybeOldPlace::OldPlace(_) => todo!(),
+                match reborrow.blocked_place {
+                    pcs::borrows::domain::MaybeOldPlace::Current { place } => {
+                        heap.insert(place.deref().into(), heap_value);
                     }
+                    pcs::borrows::domain::MaybeOldPlace::OldPlace(_) => todo!(),
                 }
             }
             pcs::borrows::domain::MaybeOldPlace::OldPlace(_) => todo!(),
@@ -449,61 +423,160 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         borrows: &BorrowsState<'tcx>,
         fpcs: &CapabilitySummary<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
-    ) {
-        let (add_actions, remove_actions) = reborrow_actions
-            .into_iter()
-            .partition::<Vec<_>, _>(|act| matches!(act, ReborrowAction::AddReborrow(..)));
-
-        assert!(remove_actions.len() <= 1);
-
-        if remove_actions.len() == 1 {
-            let tree =
-                UnblockTree::unblock_reborrow(remove_actions[0].clone().reborrow(), borrows, fpcs);
-            self.apply_tree(&tree, heap);
+    ) -> UnblockGraph<'tcx> {
+        let mut unblock_graph = UnblockGraph::new();
+        let mut places_to_expand = vec![];
+        let mut reborrows_to_add = vec![];
+        for action in reborrow_actions {
+            match action {
+                ReborrowAction::CollapsePlace(places, place) => {
+                    unblock_graph.unblock_place(place, borrows, fpcs);
+                }
+                ReborrowAction::ExpandPlace(place, places) => {
+                    places_to_expand.push((place, places));
+                }
+                ReborrowAction::AddReborrow(rb) => {
+                    reborrows_to_add.push(rb);
+                }
+                ReborrowAction::RemoveReborrow(rb) => {
+                    unblock_graph.unblock_reborrow(rb, borrows, fpcs);
+                }
+            }
         }
 
-        for action in add_actions {
-            let reborrow = action.reborrow();
-            let blocked_value = if reborrow.mutability.is_mut() {
-                heap.0.take(&reborrow.blocked_place.place().into()).unwrap()
+        self.apply_unblock_actions(unblock_graph.clone().actions(), &borrows.reborrows, heap);
+        places_to_expand.sort_by_key(|(p, _)| p.place().projection.len());
+        for (place, places) in places_to_expand {
+            if place.place().projection.len() == 0 {
+                // The expansion from x to *x isn't necessary!
+                continue;
+            }
+            let value = if place
+                .place()
+                .projects_shared_ref(self.fpcs_analysis.repacker())
+            {
+                heap.0.get(&place.place().into())
             } else {
-                heap.0
-                    .get(&reborrow.blocked_place.place().into())
-                    .unwrap_or_else(|| {
-                        self.arena.mk_internal_error(
-                            format!(
-                                "Place {:?} not found in heap[reborrow]",
-                                reborrow.blocked_place.place()
-                            ),
-                            (*reborrow.blocked_place.place()).ty(self.body, self.tcx).ty,
-                        )
-                    })
+                heap.0.take(&place.place().into())
+            };
+            let value = value.unwrap_or_else(|| {
+                self.arena.mk_internal_error(
+                    format!(
+                        "Place {:?} not found in heap[reborrow_expand]",
+                        place.place()
+                    ),
+                    (*place.place()).ty(self.body, self.tcx).ty,
+                )
+            });
+
+            // TODO: old places
+            self.explode_value(
+                &place.place(),
+                value,
+                places.iter().map(|p| (*p).into()),
+                heap,
+            );
+        }
+
+        for reborrow in reborrows_to_add {
+            let blocked_value = if reborrow.mutability.is_mut() {
+                self.encode_place::<LookupTake>(heap.0, &reborrow.blocked_place.place().into())
+            } else {
+                self.encode_place::<LookupGet>(heap.0, &reborrow.blocked_place.place().into())
             };
             heap.insert(reborrow.assigned_place.place().into(), blocked_value);
         }
-
-        // // Sorts the reborrows such that the one "holding the value" is the
-        // // first to be removed
-        // let reborrows_to_remove = TerminatedReborrows::new(reborrows_to_remove).reborrows();
-        // for reborrow in reborrows_to_remove {
-        //     match reborrow.assigned_place {
-        //         pcs::borrows::domain::MaybeOldPlace::Current { place } => {
-        //             if let Some(value) = heap.0.take(&place.deref().into()) {
-        //                 match reborrow.blocked_place {
-        //                     pcs::borrows::domain::MaybeOldPlace::Current { place } => {
-        //                         heap.insert(place.deref().into(), value);
-        //                     }
-        //                     pcs::borrows::domain::MaybeOldPlace::OldPlace(_) => todo!(),
-        //                 }
-        //             }
-        //         }
-        //         pcs::borrows::domain::MaybeOldPlace::OldPlace(_) => todo!(),
-        //     }
-        // }
+        unblock_graph
     }
 
     fn alloc_slice<T: Copy>(&self, t: &[T]) -> &'sym [T] {
         self.arena.alloc_slice(t)
+    }
+
+    fn explode_value(
+        &self,
+        place: &pcs::utils::Place<'tcx>,
+        value: SymValue<'sym, 'tcx, S::SymValSynthetic>,
+        places: impl Iterator<Item = pcs::utils::Place<'tcx>>,
+        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+    ) {
+        let old_proj_len = place.projection.len();
+        for f in places {
+            assert_eq!(f.projection.len(), place.projection.len() + 1);
+            let mut value = value;
+            for elem in f.projection.iter().skip(old_proj_len) {
+                value = self.arena.mk_projection(elem.clone(), value);
+            }
+            heap.insert(f.deref().into(), value)
+        }
+    }
+
+    fn expand_place_with_guide(
+        &self,
+        place: &pcs::utils::Place<'tcx>,
+        guide: &pcs::utils::Place<'tcx>,
+        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+    ) {
+        let value = match place.ty(self.fpcs_analysis.repacker()).ty.kind() {
+            ty::TyKind::Ref(_, _, Mutability::Mut) => {
+                // Expanding x into *x shouldn't expand sth in the heap
+                return;
+            }
+            ty::TyKind::Ref(_, _, Mutability::Not) => heap.0.get(&place.deref().into()),
+            _ => heap.0.take(&place.deref().into()),
+        };
+        let value = value.unwrap_or_else(|| {
+            self.arena.mk_internal_error(
+                format!("Place {:?} not found in heap[repack]", place),
+                place.ty(self.fpcs_analysis.repacker()).ty,
+            )
+        });
+        let (field, rest, _) = place.expand_one_level(*guide, self.fpcs_analysis.repacker());
+        self.explode_value(
+            place,
+            value,
+            std::iter::once(field).chain(rest.into_iter()),
+            heap,
+        );
+    }
+
+    fn collapse_place_from(
+        &self,
+        place: &pcs::utils::Place<'tcx>,
+        from: &pcs::utils::Place<'tcx>,
+        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+    ) {
+        if place.ty(self.fpcs_analysis.repacker()).ty.is_ref() {
+            return;
+        }
+        let place_ty = place.ty(self.fpcs_analysis.repacker());
+        let args: Vec<_> = if from.is_downcast_of(*place).is_some() || place_ty.ty.is_box() {
+            vec![heap.0.take(&((*from).into())).unwrap()]
+        } else {
+            place
+                .expand_field(None, self.fpcs_analysis.repacker())
+                .iter()
+                .map(|p| {
+                    let place_to_take = &p.deref().into();
+                    heap.0.take(place_to_take).unwrap_or_else(|| {
+                        self.arena.mk_internal_error(
+                            format!("Place {:?} not found in heap[collapse]", place_to_take),
+                            place_to_take.ty(&self.body, self.tcx).ty,
+                        )
+                    })
+                })
+                .collect()
+        };
+        heap.insert(
+            place.deref().into(),
+            self.arena.mk_aggregate(
+                AggregateKind::pcs(
+                    place_ty.ty,
+                    from.ty(self.fpcs_analysis.repacker()).variant_index,
+                ),
+                self.arena.alloc_slice(&args),
+            ),
+        );
     }
 
     fn handle_repack(
@@ -515,69 +588,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             RepackOp::StorageDead(_) => todo!(),
             RepackOp::IgnoreStorageDead(_) => {}
             RepackOp::Weaken(_, _, _) => {}
-            RepackOp::Expand(place, guide, _) => {
-                let value = match place.ty(self.fpcs_analysis.repacker()).ty.kind() {
-                    ty::TyKind::Ref(_, _, Mutability::Mut) => {
-                        // Expanding x into *x shouldn't expand sth in the heap
-                        return;
-                    }
-                    ty::TyKind::Ref(_, _, Mutability::Not) => heap.0.get(&place.deref().into()),
-                    _ => heap.0.take(&place.deref().into()),
-                };
-                let value = value.unwrap_or_else(|| {
-                    self.arena.mk_internal_error(
-                        format!("Place {:?} not found in heap[repack]", place),
-                        place.ty(self.fpcs_analysis.repacker()).ty,
-                    )
-                });
-                let old_proj_len = place.projection.len();
-                let (field, rest, _) =
-                    place.expand_one_level(*guide, self.fpcs_analysis.repacker());
-                for f in std::iter::once(&field).chain(rest.iter()) {
-                    let mut value = value;
-                    for elem in f.projection.iter().skip(old_proj_len) {
-                        value = self.arena.mk_projection(elem.clone(), value);
-                    }
-                    heap.insert(f.deref().into(), value)
-                }
-            }
-            RepackOp::Collapse(place, from, _) => {
-                if place.ty(self.fpcs_analysis.repacker()).ty.is_ref() {
-                    return;
-                }
-                let place_ty = place.ty(self.fpcs_analysis.repacker());
-                let args: Vec<_> = if from.is_downcast_of(*place).is_some() || place_ty.ty.is_box()
-                {
-                    vec![heap.0.take(&((*from).into())).unwrap()]
-                } else {
-                    place
-                        .expand_field(None, self.fpcs_analysis.repacker())
-                        .iter()
-                        .map(|p| {
-                            let place_to_take = &p.deref().into();
-                            heap.0.take(place_to_take).unwrap_or_else(|| {
-                                self.arena.mk_internal_error(
-                                    format!(
-                                        "Place {:?} not found in heap[collapse]",
-                                        place_to_take
-                                    ),
-                                    place_to_take.ty(&self.body, self.tcx).ty,
-                                )
-                            })
-                        })
-                        .collect()
-                };
-                heap.insert(
-                    place.deref().into(),
-                    self.arena.mk_aggregate(
-                        AggregateKind::pcs(
-                            place_ty.ty,
-                            from.ty(self.fpcs_analysis.repacker()).variant_index,
-                        ),
-                        self.arena.alloc_slice(&args),
-                    ),
-                );
-            }
+            RepackOp::Expand(place, guide, _) => self.expand_place_with_guide(place, guide, heap),
+            RepackOp::Collapse(place, from, _) => self.collapse_place_from(place, from, heap),
             RepackOp::DerefShallowInit(_, _) => todo!(),
         }
     }

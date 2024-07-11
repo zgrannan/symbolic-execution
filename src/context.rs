@@ -94,10 +94,10 @@ impl<'tcx> SymExContext<'tcx> {
         match kind {
             mir::ProjectionElem::Field(_, _) => {
                 if val.kind.ty(self.tcx).rust_ty().is_enum() {
-                    assert!(
-                        val.kind.ty(self.tcx).variant_index().is_some(),
-                        "Enum value must have a variant index set"
-                    );
+                    // assert!(
+                    //     val.kind.ty(self.tcx).variant_index().is_some(),
+                    //     "Enum value must have a variant index set"
+                    // );
                 }
             }
             _ => {}

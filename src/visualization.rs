@@ -23,7 +23,7 @@ pub trait VisFormat {
     fn to_vis_string(&self, debug_info: &[VarDebugInfo]) -> String;
 }
 
-pub fn export_path_json<'sym, 'tcx, T: VisFormat>(
+pub fn export_path_json<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>>(
     debug_output_dir: &str,
     path: &Path<'sym, 'tcx, T>,
     fpcs_loc: &FreePcsLocation<BorrowsDomain<'tcx>>,
@@ -49,7 +49,8 @@ pub fn export_path_json<'sym, 'tcx, T: VisFormat>(
     );
     json_object.insert(
         "heap".to_string(),
-        path.heap.to_json(&repacker.body().var_debug_info),
+        path.heap
+            .to_json(repacker.tcx(), &repacker.body().var_debug_info),
     );
     json_object.insert(
         "borrows".to_string(),
@@ -374,7 +375,7 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
             SymValueKind::Cast(_, _, _) => "todo!()".to_string(),
             SymValueKind::InternalError(err, _) => format!("INTERNAL ERROR: {}", err),
             SymValueKind::Ref(val, Mutability::Mut) => {
-                format!("&mut{}", val.to_vis_string(debug_info))
+                format!("&mut {}", val.to_vis_string(debug_info))
             }
             SymValueKind::Ref(val, Mutability::Not) => {
                 format!("&{}", val.to_vis_string(debug_info))

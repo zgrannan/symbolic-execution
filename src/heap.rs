@@ -44,8 +44,8 @@ impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct HeapData<'sym, 'tcx, T>(BTreeMap<Place<'tcx>, SymValue<'sym, 'tcx, T>>);
 
-impl<'sym, 'tcx, T: VisFormat> HeapData<'sym, 'tcx, T> {
-    pub fn to_json(&self, debug_info: &[VarDebugInfo]) -> serde_json::Value {
+impl<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>> HeapData<'sym, 'tcx, T> {
+    pub fn to_json(&self, tcx: TyCtxt<'tcx>, debug_info: &[VarDebugInfo]) -> serde_json::Value {
         let map = self
             .0
             .iter()
@@ -56,11 +56,12 @@ impl<'sym, 'tcx, T: VisFormat> HeapData<'sym, 'tcx, T> {
                         .unwrap_or_else(|| format!("{:?}", place))
                 );
                 let value_str = format!("{}", value.to_vis_string(debug_info));
+                let ty_str = format!("{}", value.ty(tcx));
 
                 if acc.contains_key(&key) {
                     panic!("Duplicate key found: {} in {:?}", key, debug_info);
                 }
-                acc.insert(key, value_str);
+                acc.insert(key, serde_json::json!({ "value": value_str, "ty": ty_str }));
                 acc
             });
         serde_json::to_value(map).unwrap()
