@@ -522,15 +522,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 // Expanding x into *x shouldn't expand sth in the heap
                 return;
             }
-            ty::TyKind::Ref(_, _, Mutability::Not) => heap.0.get(&place.deref().into()),
-            _ => heap.0.take(&place.deref().into()),
+            ty::TyKind::Ref(_, _, Mutability::Not) => {
+                self.encode_place::<LookupGet>(heap.0, &place.deref().into())
+            }
+            _ => self.encode_place::<LookupTake>(heap.0, &place.deref().into()),
         };
-        let value = value.unwrap_or_else(|| {
-            self.arena.mk_internal_error(
-                format!("Place {:?} not found in heap[repack]", place),
-                place.ty(self.fpcs_analysis.repacker()).ty,
-            )
-        });
         let (field, rest, _) = place.expand_one_level(*guide, self.fpcs_analysis.repacker());
         self.explode_value(
             place,
