@@ -23,10 +23,10 @@ pub trait VisFormat {
     fn to_vis_string(&self, debug_info: &[VarDebugInfo]) -> String;
 }
 
-pub fn export_path_json<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>>(
+pub fn export_path_json<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>, U>(
     debug_output_dir: &str,
     path: &Path<'sym, 'tcx, T>,
-    fpcs_loc: &FreePcsLocation<BorrowsDomain<'tcx>>,
+    fpcs_loc: &FreePcsLocation<BorrowsDomain<'tcx>, U>,
     instruction_index: usize,
     repacker: PlaceRepacker<'_, 'tcx>,
 ) {

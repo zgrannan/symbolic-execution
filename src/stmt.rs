@@ -1,4 +1,4 @@
-use pcs::{borrows::engine::BorrowsDomain, free_pcs::FreePcsLocation};
+use pcs::{borrows::engine::{BorrowsDomain, ReborrowAction}, free_pcs::FreePcsLocation};
 
 use crate::{
     heap::SymbolicHeap,
@@ -24,15 +24,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         stmt: &mir::Statement<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
-        pcs: &FreePcsLocation<'tcx, BorrowsDomain<'tcx>>,
+        pcs: &FreePcsLocation<'tcx, BorrowsDomain<'tcx>, ReborrowAction<'tcx>>,
     ) {
         let reborrows = &pcs.extra.after.reborrows();
         match &stmt.kind {
             mir::StatementKind::Assign(box (place, rvalue)) => {
-                match place.ty(&self.body.local_decls, self.tcx).ty.kind() {
-                    ty::TyKind::Ref(_, _, Mutability::Mut) => return,
-                    _ => {}
-                }
+                // match place.ty(&self.body.local_decls, self.tcx).ty.kind() {
+                //     ty::TyKind::Ref(_, _, Mutability::Mut) => return,
+                //     _ => {}
+                // }
                 let sym_value = match rvalue {
                     mir::Rvalue::Use(operand) => self.encode_operand(heap.0, &operand),
                     mir::Rvalue::CheckedBinaryOp(op, box (lhs, rhs)) => {

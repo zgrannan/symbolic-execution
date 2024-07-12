@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use pcs::borrows::engine::BorrowsDomain;
+use pcs::borrows::engine::{BorrowsDomain, ReborrowAction};
 use pcs::free_pcs::{FreePcsLocation, FreePcsTerminator};
 
 use crate::heap::SymbolicHeap;
@@ -23,7 +23,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         assertions: &mut BTreeSet<ResultAssertion<'sym, 'tcx, S::SymValSynthetic>>,
         result_paths: &mut BTreeSet<ResultPath<'sym, 'tcx, S::SymValSynthetic>>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
-        loc: FreePcsTerminator<'tcx, BorrowsDomain<'tcx>>,
+        loc: FreePcsTerminator<'tcx, BorrowsDomain<'tcx>, ReborrowAction<'tcx>>,
     ) {
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
         match &terminator.kind {
@@ -38,10 +38,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             }
             | mir::TerminatorKind::Goto { target } => {
                 if let Some(mut path) = path.push_if_acyclic(*target) {
-                    eprintln!("GOTOS {:?}", loc.succs[0].repacks_start);
-                    self.handle_repack_collapses(
-                        &loc.succs[0].repacks_start,
+                    self.handle_pcs(
+                        &loc.succs[0],
                         &mut SymbolicHeap::new(&mut path.heap, self.tcx, &self.body),
+                        true
+                    );
+                    self.handle_pcs(
+                        &loc.succs[0],
+                        &mut SymbolicHeap::new(&mut path.heap, self.tcx, &self.body),
+                        false
                     );
                     paths.push(path);
                 }
@@ -143,8 +148,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         result,
                         PathConditionPredicate::Postcondition(*def_id, substs, encoded_args),
                     ));
-                    // self.handle_reborrow_actions(loc.extra.reborrow_actions(true), &mut heap);
-                    // self.handle_reborrow_actions(loc.extra.reborrow_actions(false), &mut heap);
                     if let Some(target) = target {
                         if let Some(path) = path.push_if_acyclic(*target) {
                             paths.push(path);
@@ -158,8 +161,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 todo!("other terminator {:#?}", other)
             }
         }
-        if terminator.successors().next().is_none() {
-            self.add_to_result_paths_if_feasible(&path, result_paths);
+        match terminator.kind {
+            mir::TerminatorKind::Return => {
+                self.add_to_result_paths(&path, result_paths);
+            }
+            _ => {}
         }
     }
 }

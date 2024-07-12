@@ -17,25 +17,26 @@ use crate::{
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
-    pub (crate) fn handle_pcs(
+    pub(crate) fn handle_pcs(
         &mut self,
-        pcs: &FreePcsLocation<'tcx, BorrowsDomain<'tcx>>,
+        pcs: &FreePcsLocation<'tcx, BorrowsDomain<'tcx>, ReborrowAction<'tcx>>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         start: bool,
     ) {
-        let reborrow_actions = pcs.extra.reborrow_actions(start);
+        let reborrow_actions = if start {
+            pcs.extra_start.clone()
+        } else {
+            pcs.extra_middle.clone()
+        };
         let borrow_state = if start {
             &pcs.extra.before_start
         } else {
             &pcs.extra.before_after
         };
-        let g = self.handle_reborrow_collapses(
-            &reborrow_actions,
-            borrow_state,
-            &pcs.state,              // TODO: Not the state at the start
-            heap,
-        );
-        // eprintln!("{:?} {start:?} UG: {:?}", pcs.location, g);
+        let g = self.handle_reborrow_collapses(&reborrow_actions, borrow_state, heap);
+        if !g.is_empty() {
+            eprintln!("{:?} {start:?} UG: {:?}", pcs.location, g);
+        }
         let repacks = if start {
             &pcs.repacks_start
         } else {
@@ -43,12 +44,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         };
         self.handle_repack_collapses(repacks, heap);
         self.handle_repack_expands(repacks, heap);
-        self.handle_reborrow_expands(
-            reborrow_actions,
-            borrow_state,
-            &pcs.state,              // TODO: Not the state at the start
-            heap,
-        );
+        self.handle_reborrow_expands(reborrow_actions, heap);
     }
     pub(crate) fn handle_removed_reborrow(
         &self,
@@ -88,17 +84,16 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         reborrow_actions: &Vec<ReborrowAction<'tcx>>,
         borrows: &BorrowsState<'tcx>,
-        fpcs: &CapabilitySummary<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
     ) -> UnblockGraph<'tcx> {
         let mut unblock_graph = UnblockGraph::new();
         for action in reborrow_actions {
             match action {
                 ReborrowAction::CollapsePlace(places, place) => {
-                    unblock_graph.unblock_place(place.clone(), borrows, fpcs);
+                    unblock_graph.unblock_place(place.clone(), borrows);
                 }
                 ReborrowAction::RemoveReborrow(rb) => {
-                    unblock_graph.unblock_reborrow(rb.clone(), borrows, fpcs);
+                    unblock_graph.unblock_reborrow(rb.clone(), borrows);
                 }
                 _ => {}
             }
@@ -111,8 +106,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     pub(crate) fn handle_reborrow_expands(
         &mut self,
         reborrow_actions: Vec<ReborrowAction<'tcx>>,
-        borrows: &BorrowsState<'tcx>,
-        fpcs: &CapabilitySummary<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
     ) {
         let mut places_to_expand = vec![];
