@@ -38,6 +38,9 @@ impl<'tcx> SymExContext<'tcx> {
         err: String,
         ty: ty::Ty<'tcx>,
     ) -> SymValue<'sym, 'tcx, T> {
+        if cfg!(feature = "crash_on_internal_error") {
+            panic!("{}", err);
+        }
         self.mk_sym_value(SymValueKind::InternalError(err, ty))
     }
 
@@ -94,10 +97,10 @@ impl<'tcx> SymExContext<'tcx> {
         match kind {
             mir::ProjectionElem::Field(_, _) => {
                 if val.kind.ty(self.tcx).rust_ty().is_enum() {
-                    // assert!(
-                    //     val.kind.ty(self.tcx).variant_index().is_some(),
-                    //     "Enum value must have a variant index set"
-                    // );
+                    assert!(
+                        val.kind.ty(self.tcx).variant_index().is_some(),
+                        "Enum value must have a variant index set"
+                    );
                 }
             }
             _ => {}

@@ -37,7 +37,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 ..
             }
             | mir::TerminatorKind::Goto { target } => {
-                if let Some(path) = path.push_if_acyclic(*target) {
+                if let Some(mut path) = path.push_if_acyclic(*target) {
+                    eprintln!("GOTOS {:?}", loc.succs[0].repacks_start);
+                    self.handle_repack_collapses(
+                        &loc.succs[0].repacks_start,
+                        &mut SymbolicHeap::new(&mut path.heap, self.tcx, &self.body),
+                    );
                     paths.push(path);
                 }
             }
@@ -57,10 +62,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let pred =
                         PathConditionPredicate::Ne(targets.iter().map(|t| t.0).collect(), ty);
                     path.pcs.insert(PathConditionAtom::new(
-                        self.encode_operand(
-                            &path.heap,
-                            discr,
-                        ),
+                        self.encode_operand(&path.heap, discr),
                         pred.clone(),
                     ));
                     paths.push(path);
@@ -72,10 +74,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 target,
                 ..
             } => {
-                let cond = self.encode_operand(
-                    &path.heap,
-                    cond,
-                );
+                let cond = self.encode_operand(&path.heap, cond);
                 assertions.insert((
                     path.path.clone(),
                     path.pcs.clone(),

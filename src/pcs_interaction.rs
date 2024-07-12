@@ -29,12 +29,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         } else {
             &pcs.extra.before_after
         };
-        self.handle_reborrow_collapses(
+        let g = self.handle_reborrow_collapses(
             &reborrow_actions,
             borrow_state,
             &pcs.state,              // TODO: Not the state at the start
             heap,
         );
+        // eprintln!("{:?} {start:?} UG: {:?}", pcs.location, g);
         let repacks = if start {
             &pcs.repacks_start
         } else {

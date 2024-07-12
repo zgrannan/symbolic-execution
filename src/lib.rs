@@ -10,6 +10,7 @@ pub mod havoc;
 pub mod heap;
 pub mod path;
 pub mod path_conditions;
+mod pcs_interaction;
 pub mod place;
 pub mod results;
 mod rustc_interface;
@@ -20,7 +21,6 @@ pub mod transform;
 mod util;
 pub mod value;
 pub mod visualization;
-mod pcs_interaction;
 
 use crate::rustc_interface::{
     ast::Mutability,
@@ -35,13 +35,11 @@ use context::SymExContext;
 use havoc::HavocData;
 use heap::{HeapData, SymbolicHeap};
 use pcs::{
-    borrows::{
-        domain::{BorrowsState, Reborrow, TerminatedReborrows},
-        engine::{BorrowAction, BorrowsDomain, ReborrowAction},
-        reborrowing_dag::ReborrowingDag,
-    },
-    combined_pcs::{PlaceCapabilitySummary, UnblockAction, UnblockEdgeType, UnblockGraph},
-    free_pcs::{CapabilitySummary, FreePcsLocation, RepackOp},
+    borrows::
+        reborrowing_dag::ReborrowingDag
+    ,
+    combined_pcs::UnblockAction,
+    free_pcs::RepackOp,
     FpcsOutput,
 };
 use results::{ResultAssertion, ResultPath, SymbolicExecutionResult};
@@ -164,14 +162,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
         if place.0.is_ref(self.body, self.tcx) {
             return self.arena.mk_ref(
-                T::lookup(heap, &place.project_deref(self.tcx)).unwrap_or(
+                T::lookup(heap, &place.project_deref(self.tcx)).unwrap_or_else(|| {
                     self.arena.mk_internal_error(
                         format!("Heap lookup failed for place [{:?}]", place),
                         self.arena.tcx.mk_ty_from_kind(TyKind::Error(
                             ErrorGuaranteed::unchecked_claim_error_was_emitted(),
                         )),
-                    ),
-                ),
+                    )
+                }),
                 if place.0.is_mut_ref(self.body, self.tcx) {
                     Mutability::Mut
                 } else {
@@ -179,12 +177,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 },
             );
         } else {
-            return T::lookup(heap, place).unwrap_or(self.arena.mk_internal_error(
-                format!("Heap lookup failed for place: [{:?}]", place),
-                self.arena.tcx.mk_ty_from_kind(TyKind::Error(
-                    ErrorGuaranteed::unchecked_claim_error_was_emitted(),
-                )),
-            ));
+            return T::lookup(heap, place).unwrap_or_else(|| {
+                self.arena.mk_internal_error(
+                    format!("Heap lookup failed for place: [{:?}]", place),
+                    self.arena.tcx.mk_ty_from_kind(TyKind::Error(
+                        ErrorGuaranteed::unchecked_claim_error_was_emitted(),
+                    )),
+                )
+            });
         }
     }
 
@@ -282,16 +282,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
                 let fpcs_loc = &pcs_block.statements[stmt_idx];
                 let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
-                self.handle_pcs(
-                    &fpcs_loc,
-                    &mut heap,
-                    true,
-                );
-                self.handle_pcs(
-                    &fpcs_loc,
-                    &mut heap,
-                    false,
-                );
+                self.handle_pcs(&fpcs_loc, &mut heap, true);
+                self.handle_pcs(&fpcs_loc, &mut heap, false);
                 self.handle_stmt(stmt, &mut heap, fpcs_loc);
                 if let Some(debug_output_dir) = &self.debug_output_dir {
                     export_path_json(
