@@ -47,7 +47,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let pred = PathConditionPredicate::Eq(value, ty);
                     if let Some(mut path) = path.push_if_acyclic(target) {
                         path.pcs.insert(PathConditionAtom::new(
-                            self.encode_operand(&path.heap, discr, &loc.extra.after.reborrows()),
+                            self.encode_operand(&path.heap, discr),
                             pred.clone(),
                         ));
                         paths.push(path);
@@ -60,7 +60,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         self.encode_operand(
                             &path.heap,
                             discr,
-                            loc.succs.last().unwrap().extra.after.reborrows(),
                         ),
                         pred.clone(),
                     ));
@@ -76,7 +75,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let cond = self.encode_operand(
                     &path.heap,
                     cond,
-                    &loc.succs.first().unwrap().extra.after.reborrows(),
                 );
                 assertions.insert((
                     path.path.clone(),
@@ -98,7 +96,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let reborrows = &loc.succs.first().unwrap().extra.after.reborrows();
                     let encoded_args: Vec<_> = args
                         .iter()
-                        .map(|arg| self.encode_operand(heap.0, arg, reborrows))
+                        .map(|arg| self.encode_operand(heap.0, arg))
                         .collect();
 
                     let encoded_args: &'sym [SymValue<'sym, 'tcx, S::SymValSynthetic>] =

@@ -34,10 +34,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     _ => {}
                 }
                 let sym_value = match rvalue {
-                    mir::Rvalue::Use(operand) => self.encode_operand(heap.0, &operand, reborrows),
+                    mir::Rvalue::Use(operand) => self.encode_operand(heap.0, &operand),
                     mir::Rvalue::CheckedBinaryOp(op, box (lhs, rhs)) => {
-                        let lhs = self.encode_operand(heap.0, &lhs, reborrows);
-                        let rhs = self.encode_operand(heap.0, &rhs, reborrows);
+                        let lhs = self.encode_operand(heap.0, &lhs);
+                        let rhs = self.encode_operand(heap.0, &rhs);
                         self.arena.mk_checked_bin_op(
                             place.ty(&self.body.local_decls, self.tcx).ty,
                             *op,
@@ -46,8 +46,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         )
                     }
                     mir::Rvalue::BinaryOp(op, box (lhs, rhs)) => {
-                        let lhs = self.encode_operand(heap.0, &lhs, reborrows);
-                        let rhs = self.encode_operand(heap.0, &rhs, reborrows);
+                        let lhs = self.encode_operand(heap.0, &lhs);
+                        let rhs = self.encode_operand(heap.0, &rhs);
                         self.arena.mk_bin_op(
                             place.ty(&self.body.local_decls, self.tcx).ty,
                             *op,
@@ -58,7 +58,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     mir::Rvalue::Aggregate(kind, ops) => {
                         let ops = ops
                             .iter()
-                            .map(|op| self.encode_operand(heap.0, op, reborrows))
+                            .map(|op| self.encode_operand(heap.0, op))
                             .collect::<Vec<_>>();
                         self.arena.mk_aggregate(
                             AggregateKind::rust(
@@ -79,7 +79,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         _ => return,
                     },
                     mir::Rvalue::UnaryOp(op, operand) => {
-                        let operand = self.encode_operand(heap.0, operand, reborrows);
+                        let operand = self.encode_operand(heap.0, operand);
                         self.arena.mk_unary_op(
                             place.ty(&self.body.local_decls, self.tcx).ty,
                             *op,
@@ -87,7 +87,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         )
                     }
                     mir::Rvalue::Cast(kind, operand, ty) => {
-                        let operand = self.encode_operand(heap.0, operand, reborrows);
+                        let operand = self.encode_operand(heap.0, operand);
                         self.arena.mk_cast((*kind).into(), operand, *ty)
                     }
                     _ => todo!("{rvalue:?}"),

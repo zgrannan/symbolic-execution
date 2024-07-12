@@ -20,6 +20,7 @@ pub mod transform;
 mod util;
 pub mod value;
 pub mod visualization;
+mod pcs_interaction;
 
 use crate::rustc_interface::{
     ast::Mutability,
@@ -191,7 +192,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         heap: &HeapData<'sym, 'tcx, S::SymValSynthetic>,
         operand: &mir::Operand<'tcx>,
-        reborrows: &ReborrowingDag<'tcx>,
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
         match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => {
@@ -282,26 +282,16 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
                 let fpcs_loc = &pcs_block.statements[stmt_idx];
                 let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
-                let reborrow_actions_start = fpcs_loc.extra.reborrow_actions(true);
-                let g1 = self.handle_reborrow_actions(
-                    reborrow_actions_start,
-                    &fpcs_loc.extra.before_start, // TODO: Check
-                    &fpcs_loc.state,              // TODO: Not the state at the start
+                self.handle_pcs(
+                    &fpcs_loc,
                     &mut heap,
+                    true,
                 );
-                eprintln!("g1: {block:?} {stmt_idx:?} {:?}", g1);
-                eprintln!("Actions: {:?}", g1.clone().actions());
-                eprintln!("{:?}", fpcs_loc.extra.before_start);
-                self.handle_repacks(&fpcs_loc.repacks_start, &mut heap);
-                self.handle_repacks(&fpcs_loc.repacks_middle, &mut heap);
-                let reborrow_actions_end = fpcs_loc.extra.reborrow_actions(false);
-                let g2 = self.handle_reborrow_actions(
-                    reborrow_actions_end,
-                    &fpcs_loc.extra.before_after, // TODO: Check
-                    &fpcs_loc.state,              // TODO: Not the state at the start
+                self.handle_pcs(
+                    &fpcs_loc,
                     &mut heap,
+                    false,
                 );
-                eprintln!("g2: {:?}", g2);
                 self.handle_stmt(stmt, &mut heap, fpcs_loc);
                 if let Some(debug_output_dir) = &self.debug_output_dir {
                     export_path_json(
@@ -316,7 +306,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             let last_fpcs_loc = pcs_block.statements.last().unwrap();
             assert!(pcs_block.statements.len() == block_data.statements.len() + 1);
             let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
-            self.handle_repacks(&last_fpcs_loc.repacks_start, &mut heap);
+            self.handle_repack_collapses(&last_fpcs_loc.repacks_start, &mut heap);
+            self.handle_repack_expands(&last_fpcs_loc.repacks_start, &mut heap);
             self.handle_terminator(
                 block_data.terminator(),
                 &mut paths,
@@ -382,111 +373,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let var = self.arena.mk_var(self.symvars.len(), ty);
         self.symvars.push(ty);
         var
-    }
-
-    fn handle_repacks(
-        &self,
-        repacks: &Vec<RepackOp<'tcx>>,
-        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
-    ) {
-        for repack in repacks {
-            self.handle_repack(repack, heap)
-        }
-    }
-
-    fn handle_removed_reborrow(
-        &self,
-        reborrow: &Reborrow<'tcx>,
-        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
-    ) {
-        match reborrow.assigned_place {
-            pcs::borrows::domain::MaybeOldPlace::Current { place } => {
-                let heap_value = if reborrow.mutability.is_mut() {
-                    self.encode_place::<LookupTake>(heap.0, &place.deref().into())
-                } else {
-                    self.encode_place::<LookupGet>(heap.0, &place.deref().into())
-                };
-                match reborrow.blocked_place {
-                    pcs::borrows::domain::MaybeOldPlace::Current { place } => {
-                        heap.insert(place.deref().into(), heap_value);
-                    }
-                    pcs::borrows::domain::MaybeOldPlace::OldPlace(_) => todo!(),
-                }
-            }
-            pcs::borrows::domain::MaybeOldPlace::OldPlace(_) => todo!(),
-        }
-    }
-
-    fn handle_reborrow_actions(
-        &mut self,
-        reborrow_actions: Vec<ReborrowAction<'tcx>>,
-        borrows: &BorrowsState<'tcx>,
-        fpcs: &CapabilitySummary<'tcx>,
-        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
-    ) -> UnblockGraph<'tcx> {
-        let mut unblock_graph = UnblockGraph::new();
-        let mut places_to_expand = vec![];
-        let mut reborrows_to_add = vec![];
-        for action in reborrow_actions {
-            match action {
-                ReborrowAction::CollapsePlace(places, place) => {
-                    unblock_graph.unblock_place(place, borrows, fpcs);
-                }
-                ReborrowAction::ExpandPlace(place, places) => {
-                    places_to_expand.push((place, places));
-                }
-                ReborrowAction::AddReborrow(rb) => {
-                    reborrows_to_add.push(rb);
-                }
-                ReborrowAction::RemoveReborrow(rb) => {
-                    unblock_graph.unblock_reborrow(rb, borrows, fpcs);
-                }
-            }
-        }
-
-        self.apply_unblock_actions(unblock_graph.clone().actions(), &borrows.reborrows, heap);
-        places_to_expand.sort_by_key(|(p, _)| p.place().projection.len());
-        for (place, places) in places_to_expand {
-            if place.place().projection.len() == 0 {
-                // The expansion from x to *x isn't necessary!
-                continue;
-            }
-            let value = if place
-                .place()
-                .projects_shared_ref(self.fpcs_analysis.repacker())
-            {
-                heap.0.get(&place.place().into())
-            } else {
-                heap.0.take(&place.place().into())
-            };
-            let value = value.unwrap_or_else(|| {
-                self.arena.mk_internal_error(
-                    format!(
-                        "Place {:?} not found in heap[reborrow_expand]",
-                        place.place()
-                    ),
-                    (*place.place()).ty(self.body, self.tcx).ty,
-                )
-            });
-
-            // TODO: old places
-            self.explode_value(
-                &place.place(),
-                value,
-                places.iter().map(|p| (*p).into()),
-                heap,
-            );
-        }
-
-        for reborrow in reborrows_to_add {
-            let blocked_value = if reborrow.mutability.is_mut() {
-                self.encode_place::<LookupTake>(heap.0, &reborrow.blocked_place.place().into())
-            } else {
-                self.encode_place::<LookupGet>(heap.0, &reborrow.blocked_place.place().into())
-            };
-            heap.insert(reborrow.assigned_place.place().into(), blocked_value);
-        }
-        unblock_graph
     }
 
     fn alloc_slice<T: Copy>(&self, t: &[T]) -> &'sym [T] {
