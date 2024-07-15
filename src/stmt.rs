@@ -1,7 +1,11 @@
-use pcs::{borrows::engine::{BorrowsDomain, ReborrowAction}, free_pcs::FreePcsLocation};
+use pcs::{
+    borrows::engine::{BorrowsDomain, ReborrowAction},
+    free_pcs::FreePcsLocation,
+};
 
 use crate::{
     heap::SymbolicHeap,
+    pcs_interaction::PcsLocation,
     place::Place,
     rustc_interface::{
         ast::Mutability,
@@ -13,7 +17,7 @@ use crate::{
         span::ErrorGuaranteed,
     },
     value::AggregateKind,
-    LookupGet,
+    LookupGet, LookupTake,
 };
 use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExecution};
 
@@ -24,17 +28,23 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         stmt: &mir::Statement<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
-        pcs: &FreePcsLocation<'tcx, BorrowsDomain<'tcx>, ReborrowAction<'tcx>>,
+        pcs: &PcsLocation<'tcx>,
     ) {
-        let reborrows = &pcs.extra.after.reborrows();
         match &stmt.kind {
             mir::StatementKind::Assign(box (place, rvalue)) => {
-                // match place.ty(&self.body.local_decls, self.tcx).ty.kind() {
-                //     ty::TyKind::Ref(_, _, Mutability::Mut) => return,
-                //     _ => {}
-                // }
                 let sym_value = match rvalue {
-                    mir::Rvalue::Use(operand) => self.encode_operand(heap.0, &operand),
+                    mir::Rvalue::Use(operand) => {
+                        let value = self.encode_operand(heap.0, &operand);
+                        if operand.ty(&self.body.local_decls, self.tcx).is_ref() {
+                            let place: Place<'tcx> = (*place).into();
+                            return heap.insert(
+                                place.project_deref(self.tcx),
+                                self.arena.mk_projection(ProjectionElem::Deref, value),
+                            );
+                        } else {
+                            value
+                        }
+                    }
                     mir::Rvalue::CheckedBinaryOp(op, box (lhs, rhs)) => {
                         let lhs = self.encode_operand(heap.0, &lhs);
                         let rhs = self.encode_operand(heap.0, &rhs);
@@ -71,13 +81,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     mir::Rvalue::Discriminant(target) => self
                         .arena
                         .mk_discriminant(self.encode_place::<LookupGet>(heap.0, &(*target).into())),
-                    mir::Rvalue::Ref(_, kind, place) => match kind {
-                        mir::BorrowKind::Shared => {
-                            let base = self.encode_place::<LookupGet>(heap.0, &(*place).into());
-                            self.arena.mk_ref(base, Mutability::Not)
-                        }
-                        _ => return,
-                    },
+                    mir::Rvalue::Ref(_, kind, referred_place) => {
+                        let base = if *kind == mir::BorrowKind::Shared {
+                            self.encode_place::<LookupGet>(heap.0, &(*referred_place).into())
+                        } else {
+                            self.encode_place::<LookupTake>(heap.0, &(*referred_place).into())
+                        };
+                        let place: Place<'tcx> = (*place).into();
+                        return heap.insert(place.project_deref(self.tcx), base);
+                    }
                     mir::Rvalue::UnaryOp(op, operand) => {
                         let operand = self.encode_operand(heap.0, operand);
                         self.arena.mk_unary_op(

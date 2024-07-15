@@ -7,6 +7,14 @@ pub struct AcyclicPath(Vec<BasicBlock>);
 
 impl AcyclicPath {
 
+    pub fn contains(&self, block: BasicBlock) -> bool {
+        self.0.contains(&block)
+    }
+
+    pub fn to_slice(&self) -> &[BasicBlock] {
+        &self.0
+    }
+
     pub fn blocks(&self) -> &[BasicBlock] {
         &self.0
     }
@@ -55,7 +63,6 @@ pub struct Path<'sym, 'tcx, T> {
     pub pcs: PathConditions<'sym, 'tcx, T>,
     pub heap: HeapData<'sym, 'tcx, T>,
 }
-
 
 impl<'sym, 'tcx, T> Path<'sym, 'tcx, T> {
     pub fn new(

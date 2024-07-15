@@ -19,5 +19,4 @@ rustc_private = true
 
 [features]
 # default = ["crash_on_internal_error"]
-default = []
 crash_on_internal_error = []

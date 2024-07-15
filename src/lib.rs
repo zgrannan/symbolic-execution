@@ -22,16 +22,16 @@ mod util;
 pub mod value;
 pub mod visualization;
 
-use crate::rustc_interface::{
+use crate::{rustc_interface::{
     ast::Mutability,
-    hir::def_id::DefId,
+    hir::def_id::{DefId, LocalDefId},
     middle::{
-        mir::{self, Body, ProjectionElem, VarDebugInfo},
+        mir::{self, Body, ProjectionElem, VarDebugInfo, Location},
         ty::{self, GenericArgsRef, TyCtxt, TyKind},
     },
     span::ErrorGuaranteed,
-};
-use context::SymExContext;
+}, visualization::StepType};
+use context::{ErrorContext, ErrorLocation, SymExContext};
 use havoc::HavocData;
 use heap::{HeapData, SymbolicHeap};
 use pcs::{
@@ -83,6 +83,7 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for Assertion<'sym, 'tcx, T> {
 
 pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>> {
     tcx: TyCtxt<'tcx>,
+    def_id: LocalDefId,
     body: &'mir Body<'tcx>,
     fpcs_analysis: FpcsOutput<'mir, 'tcx>,
     havoc: HavocData,
@@ -90,6 +91,7 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     arena: &'sym SymExContext<'tcx>,
     verifier_semantics: S,
     debug_output_dir: Option<String>,
+    err_ctx: Option<ErrorContext>
 }
 
 trait LookupType {
@@ -130,6 +132,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 {
     pub fn new(
         tcx: TyCtxt<'tcx>,
+        def_id: LocalDefId,
         body: &'mir Body<'tcx>,
         fpcs_analysis: FpcsOutput<'mir, 'tcx>,
         verifier_semantics: S,
@@ -138,6 +141,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) -> Self {
         SymbolicExecution {
             tcx,
+            def_id,
             body,
             fpcs_analysis,
             havoc: HavocData::new(&body),
@@ -145,7 +149,27 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             verifier_semantics,
             arena,
             debug_output_dir,
+            err_ctx: None
         }
+    }
+
+    fn set_error_location(&mut self, location: ErrorLocation) {
+        self.err_ctx = Some(ErrorContext {
+            def_id: self.def_id,
+            location,
+        });
+    }
+
+    fn mk_internal_err_expr(
+        &self,
+        err: String,
+        ty: ty::Ty<'tcx>
+    ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
+        self.arena.mk_internal_error(
+            err,
+            ty,
+            self.err_ctx.as_ref().unwrap()
+        )
     }
 
     fn encode_place_opt<'heap, T: LookupType>(
@@ -178,7 +202,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         place: &Place<'tcx>,
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
         self.encode_place_opt::<T>(heap, place).unwrap_or_else(|| {
-            self.arena.mk_internal_error(
+            self.mk_internal_err_expr(
                 format!(
                     "Heap lookup failed for place [{:?}]",
                     place.0.to_string(PlaceRepacker::new(&self.body, self.tcx))
@@ -207,7 +231,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     fn apply_unblock_actions(
         &mut self,
         actions: Vec<UnblockAction<'tcx>>,
-        reborrows: &ReborrowingDag<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
     ) {
         for action in actions {
@@ -215,12 +238,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 UnblockAction::TerminateReborrow {
                     blocked_place,
                     assigned_place,
+                    is_mut,
                 } => {
-                    if let Some(reborrow) = reborrows.iter().find(|rb| {
-                        rb.assigned_place == assigned_place && rb.blocked_place == blocked_place
-                    }) {
-                        self.handle_removed_reborrow(reborrow, heap);
-                    }
+                    self.handle_removed_reborrow(&blocked_place, &assigned_place, is_mut, heap);
                 }
                 UnblockAction::Collapse(place, places) => {
                     self.collapse_place_from(&place.place(), &places[0].place(), heap);
@@ -281,24 +301,37 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             let block_data = &self.body.basic_blocks[block];
             for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
                 let fpcs_loc = &pcs_block.statements[stmt_idx];
+                self.set_error_location(ErrorLocation::Location(fpcs_loc.location));
                 let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
-                self.handle_pcs(&fpcs_loc, &mut heap, true);
-                self.handle_pcs(&fpcs_loc, &mut heap, false);
+                self.handle_pcs(&path.path, &fpcs_loc, &mut heap, true, "".to_string());
+                self.handle_pcs(&path.path, &fpcs_loc, &mut heap, false, "".to_string());
                 self.handle_stmt(stmt, &mut heap, fpcs_loc);
                 if let Some(debug_output_dir) = &self.debug_output_dir {
                     export_path_json(
                         &debug_output_dir,
                         &path,
                         fpcs_loc,
-                        stmt_idx,
+                        StepType::Instruction(stmt_idx),
                         self.fpcs_analysis.repacker(),
                     );
                 }
             }
+            // Actions made to evaluate terminator
             let last_fpcs_loc = pcs_block.statements.last().unwrap();
+            self.set_error_location(ErrorLocation::Location(last_fpcs_loc.location));
             assert!(pcs_block.statements.len() == block_data.statements.len() + 1);
             let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
-            self.handle_pcs(&last_fpcs_loc, &mut heap, true);
+            self.handle_pcs(&path.path, &last_fpcs_loc, &mut heap, true, "".to_string());
+            self.handle_pcs(&path.path, &last_fpcs_loc, &mut heap, false, "".to_string());
+            if let Some(debug_output_dir) = &self.debug_output_dir {
+                export_path_json(
+                    &debug_output_dir,
+                    &path,
+                    last_fpcs_loc,
+                    StepType::Instruction(block_data.statements.len()),
+                    self.fpcs_analysis.repacker(),
+                );
+            }
             self.handle_terminator(
                 block_data.terminator(),
                 &mut paths,
@@ -307,15 +340,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 &mut path,
                 pcs_block.terminator,
             );
-            if let Some(debug_output_dir) = &self.debug_output_dir {
-                export_path_json(
-                    &debug_output_dir,
-                    &path,
-                    last_fpcs_loc,
-                    block_data.statements.len(),
-                    self.fpcs_analysis.repacker(),
-                );
-            }
         }
         if let Some(debug_output_dir) = &self.debug_output_dir {
             export_assertions(&debug_output_dir, &assertions, &self.body.var_debug_info);
@@ -431,7 +455,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 .map(|p| {
                     let place_to_take = &p.deref().into();
                     heap.0.take(place_to_take).unwrap_or_else(|| {
-                        self.arena.mk_internal_error(
+                        self.mk_internal_err_expr(
                             format!("Place {:?} not found in heap[collapse]", place_to_take),
                             place_to_take.ty(&self.body, self.tcx).ty,
                         )
@@ -473,6 +497,7 @@ pub fn run_symbolic_execution<
     'tcx,
     S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>,
 >(
+    def_id: LocalDefId,
     mir: &'mir Body<'tcx>,
     tcx: TyCtxt<'tcx>,
     fpcs_analysis: FpcsOutput<'mir, 'tcx>,
@@ -482,6 +507,7 @@ pub fn run_symbolic_execution<
 ) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {
     SymbolicExecution::new(
         tcx,
+        def_id,
         mir,
         fpcs_analysis,
         verifier_semantics,

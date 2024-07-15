@@ -2,12 +2,15 @@ use std::collections::BTreeSet;
 
 use pcs::borrows::engine::{BorrowsDomain, ReborrowAction};
 use pcs::free_pcs::{FreePcsLocation, FreePcsTerminator};
+use pcs::ReborrowBridge;
 
+use crate::context::ErrorLocation;
 use crate::heap::SymbolicHeap;
 use crate::path::Path;
 use crate::path_conditions::{PathConditionAtom, PathConditionPredicate};
 use crate::results::{ResultAssertion, ResultPath};
 use crate::value::SymValue;
+use crate::visualization::{export_path_json, StepType};
 use crate::{add_debug_note, Assertion};
 use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExecution};
 
@@ -23,8 +26,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         assertions: &mut BTreeSet<ResultAssertion<'sym, 'tcx, S::SymValSynthetic>>,
         result_paths: &mut BTreeSet<ResultPath<'sym, 'tcx, S::SymValSynthetic>>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
-        loc: FreePcsTerminator<'tcx, BorrowsDomain<'tcx>, ReborrowAction<'tcx>>,
+        loc: FreePcsTerminator<'tcx, BorrowsDomain<'tcx>, ReborrowBridge<'tcx>>,
     ) {
+        self.set_error_location(ErrorLocation::Terminator(path.path.last()));
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
         match &terminator.kind {
             mir::TerminatorKind::Drop { target, .. }
@@ -39,15 +43,28 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             | mir::TerminatorKind::Goto { target } => {
                 if let Some(mut path) = path.push_if_acyclic(*target) {
                     self.handle_pcs(
+                        &path.path,
                         &loc.succs[0],
                         &mut SymbolicHeap::new(&mut path.heap, self.tcx, &self.body),
-                        true
+                        true,
+                        "TERM START".to_string(),
                     );
                     self.handle_pcs(
+                        &path.path,
                         &loc.succs[0],
                         &mut SymbolicHeap::new(&mut path.heap, self.tcx, &self.body),
-                        false
+                        false,
+                        "TERM END".to_string(),
                     );
+                    if let Some(debug_output_dir) = &self.debug_output_dir {
+                        export_path_json(
+                            &debug_output_dir,
+                            &path,
+                            &loc.succs[0],
+                            StepType::Transition,
+                            self.fpcs_analysis.repacker(),
+                        );
+                    }
                     paths.push(path);
                 }
             }

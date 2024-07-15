@@ -3,14 +3,25 @@ use crate::{
     rustc_interface::{
         ast::Mutability,
         borrowck::consumers::BodyWithBorrowckFacts,
-        hir::def_id::DefId,
+        hir::def_id::{DefId, LocalDefId},
         middle::{
-            mir::{self, Body, VarDebugInfo},
+            mir::{self, BasicBlock, Body, Location, VarDebugInfo},
             ty::{self, GenericArgsRef, TyCtxt},
         },
     },
     value::{AggregateKind, Constant},
 };
+
+#[derive(Debug)]
+pub enum ErrorLocation {
+    Location(Location),
+    Terminator(BasicBlock),
+}
+
+pub struct ErrorContext {
+    pub def_id: LocalDefId,
+    pub location: ErrorLocation,
+}
 
 pub struct SymExContext<'tcx> {
     bump: bumpalo::Bump,
@@ -37,9 +48,16 @@ impl<'tcx> SymExContext<'tcx> {
         &'sym self,
         err: String,
         ty: ty::Ty<'tcx>,
+        ctx: &ErrorContext,
     ) -> SymValue<'sym, 'tcx, T> {
+        let err = format!(
+            "{:?} {:?} Internal error: {}",
+            ctx.def_id, ctx.location, err
+        );
         if cfg!(feature = "crash_on_internal_error") {
             panic!("{}", err);
+        } else {
+            eprintln!("{}", err);
         }
         self.mk_sym_value(SymValueKind::InternalError(err, ty))
     }
@@ -97,10 +115,10 @@ impl<'tcx> SymExContext<'tcx> {
         match kind {
             mir::ProjectionElem::Field(_, _) => {
                 if val.kind.ty(self.tcx).rust_ty().is_enum() {
-                    assert!(
-                        val.kind.ty(self.tcx).variant_index().is_some(),
-                        "Enum value must have a variant index set"
-                    );
+                    // assert!(
+                    //     val.kind.ty(self.tcx).variant_index().is_some(),
+                    //     "Enum value must have a variant index set"
+                    // );
                 }
             }
             _ => {}

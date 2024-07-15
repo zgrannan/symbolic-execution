@@ -7,12 +7,13 @@ use crate::{
     context::SymExContext,
     debug_info::DebugInfo,
     path::{AcyclicPath, Path},
+    pcs_interaction::PcsLocation,
     results::{ResultAssertion, ResultPath},
     rustc_interface::{
         ast::Mutability,
         hir::def_id::DefId,
         middle::{
-            mir::{self, Body, ProjectionElem, VarDebugInfo},
+            mir::{self, BasicBlock, Body, ProjectionElem, VarDebugInfo},
             ty::{self, GenericArgsRef, TyCtxt},
         },
     },
@@ -23,11 +24,16 @@ pub trait VisFormat {
     fn to_vis_string(&self, debug_info: &[VarDebugInfo]) -> String;
 }
 
-pub fn export_path_json<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>, U>(
+pub enum StepType {
+    Instruction(usize),
+    Transition,
+}
+
+pub fn export_path_json<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>>(
     debug_output_dir: &str,
     path: &Path<'sym, 'tcx, T>,
-    fpcs_loc: &FreePcsLocation<BorrowsDomain<'tcx>, U>,
-    instruction_index: usize,
+    fpcs_loc: &PcsLocation<'tcx>,
+    step: StepType,
     repacker: PlaceRepacker<'_, 'tcx>,
 ) {
     let path_component = path
@@ -39,8 +45,13 @@ pub fn export_path_json<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>
         .join("_");
     std::fs::create_dir_all(&debug_output_dir).expect("Unable to create directory");
     let filename = format!(
-        "{}/path_{}_stmt_{}.json",
-        debug_output_dir, path_component, instruction_index
+        "{}/path_{}_{}.json",
+        debug_output_dir,
+        path_component,
+        match step {
+            StepType::Instruction(idx) => format!("stmt_{}", idx),
+            StepType::Transition => "transition".to_string(),
+        }
     );
     let mut json_object = serde_json::Map::new();
     json_object.insert(
@@ -77,27 +88,15 @@ pub fn export_path_json<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>
         ),
     );
     json_object.insert(
-        "reborrow_actions_start".to_string(),
-        serde_json::Value::Array(
-            fpcs_loc
-                .extra
-                .reborrow_actions(true)
-                .iter()
-                .map(|action| action.to_json(repacker))
-                .collect(),
-        ),
+        "reborrow_start".to_string(),
+        fpcs_loc.extra_start.to_json(repacker),
     );
-    json_object.insert(
-        "reborrow_actions_mid".to_string(),
-        serde_json::Value::Array(
-            fpcs_loc
-                .extra
-                .reborrow_actions(false)
-                .iter()
-                .map(|action| action.to_json(repacker))
-                .collect(),
-        ),
-    );
+    if let Some(reborrow_middle) = &fpcs_loc.extra_middle {
+        json_object.insert(
+            "reborrow_middle".to_string(),
+            reborrow_middle.to_json(repacker),
+        );
+    }
     json_object.insert(
         "borrow_actions_start".to_string(),
         serde_json::Value::Array(
