@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use pcs::borrows::engine::{BorrowsDomain, ReborrowAction};
+use pcs::borrows::reborrowing_dag::ReborrowingDag;
 use pcs::free_pcs::{FreePcsLocation, FreePcsTerminator};
 use pcs::ReborrowBridge;
 
@@ -26,9 +27,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         assertions: &mut BTreeSet<ResultAssertion<'sym, 'tcx, S::SymValSynthetic>>,
         result_paths: &mut BTreeSet<ResultPath<'sym, 'tcx, S::SymValSynthetic>>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
+        reborrows: &ReborrowingDag<'tcx>,
         loc: FreePcsTerminator<'tcx, BorrowsDomain<'tcx>, ReborrowBridge<'tcx>>,
     ) {
-        self.set_error_location(ErrorLocation::Terminator(path.path.last()));
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
         match &terminator.kind {
             mir::TerminatorKind::Drop { target, .. }
@@ -41,7 +42,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 ..
             }
             | mir::TerminatorKind::Goto { target } => {
+                let old_path = path.path.clone();
                 if let Some(mut path) = path.push_if_acyclic(*target) {
+                    self.set_error_context(old_path.clone(), ErrorLocation::TerminatorStart(*target));
                     self.handle_pcs(
                         &path.path,
                         &loc.succs[0],
@@ -49,6 +52,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         true,
                         "TERM START".to_string(),
                     );
+                    self.set_error_context(old_path, ErrorLocation::TerminatorMid(*target));
                     self.handle_pcs(
                         &path.path,
                         &loc.succs[0],
@@ -114,7 +118,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 ..
             } => match func.ty(&self.body.local_decls, self.tcx).kind() {
                 ty::TyKind::FnDef(def_id, substs) => {
-                    let reborrows = &loc.succs.first().unwrap().extra.after.reborrows();
                     let encoded_args: Vec<_> = args
                         .iter()
                         .map(|arg| self.encode_operand(heap.0, arg))

@@ -22,15 +22,18 @@ mod util;
 pub mod value;
 pub mod visualization;
 
-use crate::{rustc_interface::{
-    ast::Mutability,
-    hir::def_id::{DefId, LocalDefId},
-    middle::{
-        mir::{self, Body, ProjectionElem, VarDebugInfo, Location},
-        ty::{self, GenericArgsRef, TyCtxt, TyKind},
+use crate::{
+    rustc_interface::{
+        ast::Mutability,
+        hir::def_id::{DefId, LocalDefId},
+        middle::{
+            mir::{self, Body, Location, ProjectionElem, VarDebugInfo},
+            ty::{self, GenericArgsRef, TyCtxt, TyKind},
+        },
+        span::ErrorGuaranteed,
     },
-    span::ErrorGuaranteed,
-}, visualization::StepType};
+    visualization::StepType,
+};
 use context::{ErrorContext, ErrorLocation, SymExContext};
 use havoc::HavocData;
 use heap::{HeapData, SymbolicHeap};
@@ -91,7 +94,7 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     arena: &'sym SymExContext<'tcx>,
     verifier_semantics: S,
     debug_output_dir: Option<String>,
-    err_ctx: Option<ErrorContext>
+    err_ctx: Option<ErrorContext>,
 }
 
 trait LookupType {
@@ -149,27 +152,25 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             verifier_semantics,
             arena,
             debug_output_dir,
-            err_ctx: None
+            err_ctx: None,
         }
     }
 
-    fn set_error_location(&mut self, location: ErrorLocation) {
+    fn set_error_context(&mut self, path: AcyclicPath, location: ErrorLocation) {
         self.err_ctx = Some(ErrorContext {
             def_id: self.def_id,
             location,
+            path,
         });
     }
 
     fn mk_internal_err_expr(
         &self,
         err: String,
-        ty: ty::Ty<'tcx>
+        ty: ty::Ty<'tcx>,
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
-        self.arena.mk_internal_error(
-            err,
-            ty,
-            self.err_ctx.as_ref().unwrap()
-        )
+        self.arena
+            .mk_internal_error(err, ty, self.err_ctx.as_ref().unwrap())
     }
 
     fn encode_place_opt<'heap, T: LookupType>(
@@ -178,7 +179,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         place: &Place<'tcx>,
     ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>> {
         if place.0.is_ref(self.body, self.tcx) {
-            return T::lookup(heap, &place.project_deref(self.tcx)).map(|v| {
+            return T::lookup(heap, &place.project_deref(self.repacker())).map(|v| {
                 self.arena.mk_ref(
                     v,
                     if place.0.is_mut_ref(self.body, self.tcx) {
@@ -274,7 +275,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             match sym_var.ty(self.tcx).rust_ty().kind() {
                 ty::TyKind::Ref(_, _, _) => {
                     heap.insert(
-                        place.project_deref(self.tcx),
+                        place.project_deref(self.repacker()),
                         self.arena.mk_projection(ProjectionElem::Deref, sym_var),
                     );
                 }
@@ -301,7 +302,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             let block_data = &self.body.basic_blocks[block];
             for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
                 let fpcs_loc = &pcs_block.statements[stmt_idx];
-                self.set_error_location(ErrorLocation::Location(fpcs_loc.location));
+                self.set_error_context(
+                    path.path.clone(),
+                    ErrorLocation::Location(fpcs_loc.location),
+                );
                 let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
                 self.handle_pcs(&path.path, &fpcs_loc, &mut heap, true, "".to_string());
                 self.handle_pcs(&path.path, &fpcs_loc, &mut heap, false, "".to_string());
@@ -318,7 +322,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             }
             // Actions made to evaluate terminator
             let last_fpcs_loc = pcs_block.statements.last().unwrap();
-            self.set_error_location(ErrorLocation::Location(last_fpcs_loc.location));
+            self.set_error_context(
+                path.path.clone(),
+                ErrorLocation::Location(last_fpcs_loc.location),
+            );
             assert!(pcs_block.statements.len() == block_data.statements.len() + 1);
             let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
             self.handle_pcs(&path.path, &last_fpcs_loc, &mut heap, true, "".to_string());
@@ -338,6 +345,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 &mut assertions,
                 &mut result_paths,
                 &mut path,
+                //For havocing data behind references in fn calls, we use the
+                //reborrow state before the terminator action has been applied
+                //to PC
+                last_fpcs_loc.extra.before_start.reborrows(),
                 pcs_block.terminator,
             );
         }
@@ -361,6 +372,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         result_paths.insert((path.path.clone(), path.pcs.clone(), expr));
     }
 
+    fn repacker(&self) -> PlaceRepacker<'_, 'tcx> {
+        PlaceRepacker::new(&self.body, self.tcx)
+    }
+
     fn havoc_refs_in_operand(
         &mut self,
         operand: &mir::Operand<'tcx>,
@@ -368,18 +383,33 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         reborrows: &ReborrowingDag<'tcx>,
     ) {
         match operand {
-            mir::Operand::Copy(place) | mir::Operand::Move(place) => {
+            mir::Operand::Move(place) => {
                 let place: Place<'tcx> = (*place).into();
                 if let ty::TyKind::Ref(_, ty, Mutability::Mut) =
                     place.ty(self.body, self.tcx).ty.kind()
                 {
-                    heap.insert(
-                        place.project_deref(self.tcx).into(),
-                        self.mk_fresh_symvar(*ty),
-                    );
+                    if let Some(blocked_by) = reborrows.get_place_blocked_by(
+                        pcs::borrows::domain::MaybeOldPlace::Current {
+                            place: place
+                                .project_deref(self.repacker())
+                                .0,
+                        },
+                    ) {
+                        heap.insert(blocked_by.place().into(), self.mk_fresh_symvar(*ty));
+                    } else {
+                        eprintln!(
+                            "{:?} Cannot find place blocked by {:?}",
+                            self.err_ctx.as_ref().unwrap(),
+                            place
+                        );
+                    }
+                    // heap.insert(
+                    //     place.project_deref(self.tcx).into(),
+                    //     self.mk_fresh_symvar(*ty),
+                    // );
                 };
             }
-            mir::Operand::Constant(_) => {}
+            _ => {}
         }
     }
 
@@ -454,12 +484,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 .iter()
                 .map(|p| {
                     let place_to_take = &p.deref().into();
-                    heap.0.take(place_to_take).unwrap_or_else(|| {
-                        self.mk_internal_err_expr(
-                            format!("Place {:?} not found in heap[collapse]", place_to_take),
-                            place_to_take.ty(&self.body, self.tcx).ty,
-                        )
-                    })
+                    self.encode_place_opt::<LookupTake>(heap.0, place_to_take)
+                        .unwrap_or_else(|| {
+                            self.mk_internal_err_expr(
+                                format!("Place {:?} not found in heap[collapse]", place_to_take),
+                                place_to_take.ty(&self.body, self.tcx).ty,
+                            )
+                        })
                 })
                 .collect()
         };

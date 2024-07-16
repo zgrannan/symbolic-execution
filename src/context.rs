@@ -1,3 +1,4 @@
+use crate::path::AcyclicPath;
 use crate::value::{CastKind, SymValue, SymValueData, SymValueKind, SyntheticSymValue};
 use crate::{
     rustc_interface::{
@@ -15,12 +16,15 @@ use crate::{
 #[derive(Debug)]
 pub enum ErrorLocation {
     Location(Location),
-    Terminator(BasicBlock),
+    TerminatorStart(BasicBlock),
+    TerminatorMid(BasicBlock),
 }
 
+#[derive(Debug)]
 pub struct ErrorContext {
     pub def_id: LocalDefId,
     pub location: ErrorLocation,
+    pub path: AcyclicPath
 }
 
 pub struct SymExContext<'tcx> {
@@ -51,8 +55,11 @@ impl<'tcx> SymExContext<'tcx> {
         ctx: &ErrorContext,
     ) -> SymValue<'sym, 'tcx, T> {
         let err = format!(
-            "{:?} {:?} Internal error: {}",
-            ctx.def_id, ctx.location, err
+            "{} {:?} {:?} Internal error: {}",
+            self.tcx.def_path_str(ctx.def_id),
+            ctx.path,
+            ctx.location,
+            err
         );
         if cfg!(feature = "crash_on_internal_error") {
             panic!("{}", err);

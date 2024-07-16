@@ -9,7 +9,7 @@ use crate::{
     },
     util::assert_tys_match,
 };
-use pcs::{borrows::engine::BorrowsDomain, visualization::get_source_name_from_place};
+use pcs::utils::PlaceRepacker;
 use std::collections::BTreeMap;
 
 use super::{
@@ -45,21 +45,18 @@ impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
 pub struct HeapData<'sym, 'tcx, T>(BTreeMap<Place<'tcx>, SymValue<'sym, 'tcx, T>>);
 
 impl<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>> HeapData<'sym, 'tcx, T> {
-    pub fn to_json(&self, tcx: TyCtxt<'tcx>, debug_info: &[VarDebugInfo]) -> serde_json::Value {
+    pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         let map = self
             .0
             .iter()
             .fold(BTreeMap::new(), |mut acc, (place, value)| {
-                let key = format!(
-                    "{}",
-                    get_source_name_from_place(place.local(), &place.projection(), debug_info)
-                        .unwrap_or_else(|| format!("{:?}", place))
-                );
-                let value_str = format!("{}", value.to_vis_string(debug_info));
-                let ty_str = format!("{}", value.ty(tcx));
+                let mut key = place.0.to_short_string(repacker);
+                let value_str = format!("{}", value.to_vis_string(&repacker.body().var_debug_info));
+                let ty_str = format!("{}", value.ty(repacker.tcx()));
 
                 if acc.contains_key(&key) {
-                    panic!("Duplicate key found: {} in {:?}", key, debug_info);
+                    key = format!("{:?}", place.0.to_string(repacker));
+                    assert!(!acc.contains_key(&key));
                 }
                 acc.insert(key, serde_json::json!({ "value": value_str, "ty": ty_str }));
                 acc

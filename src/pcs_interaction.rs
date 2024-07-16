@@ -35,11 +35,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             pcs.extra_middle.clone()
         };
         let (ug_actions, added_reborrows, reborrow_expands) = if let Some(mut bridge) = bridge {
-            if !bridge.ug.is_empty() {
-                eprintln!("At {:?} ug: {:?}", pcs.location, bridge.ug);
-                bridge.ug.filter_for_path(path.to_slice());
-                eprintln!("At {:?} ug (filtered): {:?}", pcs.location, bridge.ug);
-            }
+            bridge.ug.filter_for_path(path.to_slice());
             (bridge.ug.actions(), bridge.added_reborrows, bridge.expands)
         } else {
             (

@@ -58,11 +58,7 @@ pub fn export_path_json<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>
         "pcs".to_string(),
         path.pcs.to_json(&repacker.body().var_debug_info),
     );
-    json_object.insert(
-        "heap".to_string(),
-        path.heap
-            .to_json(repacker.tcx(), &repacker.body().var_debug_info),
-    );
+    json_object.insert("heap".to_string(), path.heap.to_json(repacker));
     json_object.insert(
         "borrows".to_string(),
         fpcs_loc.extra.after.to_json(repacker),
@@ -97,28 +93,6 @@ pub fn export_path_json<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>
             reborrow_middle.to_json(repacker),
         );
     }
-    json_object.insert(
-        "borrow_actions_start".to_string(),
-        serde_json::Value::Array(
-            fpcs_loc
-                .extra
-                .borrow_actions(true)
-                .iter()
-                .map(|action| action.to_json(repacker))
-                .collect(),
-        ),
-    );
-    json_object.insert(
-        "borrow_actions_mid".to_string(),
-        serde_json::Value::Array(
-            fpcs_loc
-                .extra
-                .borrow_actions(false)
-                .iter()
-                .map(|action| action.to_json(repacker))
-                .collect(),
-        ),
-    );
     let heap_json = serde_json::Value::Object(json_object);
     std::fs::write(filename, serde_json::to_string_pretty(&heap_json).unwrap())
         .expect("Unable to write file");

@@ -1,3 +1,5 @@
+use pcs::utils::PlaceRepacker;
+
 use crate::rustc_interface::{
     data_structures::fx::FxHasher,
     middle::{
@@ -59,8 +61,8 @@ impl<'tcx> Place<'tcx> {
         &self.0.projection
     }
 
-    pub fn project_deref(&self, tcx: ty::TyCtxt<'tcx>) -> Self {
-        Place(self.0.project_deref(tcx))
+    pub fn project_deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+        Place(self.0.project_deref(repacker))
     }
 
     pub fn deref_target(&self) -> Option<Self> {
