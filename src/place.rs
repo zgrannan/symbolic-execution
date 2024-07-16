@@ -1,4 +1,4 @@
-use pcs::utils::PlaceRepacker;
+use pcs::{borrows::domain::MaybeOldPlace, utils::PlaceRepacker};
 
 use crate::rustc_interface::{
     data_structures::fx::FxHasher,
@@ -12,8 +12,14 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Place<'tcx>(pub pcs::utils::Place<'tcx>);
+
+impl<'tcx> From<Place<'tcx>> for MaybeOldPlace<'tcx> {
+    fn from(place: Place<'tcx>) -> Self {
+        MaybeOldPlace::Current { place: place.0 }
+    }
+}
 
 impl<'tcx> std::fmt::Debug for Place<'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

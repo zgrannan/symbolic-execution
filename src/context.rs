@@ -65,6 +65,9 @@ impl<'tcx> SymExContext<'tcx> {
             panic!("{}", err);
         } else {
             eprintln!("{}", err);
+            eprintln!("Stack trace:");
+            let backtrace = std::backtrace::Backtrace::capture();
+            eprintln!("{}", backtrace);
         }
         self.mk_sym_value(SymValueKind::InternalError(err, ty))
     }

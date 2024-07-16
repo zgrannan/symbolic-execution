@@ -32,7 +32,7 @@ pub enum StepType {
 pub fn export_path_json<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>>(
     debug_output_dir: &str,
     path: &Path<'sym, 'tcx, T>,
-    fpcs_loc: &PcsLocation<'tcx>,
+    fpcs_loc: &PcsLocation<'_, 'tcx>,
     step: StepType,
     repacker: PlaceRepacker<'_, 'tcx>,
 ) {

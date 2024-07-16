@@ -16,7 +16,7 @@ use crate::{
     LookupGet, LookupTake, SymbolicExecution,
 };
 
-pub type PcsLocation<'tcx> = FreePcsLocation<'tcx, BorrowsDomain<'tcx>, ReborrowBridge<'tcx>>;
+pub type PcsLocation<'mir, 'tcx> = FreePcsLocation<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>;
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
@@ -24,7 +24,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     pub(crate) fn handle_pcs(
         &mut self,
         path: &AcyclicPath,
-        pcs: &PcsLocation<'tcx>,
+        pcs: &PcsLocation<'mir, 'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         start: bool,
         comment: String,
@@ -62,22 +62,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         is_mut: bool,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
     ) {
-        match assigned_place {
-            pcs::borrows::domain::MaybeOldPlace::Current { place } => {
-                let heap_value = if is_mut {
-                    self.encode_place::<LookupTake>(heap.0, &place.deref().into())
-                } else {
-                    self.encode_place::<LookupGet>(heap.0, &place.deref().into())
-                };
-                match blocked_place {
-                    pcs::borrows::domain::MaybeOldPlace::Current { place } => {
-                        heap.insert(place.deref().into(), heap_value);
-                    }
-                    pcs::borrows::domain::MaybeOldPlace::OldPlace(_) => todo!(),
-                }
-            }
-            pcs::borrows::domain::MaybeOldPlace::OldPlace(_) => todo!(),
-        }
+        let heap_value = if is_mut {
+            self.encode_place::<LookupTake, _>(heap.0, assigned_place)
+        } else {
+            self.encode_place::<LookupGet, _>(heap.0, assigned_place)
+        };
+        heap.insert(*blocked_place, heap_value);
     }
     pub(crate) fn handle_repack_collapses(
         &self,
@@ -99,7 +89,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) {
         expands.sort_by_key(|ep| ep.base.place().projection.len());
         for ep in expands {
-            if !path.contains(ep.block) {
+            if !path.contains(ep.location.block) {
                 continue;
             }
             let place = ep.base.place();
@@ -108,9 +98,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 continue;
             }
             let value = if place.projects_shared_ref(self.fpcs_analysis.repacker()) {
-                heap.0.get(&place.into())
+                heap.0.get(&place)
             } else {
-                heap.0.take(&place.into())
+                heap.0.take(&place)
             };
             let value = value.unwrap_or_else(|| {
                 self.mk_internal_err_expr(
@@ -143,11 +133,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 continue;
             }
             let blocked_value = if reborrow.mutability.is_mut() {
-                self.encode_place::<LookupTake>(heap.0, &reborrow.blocked_place.place().into())
+                self.encode_place::<LookupTake, _>(heap.0, &reborrow.blocked_place)
             } else {
-                self.encode_place::<LookupGet>(heap.0, &reborrow.blocked_place.place().into())
+                self.encode_place::<LookupGet, _>(heap.0, &reborrow.blocked_place)
             };
-            heap.insert(reborrow.assigned_place.place().into(), blocked_value);
+            heap.insert(reborrow.assigned_place, blocked_value);
         }
     }
 

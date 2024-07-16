@@ -28,7 +28,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         result_paths: &mut BTreeSet<ResultPath<'sym, 'tcx, S::SymValSynthetic>>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         reborrows: &ReborrowingDag<'tcx>,
-        loc: FreePcsTerminator<'tcx, BorrowsDomain<'tcx>, ReborrowBridge<'tcx>>,
+        loc: FreePcsTerminator<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
     ) {
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
         match &terminator.kind {
@@ -44,7 +44,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             | mir::TerminatorKind::Goto { target } => {
                 let old_path = path.path.clone();
                 if let Some(mut path) = path.push_if_acyclic(*target) {
-                    self.set_error_context(old_path.clone(), ErrorLocation::TerminatorStart(*target));
+                    self.set_error_context(
+                        old_path.clone(),
+                        ErrorLocation::TerminatorStart(*target),
+                    );
                     self.handle_pcs(
                         &path.path,
                         &loc.succs[0],
@@ -163,7 +166,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 sym_var
                             })
                     };
-                    heap.insert((*destination).into(), result);
+                    heap.insert(*destination, result);
                     path.pcs.insert(PathConditionAtom::new(
                         result,
                         PathConditionPredicate::Postcondition(*def_id, substs, encoded_args),
