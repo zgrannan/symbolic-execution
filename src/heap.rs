@@ -9,8 +9,8 @@ use crate::{
     },
     util::assert_tys_match,
 };
-use pcs::borrows::domain::{MaybeOldPlace, PlaceSnapshot};
-use pcs::utils::PlaceRepacker;
+use pcs::borrows::domain::{MaybeOldPlace};
+use pcs::utils::{PlaceRepacker, PlaceSnapshot};
 use std::collections::BTreeMap;
 
 use super::{
