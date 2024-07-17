@@ -16,7 +16,8 @@ use crate::{
     LookupGet, LookupTake, SymbolicExecution,
 };
 
-pub type PcsLocation<'mir, 'tcx> = FreePcsLocation<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>;
+pub type PcsLocation<'mir, 'tcx> =
+    FreePcsLocation<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>;
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
@@ -116,7 +117,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             self.explode_value(
                 &place,
                 value,
-                ep.expansion.iter().map(|p| (*p).into()),
+                ep.expansion().iter().map(|p| p.place()),
                 heap,
             );
         }
