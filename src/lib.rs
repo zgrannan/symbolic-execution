@@ -208,16 +208,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
         self.encode_place_opt::<T, P>(heap, place)
             .unwrap_or_else(|| {
+                let place = (*place).into();
                 self.mk_internal_err_expr(
                     format!(
-                        "Heap lookup failed for place [{:?}]",
-                        (*place)
-                            .into()
-                            .to_short_string(PlaceRepacker::new(&self.body, self.tcx))
+                        "Heap lookup failed for place [{}: {:?}]",
+                        place.to_short_string(self.repacker()),
+                        place.place().ty(self.repacker())
                     ),
-                    self.arena.tcx.mk_ty_from_kind(TyKind::Error(
-                        ErrorGuaranteed::unchecked_claim_error_was_emitted(),
-                    )),
+                    place.place().ty(self.repacker()).ty
                 )
             })
     }

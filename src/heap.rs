@@ -1,22 +1,18 @@
-use crate::{place::Place, value::Constant, VisFormat};
+use crate::{place::Place, VisFormat};
 use crate::{
-    rustc_interface::{
+    rustc_interface::
         middle::{
-            mir::{self, Body, VarDebugInfo},
-            ty::{TyCtxt, TyKind},
-        },
-        span::ErrorGuaranteed,
-    },
+            mir::{self, Body},
+            ty::TyCtxt,
+        }
+    ,
     util::assert_tys_match,
 };
-use pcs::borrows::domain::{MaybeOldPlace};
-use pcs::utils::{PlaceRepacker, PlaceSnapshot};
+use pcs::borrows::domain::MaybeOldPlace;
+use pcs::utils::PlaceRepacker;
 use std::collections::BTreeMap;
 
-use super::{
-    value::{SymValue, SyntheticSymValue},
-    SymExContext,
-};
+use super::value::{SymValue, SyntheticSymValue};
 
 pub(crate) struct SymbolicHeap<'mir, 'sym, 'tcx, T>(
     pub &'mir mut HeapData<'sym, 'tcx, T>,
@@ -68,23 +64,6 @@ impl<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>> HeapData<'sym, 't
 }
 
 impl<'sym, 'tcx, T: std::fmt::Debug> HeapData<'sym, 'tcx, T> {
-    // pub fn check_eq_debug(&self, other: &Self) {
-    //     for (p, v) in self.0.iter() {
-    //         if !other.0.contains_key(&p) {
-    //             panic!("Heap missing key: {:?}", p);
-    //         }
-    //         let other_v = other.0.get(&p).unwrap();
-    //         if *v != *other_v {
-    //             panic!("Heap value mismatch: {:?} {:?} vs {:?}", p, v, other_v);
-    //         }
-    //     }
-    //     for (p, v) in other.0.iter() {
-    //         if !self.0.contains_key(&p) {
-    //             panic!("Heap missing key: {:?}", p);
-    //         }
-    //     }
-    // }
-
     pub fn new() -> Self {
         HeapData(Vec::new())
     }
