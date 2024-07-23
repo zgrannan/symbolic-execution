@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use crate::rustc_interface::middle::mir::Location;
 
 use pcs::{
@@ -28,7 +26,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         pcs: &PcsLocation<'mir, 'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         start: bool,
-        comment: String,
+        location: Location,
     ) {
         let bridge = if start {
             Some(pcs.extra_start.clone())
@@ -45,17 +43,18 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 vec![].into_iter().collect(),
             )
         };
-        self.apply_unblock_actions(ug_actions, heap);
+        self.apply_unblock_actions(ug_actions, heap, location);
         let repacks = if start {
             &pcs.repacks_start
         } else {
             &pcs.repacks_middle
         };
-        self.handle_repack_collapses(repacks, heap);
-        self.handle_repack_expands(repacks, heap);
-        self.handle_reborrow_expands(reborrow_expands.into_iter().collect(), heap, path);
+        self.handle_repack_collapses(repacks, heap, location);
+        self.handle_repack_expands(repacks, heap, location);
+        self.handle_reborrow_expands(reborrow_expands.into_iter().collect(), heap, path, location);
         self.handle_added_reborrows(&added_reborrows.into_iter().collect::<Vec<_>>(), heap, path);
     }
+
     pub(crate) fn handle_removed_reborrow(
         &self,
         blocked_place: &MaybeOldPlace<'tcx>,
@@ -68,16 +67,18 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         } else {
             self.encode_place::<LookupGet, _>(heap.0, assigned_place)
         };
-        heap.insert(*blocked_place, heap_value);
+        heap.insert_maybe_old_place(*blocked_place, heap_value);
     }
+
     pub(crate) fn handle_repack_collapses(
         &self,
         repacks: &Vec<RepackOp<'tcx>>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        location: Location,
     ) {
         for repack in repacks {
             if matches!(repack, RepackOp::Collapse(..)) {
-                self.handle_repack(repack, heap)
+                self.handle_repack(repack, heap, location)
             }
         }
     }
@@ -87,6 +88,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         mut expands: Vec<DerefExpansion<'tcx>>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         path: &AcyclicPath,
+        location: Location,
     ) {
         expands.sort_by_key(|ep| ep.base.place().projection.len());
         for ep in expands {
@@ -94,7 +96,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 continue;
             }
             let place = ep.base.place();
-            if place.projection.len() == 0 {
+            if place.is_ref(self.body, self.tcx) {
                 // The expansion from x to *x isn't necessary!
                 continue;
             }
@@ -117,8 +119,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             self.explode_value(
                 &place,
                 value,
-                ep.expansion().iter().map(|p| p.place()),
+                ep.expansion(self.tcx).iter().map(|p| p.place()),
                 heap,
+                location,
             );
         }
     }
@@ -138,7 +141,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             } else {
                 self.encode_place::<LookupGet, _>(heap.0, &reborrow.blocked_place)
             };
-            heap.insert(reborrow.assigned_place, blocked_value);
+            heap.insert_maybe_old_place(reborrow.assigned_place, blocked_value);
         }
     }
 
@@ -146,10 +149,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &self,
         repacks: &Vec<RepackOp<'tcx>>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        location: Location,
     ) {
         for repack in repacks {
             if matches!(repack, RepackOp::Expand(..)) {
-                self.handle_repack(repack, heap)
+                self.handle_repack(repack, heap, location)
             }
         }
     }

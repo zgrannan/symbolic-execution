@@ -15,7 +15,10 @@ use crate::visualization::{export_path_json, StepType};
 use crate::{add_debug_note, Assertion};
 use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExecution};
 
-use crate::rustc_interface::middle::{mir, ty};
+use crate::rustc_interface::middle::{
+    mir::{self, Location},
+    ty,
+};
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
@@ -28,7 +31,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         result_paths: &mut BTreeSet<ResultPath<'sym, 'tcx, S::SymValSynthetic>>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         reborrows: &ReborrowingDag<'tcx>,
-        loc: FreePcsTerminator<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
+        fpcs_terminator: FreePcsTerminator<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
+        location: Location,
     ) {
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
         match &terminator.kind {
@@ -50,24 +54,24 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     );
                     self.handle_pcs(
                         &path.path,
-                        &loc.succs[0],
+                        &fpcs_terminator.succs[0],
                         &mut SymbolicHeap::new(&mut path.heap, self.tcx, &self.body),
                         true,
-                        "TERM START".to_string(),
+                        location,
                     );
                     self.set_error_context(old_path, ErrorLocation::TerminatorMid(*target));
                     self.handle_pcs(
                         &path.path,
-                        &loc.succs[0],
+                        &fpcs_terminator.succs[0],
                         &mut SymbolicHeap::new(&mut path.heap, self.tcx, &self.body),
                         false,
-                        "TERM END".to_string(),
+                        location,
                     );
                     if let Some(debug_output_dir) = &self.debug_output_dir {
                         export_path_json(
                             &debug_output_dir,
                             &path,
-                            &loc.succs[0],
+                            &fpcs_terminator.succs[0],
                             StepType::Transition,
                             self.fpcs_analysis.repacker(),
                         );
@@ -77,7 +81,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             }
             mir::TerminatorKind::SwitchInt { discr, targets } => {
                 let ty = discr.ty(&self.body.local_decls, self.tcx);
-                for ((value, target), loc) in targets.iter().zip(loc.succs.iter()) {
+                for ((value, target), loc) in targets.iter().zip(fpcs_terminator.succs.iter()) {
                     let pred = PathConditionPredicate::Eq(value, ty);
                     if let Some(mut path) = path.push_if_acyclic(target) {
                         path.pcs.insert(PathConditionAtom::new(
@@ -166,7 +170,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 sym_var
                             })
                     };
-                    heap.insert(*destination, result);
+                    heap.insert(*destination, result, location);
                     path.pcs.insert(PathConditionAtom::new(
                         result,
                         PathConditionPredicate::Postcondition(*def_id, substs, encoded_args),

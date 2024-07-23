@@ -1,15 +1,13 @@
 use crate::{place::Place, VisFormat};
 use crate::{
-    rustc_interface::
-        middle::{
-            mir::{self, Body},
-            ty::TyCtxt,
-        }
-    ,
+    rustc_interface::middle::{
+        mir::{self, Body, Location},
+        ty::TyCtxt,
+    },
     util::assert_tys_match,
 };
 use pcs::borrows::domain::MaybeOldPlace;
-use pcs::utils::PlaceRepacker;
+use pcs::utils::{PlaceRepacker, PlaceSnapshot};
 use std::collections::BTreeMap;
 
 use super::value::{SymValue, SyntheticSymValue};
@@ -30,7 +28,25 @@ impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
     ) -> Self {
         SymbolicHeap(heap, tcx, body)
     }
-    pub fn insert<P: Into<MaybeOldPlace<'tcx>>>(&mut self, place: P, value: SymValue<'sym, 'tcx, T>) {
+
+    pub fn insert<P: Clone + Into<Place<'tcx>>>(
+        &mut self,
+        place: P,
+        value: SymValue<'sym, 'tcx, T>,
+        location: Location,
+    ) {
+        self.insert_maybe_old_place(place.clone().into(), value);
+        self.insert_maybe_old_place(
+            MaybeOldPlace::OldPlace(PlaceSnapshot::new(place.into().0, location)),
+            value,
+        );
+    }
+
+    pub fn insert_maybe_old_place<P: Into<MaybeOldPlace<'tcx>>>(
+        &mut self,
+        place: P,
+        value: SymValue<'sym, 'tcx, T>,
+    ) {
         let place: MaybeOldPlace<'tcx> = place.into();
         let place_ty = place.ty(PlaceRepacker::new(self.2, self.1));
         let value_ty = value.kind.ty(self.1);

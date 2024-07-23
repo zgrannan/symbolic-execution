@@ -32,6 +32,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             return heap.insert(
                                 place.project_deref(self.repacker()),
                                 self.arena.mk_projection(ProjectionElem::Deref, value),
+                                pcs.location,
                             );
                         } else {
                             value
@@ -80,7 +81,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             self.encode_place::<LookupTake, _>(heap.0, referred_place)
                         };
                         let place: Place<'tcx> = (*place).into();
-                        return heap.insert(place.project_deref(self.repacker()), base);
+                        return heap.insert(
+                            place.project_deref(self.repacker()),
+                            base,
+                            pcs.location,
+                        );
                     }
                     mir::Rvalue::UnaryOp(op, operand) => {
                         let operand = self.encode_operand(heap.0, operand);
@@ -96,7 +101,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     }
                     _ => todo!("{rvalue:?}"),
                 };
-                heap.insert(*place, sym_value);
+                heap.insert(*place, sym_value, pcs.location);
             }
             mir::StatementKind::StorageDead(local) => {
                 heap.0.remove(&Place::new(*local, &[]));

@@ -6,6 +6,7 @@
 
 pub mod context;
 mod debug_info;
+mod execute;
 pub mod havoc;
 pub mod heap;
 pub mod path;
@@ -215,7 +216,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         place.to_short_string(self.repacker()),
                         place.place().ty(self.repacker())
                     ),
-                    place.place().ty(self.repacker()).ty
+                    place.place().ty(self.repacker()).ty,
                 )
             })
     }
@@ -238,6 +239,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         actions: Vec<UnblockAction<'tcx>>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        location: Location,
     ) {
         for action in actions {
             match action {
@@ -249,123 +251,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     self.handle_removed_reborrow(&blocked_place, &assigned_place, is_mut, heap);
                 }
                 UnblockAction::Collapse(place, places) => {
-                    self.collapse_place_from(&place.place(), &places[0].place(), heap);
+                    self.collapse_place_from(&place.place(), &places[0].place(), heap, location);
                 }
             }
-        }
-    }
-
-    pub fn execute(&mut self) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {
-        let mut result_paths: BTreeSet<ResultPath<'sym, 'tcx, S::SymValSynthetic>> =
-            BTreeSet::new();
-        let mut assertions: BTreeSet<ResultAssertion<'sym, 'tcx, S::SymValSynthetic>> =
-            BTreeSet::new();
-        let mut heap_data = HeapData::new();
-        let mut heap = SymbolicHeap::new(&mut heap_data, self.tcx, &self.body);
-        for (idx, arg) in self.body.args_iter().enumerate() {
-            let local = &self.body.local_decls[arg];
-            self.symvars.push(local.ty);
-            let sym_var = self.arena.mk_var(idx, local.ty);
-            let place = Place::new(arg, &[]);
-            add_debug_note!(
-                sym_var.debug_info,
-                "Symvar for arg {:?} in {:?}",
-                arg,
-                self.body.span
-            );
-            /*
-             * If we're passed in a reference-typed field, store in the heap its
-             * dereference. TODO: Explain why
-             */
-            match sym_var.ty(self.tcx).rust_ty().kind() {
-                ty::TyKind::Ref(_, _, _) => {
-                    heap.insert(
-                        place.project_deref(self.repacker()),
-                        self.arena.mk_projection(ProjectionElem::Deref, sym_var),
-                    );
-                }
-                _ => {
-                    heap.insert(place, sym_var);
-                }
-            }
-        }
-        let mut paths = vec![Path::new(
-            AcyclicPath::from_start_block(),
-            PathConditions::new(),
-            heap_data,
-        )];
-        while let Some(mut path) = paths.pop() {
-            let block = path.last_block();
-            for local in self.havoc.get(block).iter() {
-                let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
-                let place = Place::new(*local, &[]);
-                heap.insert(
-                    place,
-                    self.mk_fresh_symvar(self.body.local_decls[*local].ty),
-                );
-            }
-            let pcs_block = self.fpcs_analysis.get_all_for_bb(block);
-            let block_data = &self.body.basic_blocks[block];
-            for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
-                let fpcs_loc = &pcs_block.statements[stmt_idx];
-                self.set_error_context(
-                    path.path.clone(),
-                    ErrorLocation::Location(fpcs_loc.location),
-                );
-                let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
-                self.handle_pcs(&path.path, &fpcs_loc, &mut heap, true, "".to_string());
-                self.handle_pcs(&path.path, &fpcs_loc, &mut heap, false, "".to_string());
-                self.handle_stmt(stmt, &mut heap, fpcs_loc);
-                if let Some(debug_output_dir) = &self.debug_output_dir {
-                    export_path_json(
-                        &debug_output_dir,
-                        &path,
-                        fpcs_loc,
-                        StepType::Instruction(stmt_idx),
-                        self.fpcs_analysis.repacker(),
-                    );
-                }
-            }
-            // Actions made to evaluate terminator
-            let last_fpcs_loc = pcs_block.statements.last().unwrap();
-            self.set_error_context(
-                path.path.clone(),
-                ErrorLocation::Location(last_fpcs_loc.location),
-            );
-            assert!(pcs_block.statements.len() == block_data.statements.len() + 1);
-            let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
-            self.handle_pcs(&path.path, &last_fpcs_loc, &mut heap, true, "".to_string());
-            self.handle_pcs(&path.path, &last_fpcs_loc, &mut heap, false, "".to_string());
-            if let Some(debug_output_dir) = &self.debug_output_dir {
-                export_path_json(
-                    &debug_output_dir,
-                    &path,
-                    last_fpcs_loc,
-                    StepType::Instruction(block_data.statements.len()),
-                    self.fpcs_analysis.repacker(),
-                );
-            }
-            self.handle_terminator(
-                block_data.terminator(),
-                &mut paths,
-                &mut assertions,
-                &mut result_paths,
-                &mut path,
-                //For havocing data behind references in fn calls, we use the
-                //reborrow state before the terminator action has been applied
-                //to PC
-                last_fpcs_loc.extra.before_start.reborrows(),
-                pcs_block.terminator,
-            );
-        }
-        if let Some(debug_output_dir) = &self.debug_output_dir {
-            export_assertions(&debug_output_dir, &assertions, &self.body.var_debug_info);
-            export_path_list(&debug_output_dir, &result_paths);
-        }
-        SymbolicExecutionResult {
-            paths: result_paths,
-            assertions,
-            symvars: self.symvars.clone(),
         }
     }
 
@@ -402,7 +290,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     );
                     assert!(blocked.len() == 1);
                     let blocked_by = blocked.into_iter().next().unwrap();
-                    heap.insert(blocked_by, self.mk_fresh_symvar(*ty));
+                    heap.insert_maybe_old_place(blocked_by, self.mk_fresh_symvar(*ty));
                 };
             }
             _ => {}
@@ -425,6 +313,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         value: SymValue<'sym, 'tcx, S::SymValSynthetic>,
         places: impl Iterator<Item = pcs::utils::Place<'tcx>>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        location: Location,
     ) {
         let old_proj_len = place.projection.len();
         for f in places {
@@ -433,7 +322,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             for elem in f.projection.iter().skip(old_proj_len) {
                 value = self.arena.mk_projection(elem.clone(), value);
             }
-            heap.insert(f, value)
+            if f.is_ref(self.body, self.tcx) {
+                heap.insert(
+                    f.project_deref(self.repacker()),
+                    self.arena.mk_projection(ProjectionElem::Deref, value),
+                    location,
+                );
+            } else {
+                heap.insert(f, value, location);
+            }
         }
     }
 
@@ -442,6 +339,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         place: &pcs::utils::Place<'tcx>,
         guide: &pcs::utils::Place<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        location: Location,
     ) {
         let value = match place.ty(self.fpcs_analysis.repacker()).ty.kind() {
             ty::TyKind::Ref(_, _, Mutability::Mut) => {
@@ -459,6 +357,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             value,
             std::iter::once(field).chain(rest.into_iter()),
             heap,
+            location,
         );
     }
 
@@ -467,6 +366,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         place: &pcs::utils::Place<'tcx>,
         from: &pcs::utils::Place<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        location: Location,
     ) {
         if place.ty(self.fpcs_analysis.repacker()).ty.is_ref() {
             return;
@@ -499,6 +399,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 ),
                 self.arena.alloc_slice(&args),
             ),
+            location,
         );
     }
 
@@ -506,13 +407,18 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &self,
         repack: &RepackOp<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        location: Location,
     ) {
         match repack {
             RepackOp::StorageDead(_) => todo!(),
             RepackOp::IgnoreStorageDead(_) => {}
             RepackOp::Weaken(_, _, _) => {}
-            RepackOp::Expand(place, guide, _) => self.expand_place_with_guide(place, guide, heap),
-            RepackOp::Collapse(place, from, _) => self.collapse_place_from(place, from, heap),
+            RepackOp::Expand(place, guide, _) => {
+                self.expand_place_with_guide(place, guide, heap, location)
+            }
+            RepackOp::Collapse(place, from, _) => {
+                self.collapse_place_from(place, from, heap, location)
+            }
             RepackOp::DerefShallowInit(_, _) => todo!(),
         }
     }
