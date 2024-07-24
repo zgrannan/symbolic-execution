@@ -6,12 +6,10 @@ use crate::{
     path_conditions::PathConditions,
     place::Place,
     results::{ResultAssertion, ResultPath, SymbolicExecutionResult},
-    rustc_interface::
-        middle::{
-            mir::{Location, ProjectionElem},
-            ty::{self, TyKind},
-        }
-    ,
+    rustc_interface::middle::{
+        mir::{Location, ProjectionElem},
+        ty::{self, TyKind},
+    },
     semantics::VerifierSemantics,
     visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat},
     SymbolicExecution,
@@ -86,9 +84,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     path.path.clone(),
                     ErrorLocation::Location(fpcs_loc.location),
                 );
+                self.handle_pcs(&mut path, &fpcs_loc, true, fpcs_loc.location);
+                self.handle_pcs(&mut path, &fpcs_loc, false, fpcs_loc.location);
                 let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
-                self.handle_pcs(&path.path, &fpcs_loc, &mut heap, true, fpcs_loc.location);
-                self.handle_pcs(&path.path, &fpcs_loc, &mut heap, false, fpcs_loc.location);
                 self.handle_stmt(stmt, &mut heap, fpcs_loc);
                 if let Some(debug_output_dir) = &self.debug_output_dir {
                     export_path_json(
@@ -107,21 +105,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 ErrorLocation::Location(last_fpcs_loc.location),
             );
             assert!(pcs_block.statements.len() == block_data.statements.len() + 1);
-            let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
-            self.handle_pcs(
-                &path.path,
-                &last_fpcs_loc,
-                &mut heap,
-                true,
-                last_fpcs_loc.location,
-            );
-            self.handle_pcs(
-                &path.path,
-                &last_fpcs_loc,
-                &mut heap,
-                false,
-                last_fpcs_loc.location,
-            );
+            self.handle_pcs(&mut path, &last_fpcs_loc, true, last_fpcs_loc.location);
+            self.handle_pcs(&mut path, &last_fpcs_loc, false, last_fpcs_loc.location);
             if let Some(debug_output_dir) = &self.debug_output_dir {
                 export_path_json(
                     &debug_output_dir,
@@ -146,7 +131,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             );
         }
         if let Some(debug_output_dir) = &self.debug_output_dir {
-            export_assertions(&debug_output_dir, &assertions, &self.body.var_debug_info);
+            export_assertions(
+                &debug_output_dir,
+                &assertions,
+                &self.body.var_debug_info,
+                self.tcx,
+            );
             export_path_list(&debug_output_dir, &result_paths);
         }
         SymbolicExecutionResult {

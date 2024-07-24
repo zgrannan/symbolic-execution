@@ -1,4 +1,8 @@
-use crate::rustc_interface::middle::mir::{BasicBlock, START_BLOCK};
+use crate::{
+    function_call_snapshot::FunctionCallSnapshots,
+    rustc_interface::middle::mir::{BasicBlock, Location, START_BLOCK},
+    value::SymValue,
+};
 
 use super::{heap::HeapData, path_conditions::PathConditions};
 
@@ -6,7 +10,6 @@ use super::{heap::HeapData, path_conditions::PathConditions};
 pub struct AcyclicPath(Vec<BasicBlock>);
 
 impl AcyclicPath {
-
     pub fn contains(&self, block: BasicBlock) -> bool {
         self.0.contains(&block)
     }
@@ -62,6 +65,7 @@ pub struct Path<'sym, 'tcx, T> {
     pub path: AcyclicPath,
     pub pcs: PathConditions<'sym, 'tcx, T>,
     pub heap: HeapData<'sym, 'tcx, T>,
+    pub function_call_snapshots: FunctionCallSnapshots<'sym, 'tcx, T>,
 }
 
 impl<'sym, 'tcx, T> Path<'sym, 'tcx, T> {
@@ -70,7 +74,20 @@ impl<'sym, 'tcx, T> Path<'sym, 'tcx, T> {
         pcs: PathConditions<'sym, 'tcx, T>,
         heap: HeapData<'sym, 'tcx, T>,
     ) -> Self {
-        Path { path, pcs, heap }
+        Path {
+            path,
+            pcs,
+            heap,
+            function_call_snapshots: FunctionCallSnapshots::new(),
+        }
+    }
+
+    pub fn add_function_call_snapshot(
+        &mut self,
+        location: Location,
+        args: &'sym [SymValue<'sym, 'tcx, T>],
+    ) {
+        self.function_call_snapshots.add_snapshot(location, args);
     }
 
     pub fn has_path_conditions(&self) -> bool {

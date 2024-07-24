@@ -65,7 +65,7 @@ impl<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>> HeapData<'sym, 't
             .iter()
             .fold(BTreeMap::new(), |mut acc, (place, value)| {
                 let mut key = place.to_short_string(repacker);
-                let value_str = format!("{}", value.to_vis_string(&repacker.body().var_debug_info));
+                let value_str = format!("{}", value.to_vis_string(Some(repacker.tcx()), &repacker.body().var_debug_info));
                 let ty_str = format!("{}", value.ty(repacker.tcx()));
 
                 if acc.contains_key(&key) {

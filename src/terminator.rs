@@ -52,21 +52,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         old_path.clone(),
                         ErrorLocation::TerminatorStart(*target),
                     );
-                    self.handle_pcs(
-                        &path.path,
-                        &fpcs_terminator.succs[0],
-                        &mut SymbolicHeap::new(&mut path.heap, self.tcx, &self.body),
-                        true,
-                        location,
-                    );
+                    self.handle_pcs(&mut path, &fpcs_terminator.succs[0], true, location);
                     self.set_error_context(old_path, ErrorLocation::TerminatorMid(*target));
-                    self.handle_pcs(
-                        &path.path,
-                        &fpcs_terminator.succs[0],
-                        &mut SymbolicHeap::new(&mut path.heap, self.tcx, &self.body),
-                        false,
-                        location,
-                    );
+                    self.handle_pcs(&mut path, &fpcs_terminator.succs[0], false, location);
                     if let Some(debug_output_dir) = &self.debug_output_dir {
                         export_path_json(
                             &debug_output_dir,
@@ -156,6 +144,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 .mk_projection(mir::ProjectionElem::Deref, encoded_args[0]),
                         )
                     } else {
+                        path.function_call_snapshots
+                            .add_snapshot(location, encoded_args);
                         self.verifier_semantics
                             .encode_fn_call(self.arena, *def_id, substs, encoded_args)
                             .unwrap_or_else(|| {

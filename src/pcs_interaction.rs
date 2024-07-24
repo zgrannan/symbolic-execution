@@ -1,4 +1,4 @@
-use crate::rustc_interface::middle::mir::Location;
+use crate::{path::Path, rustc_interface::middle::mir::Location};
 
 use pcs::{
     borrows::{
@@ -22,9 +22,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 {
     pub(crate) fn handle_pcs(
         &mut self,
-        path: &AcyclicPath,
+        path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
-        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         start: bool,
         location: Location,
     ) {
@@ -34,9 +33,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             pcs.extra_middle.clone()
         };
         let (ug_actions, added_reborrows, reborrow_expands) = if let Some(mut bridge) = bridge {
-            eprintln!("Pre filter for {:?}: {:#?}", location, bridge.ug);
-            bridge.ug.filter_for_path(path.to_slice(), self.tcx);
-            eprintln!("Post filter for {:?}: {:#?}", location, bridge.ug);
+            bridge.ug.filter_for_path(path.path.to_slice(), self.tcx);
             (
                 bridge.ug.actions(self.tcx),
                 bridge.added_reborrows,
@@ -49,17 +46,31 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 vec![].into_iter().collect(),
             )
         };
-        eprintln!("Actions for {:?}: {:#?}", location, ug_actions);
-        self.apply_unblock_actions(ug_actions, heap, location);
+        let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
+        self.apply_unblock_actions(
+            ug_actions,
+            &mut heap,
+            &path.function_call_snapshots,
+            location,
+        );
         let repacks = if start {
             &pcs.repacks_start
         } else {
             &pcs.repacks_middle
         };
-        self.handle_repack_collapses(repacks, heap, location);
-        self.handle_repack_expands(repacks, heap, location);
-        self.handle_reborrow_expands(reborrow_expands.into_iter().collect(), heap, path, location);
-        self.handle_added_reborrows(&added_reborrows.into_iter().collect::<Vec<_>>(), heap, path);
+        self.handle_repack_collapses(repacks, &mut heap, location);
+        self.handle_repack_expands(repacks, &mut heap, location);
+        self.handle_reborrow_expands(
+            reborrow_expands.into_iter().collect(),
+            &mut heap,
+            &path.path,
+            location,
+        );
+        self.handle_added_reborrows(
+            &added_reborrows.into_iter().collect::<Vec<_>>(),
+            &mut heap,
+            &path.path,
+        );
     }
 
     pub(crate) fn handle_removed_reborrow(

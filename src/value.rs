@@ -86,6 +86,31 @@ impl From<mir::CastKind> for CastKind {
 }
 
 #[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
+pub struct BackwardsFn<'sym, 'tcx, T> {
+    /// The DefId of the Rust (forwards) function
+    pub def_id: DefId,
+
+    /// Snapshots of the values when the forwards function was called
+    pub arg_snapshots: &'sym [SymValue<'sym, 'tcx, T>],
+
+    /// The snapshot of the returned value of the function at the point it
+    /// expires
+    pub return_snapshot: SymValue<'sym, 'tcx, T>,
+
+    /// The index of the argument that the backwards function is for. For
+    /// example, if the `arg_index` is `i` then backwards_fn(f, args, res, i)
+    /// returns the value of the `i`th element of `args` at the point when the
+    /// result of `f` expires with value `res`.
+    pub arg_index: usize,
+}
+
+impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> BackwardsFn<'sym, 'tcx, T> {
+    pub fn ty(&self, tcx: ty::TyCtxt<'tcx>) -> Ty<'tcx> {
+        self.arg_snapshots[self.arg_index].kind.ty(tcx)
+    }
+}
+
+#[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub enum SymValueKind<'sym, 'tcx, T> {
     Var(usize, ty::Ty<'tcx>),
     Constant(Constant<'tcx>),
@@ -112,6 +137,7 @@ pub enum SymValueKind<'sym, 'tcx, T> {
     Cast(CastKind, SymValue<'sym, 'tcx, T>, ty::Ty<'tcx>),
     Synthetic(T),
     InternalError(String, ty::Ty<'tcx>),
+    BackwardsFn(BackwardsFn<'sym, 'tcx, T>),
 }
 
 #[derive(Debug)]
@@ -189,6 +215,9 @@ impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tc
             SymValueKind::Ref(val, mutability) => {
                 let transformed_val = val.apply_transformer(arena, transformer);
                 transformer.transform_ref(arena, transformed_val, *mutability)
+            }
+            SymValueKind::BackwardsFn(backwards_fn) => {
+                todo!()
             }
         }
     }
@@ -270,10 +299,11 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueKind<'sym, 'tcx, T> {
                 let ty = tcx.mk_ty_from_kind(ty::TyKind::Ref(
                     tcx.lifetimes.re_erased,
                     base_ty,
-                    *mutability
+                    *mutability,
                 ));
                 Ty::new(ty, None)
             }
+            SymValueKind::BackwardsFn(backwards_fn) => backwards_fn.ty(tcx),
         }
     }
 }

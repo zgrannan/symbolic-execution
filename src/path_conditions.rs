@@ -12,7 +12,7 @@ use crate::rustc_interface::{
     hir::def_id::DefId,
     middle::{
         mir::VarDebugInfo,
-        ty::{self, GenericArgsRef, TyKind},
+        ty::{self, GenericArgsRef, TyCtxt, TyKind},
     },
 };
 
@@ -63,32 +63,32 @@ pub struct PathConditionAtom<'sym, 'tcx, T> {
 }
 
 impl<'sym, 'tcx, T: VisFormat> PathConditionAtom<'sym, 'tcx, T> {
-    pub fn to_json(&self, debug_info: &[VarDebugInfo]) -> Value {
-        let json_string = self.to_vis_string(debug_info);
+    pub fn to_json(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> Value {
+        let json_string = self.to_vis_string(tcx, debug_info);
         serde_json::Value::String(json_string)
     }
 }
 
 impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditionAtom<'sym, 'tcx, T> {
-    fn to_vis_string(&self, debug_info: &[VarDebugInfo]) -> String {
+    fn to_vis_string(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> String {
         match &self.predicate {
             PathConditionPredicate::Eq(v, ty) => match ty.kind() {
                 TyKind::Bool if *v == 0 => {
-                    format!("!({})", self.expr.to_vis_string(debug_info),)
+                    format!("!({})", self.expr.to_vis_string(tcx, debug_info),)
                 }
                 _ => format!(
                     "({} = {} as {})",
-                    self.expr.to_vis_string(debug_info),
+                    self.expr.to_vis_string(tcx, debug_info),
                     v,
                     ty
                 ),
             },
             PathConditionPredicate::Ne(vs, ty) if vs.len() == 1 => match ty.kind() {
-                TyKind::Bool if vs[0] == 0 => self.expr.to_vis_string(debug_info),
+                TyKind::Bool if vs[0] == 0 => self.expr.to_vis_string(tcx, debug_info),
                 _ => {
                     format!(
                         "({} != {}: {})",
-                        self.expr.to_vis_string(debug_info),
+                        self.expr.to_vis_string(tcx, debug_info),
                         vs[0],
                         ty
                     )
@@ -97,7 +97,7 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditionAtom<'sym, 'tcx, T> {
             PathConditionPredicate::Ne(vs, ty) => {
                 format!(
                     "({} does not equal any of [{}] as {})",
-                    self.expr.to_vis_string(debug_info),
+                    self.expr.to_vis_string(tcx, debug_info),
                     vs.iter()
                         .map(|v| v.to_string())
                         .collect::<Vec<_>>()
@@ -108,13 +108,9 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditionAtom<'sym, 'tcx, T> {
             PathConditionPredicate::Postcondition(def_id, _, values) => {
                 format!(
                     "({} satisfies the postcondition of {:?} applied to args [{}])",
-                    self.expr.to_vis_string(debug_info),
+                    self.expr.to_vis_string(tcx, debug_info),
                     def_id,
-                    values
-                        .iter()
-                        .map(|v| v.to_vis_string(debug_info))
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    values.to_vis_string(tcx, debug_info)
                 )
             }
         }
@@ -149,10 +145,10 @@ pub struct PathConditions<'sym, 'tcx, T> {
 }
 
 impl<'sym, 'tcx, T: VisFormat> PathConditions<'sym, 'tcx, T> {
-    pub fn to_json(&self, debug_info: &[VarDebugInfo]) -> Value {
+    pub fn to_json(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> Value {
         self.atoms
             .iter()
-            .map(|atom| atom.to_json(debug_info))
+            .map(|atom| atom.to_json(tcx, debug_info))
             .collect()
     }
 }

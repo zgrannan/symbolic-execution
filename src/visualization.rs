@@ -11,17 +11,17 @@ use crate::{
     results::{ResultAssertion, ResultPath},
     rustc_interface::{
         ast::Mutability,
-        hir::def_id::DefId,
+        hir::{def_id::DefId, ItemKind, Node},
         middle::{
             mir::{self, BasicBlock, Body, ProjectionElem, VarDebugInfo},
             ty::{self, GenericArgsRef, TyCtxt},
         },
     },
-    value::{SymValueData, SymValueKind, SyntheticSymValue, Ty},
+    value::{SymValue, SymValueData, SymValueKind, SyntheticSymValue, Ty},
 };
 
 pub trait VisFormat {
-    fn to_vis_string(&self, debug_info: &[VarDebugInfo]) -> String;
+    fn to_vis_string(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> String;
 }
 
 pub enum StepType {
@@ -56,7 +56,8 @@ pub fn export_path_json<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>
     let mut json_object = serde_json::Map::new();
     json_object.insert(
         "pcs".to_string(),
-        path.pcs.to_json(&repacker.body().var_debug_info),
+        path.pcs
+            .to_json(Some(repacker.tcx()), &repacker.body().var_debug_info),
     );
     json_object.insert("heap".to_string(), path.heap.to_json(repacker));
     json_object.insert(
@@ -106,14 +107,15 @@ pub fn export_assertions<'sym, 'tcx, T: VisFormat>(
     debug_output_dir: &str,
     assertions: &BTreeSet<ResultAssertion<'sym, 'tcx, T>>,
     debug_info: &[VarDebugInfo],
+    tcx: TyCtxt<'_>,
 ) {
     let assertions_json: Vec<serde_json::Value> = assertions
         .iter()
         .map(|(path, pcs, assertion)| {
             json!({
                 "path": path_to_vec(path),
-                "pcs": pcs.to_json(debug_info),
-                "assertion": assertion.to_vis_string(debug_info)
+                "pcs": pcs.to_json(Some(tcx), debug_info),
+                "assertion": assertion.to_vis_string(Some(tcx), debug_info)
             })
         })
         .collect();
@@ -155,17 +157,32 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tcx, T> {
         self.kind.ty(tcx)
     }
 }
+
 impl<'sym, 'tcx, T: VisFormat> std::fmt::Display for SymValueData<'sym, 'tcx, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_vis_string(&[]))
+        write!(
+            f,
+            "{}",
+            self.to_vis_string_prec(None, &[], PrecCategory::Bottom)
+        )
     }
 }
 
 impl<'sym, 'tcx, T: VisFormat> VisFormat for SymValueData<'sym, 'tcx, T> {
-    fn to_vis_string(&self, debug_info: &[VarDebugInfo]) -> String {
-        self.to_vis_string_prec(debug_info, PrecCategory::Bottom)
+    fn to_vis_string(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> String {
+        self.to_vis_string_prec(tcx, debug_info, PrecCategory::Bottom)
     }
 }
+
+impl<'sym, 'tcx, T: VisFormat> VisFormat for &'sym [SymValue<'sym, 'tcx, T>] {
+    fn to_vis_string(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> String {
+    self.iter()
+        .map(|value| value.to_vis_string(tcx, debug_info))
+        .collect::<Vec<_>>()
+        .join(", ")
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 enum PrecCategory {
     Atom,
@@ -224,6 +241,7 @@ impl<'sym, 'tcx, T> SymValueKind<'sym, 'tcx, T> {
             SymValueKind::Cast(_, _, _) => PrecCategory::Prefix,
             SymValueKind::InternalError(_, _) => PrecCategory::Atom,
             SymValueKind::Ref(_, _) => PrecCategory::Prefix,
+            SymValueKind::BackwardsFn(_) => PrecCategory::Atom,
         }
     }
 }
@@ -245,6 +263,7 @@ const CATEGORIES: &[PrecCategory] = &[
 impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
     fn to_vis_string_prec(
         &self,
+        tcx: Option<TyCtxt<'_>>,
         debug_info: &[VarDebugInfo],
         parent_category: PrecCategory,
     ) -> String {
@@ -285,9 +304,9 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                 };
                 format!(
                     "{} {} {}",
-                    lhs.to_vis_string_prec(debug_info, self_category),
+                    lhs.to_vis_string_prec(tcx, debug_info, self_category),
                     op_str,
-                    rhs.to_vis_string_prec(debug_info, self_category)
+                    rhs.to_vis_string_prec(tcx, debug_info, self_category)
                 )
             }
             SymValueKind::UnaryOp(_, op, expr) => {
@@ -298,16 +317,19 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                 format!(
                     "{}{}",
                     op_str,
-                    expr.to_vis_string_prec(debug_info, self_category)
+                    expr.to_vis_string_prec(tcx, debug_info, self_category)
                 )
             }
             SymValueKind::Projection(kind, value) => match kind {
                 ProjectionElem::Deref => {
-                    format!("*{}", value.to_vis_string_prec(debug_info, self_category))
+                    format!(
+                        "*{}",
+                        value.to_vis_string_prec(tcx, debug_info, self_category)
+                    )
                 }
                 ProjectionElem::Field(lhs, _) => format!(
                     "{}.{:?}",
-                    value.to_vis_string_prec(debug_info, self_category),
+                    value.to_vis_string_prec(tcx, debug_info, self_category),
                     lhs
                 ),
                 ProjectionElem::Index(_) => todo!(),
@@ -319,39 +341,48 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                 ProjectionElem::Subslice { from, to, from_end } => todo!(),
                 ProjectionElem::Downcast(Some(sym), _) => format!(
                     "{}@{}",
-                    value.to_vis_string_prec(debug_info, self_category),
+                    value.to_vis_string_prec(tcx, debug_info, self_category),
                     sym
                 ),
                 ProjectionElem::Downcast(None, idx) => format!(
                     "{:?}@{:?}",
-                    value.to_vis_string_prec(debug_info, self_category),
+                    value.to_vis_string_prec(tcx, debug_info, self_category),
                     idx
                 ),
                 ProjectionElem::OpaqueCast(_) => todo!(),
             },
             SymValueKind::Aggregate(kind, values) => {
-                let values_str = values
-                    .iter()
-                    .map(|v| v.to_vis_string(debug_info))
-                    .collect::<Vec<_>>()
-                    .join(", ");
                 let pack_ty = match kind {
                     crate::value::AggregateKind::Rust(_, _) => "R",
                     crate::value::AggregateKind::PCS(_, _) => "P",
                 };
-                format!("pack[{}]&lt;{}&gt;({})", pack_ty, kind.ty(), values_str)
+                format!(
+                    "pack[{}]&lt;{}&gt;({})",
+                    pack_ty,
+                    kind.ty(),
+                    values.to_vis_string(tcx, debug_info)
+                )
             }
             SymValueKind::Discriminant(val) => {
-                format!("discriminant({})", val.to_vis_string(debug_info))
+                format!("discriminant({})", val.to_vis_string(tcx, debug_info))
             }
-            SymValueKind::Synthetic(s) => s.to_vis_string(debug_info),
+            SymValueKind::Synthetic(s) => s.to_vis_string(tcx, debug_info),
             SymValueKind::Cast(_, _, _) => "todo!()".to_string(),
             SymValueKind::InternalError(err, _) => format!("INTERNAL ERROR: {}", err),
             SymValueKind::Ref(val, Mutability::Mut) => {
-                format!("&mut {}", val.to_vis_string(debug_info))
+                format!("&mut {}", val.to_vis_string(tcx, debug_info))
             }
             SymValueKind::Ref(val, Mutability::Not) => {
-                format!("&{}", val.to_vis_string(debug_info))
+                format!("&{}", val.to_vis_string(tcx, debug_info))
+            }
+            SymValueKind::BackwardsFn(backwards_fn) => {
+                format!(
+                    "{}<sub>back_{}</sub>({}, {})",
+                    get_fn_name(tcx, backwards_fn.def_id),
+                    get_arg_name(tcx, backwards_fn.def_id, backwards_fn.arg_index),
+                    backwards_fn.arg_snapshots.to_vis_string(tcx, debug_info),
+                    backwards_fn.return_snapshot.to_vis_string(tcx, debug_info)
+                )
             }
         };
 
@@ -361,6 +392,31 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
             result
         }
     }
+}
+
+fn get_fn_name(tcx: Option<TyCtxt<'_>>, fn_def_id: DefId) -> String {
+    if let Some(tcx) = tcx {
+        if let Some(item_name) = tcx.opt_item_name(fn_def_id) {
+            return item_name.to_string();
+        }
+    }
+    return format!("{:?}", fn_def_id);
+}
+
+fn get_arg_name(tcx: Option<TyCtxt<'_>>, fn_def_id: DefId, arg_idx: usize) -> String {
+    if let Some(tcx) = tcx {
+        if let Some(Node::Item(item)) = tcx.hir().get_if_local(fn_def_id) {
+            if let ItemKind::Fn(_, _, body_id) = item.kind {
+                let body = tcx.hir().body(body_id);
+                if let Some(arg) = body.params.get(arg_idx) {
+                    if let Some(ident) = arg.pat.simple_ident() {
+                        return ident.name.to_string();
+                    }
+                }
+            }
+        }
+    }
+    return format!("arg{}", arg_idx);
 }
 
 fn needs_parens(child: PrecCategory, parent: PrecCategory) -> bool {

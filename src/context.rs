@@ -1,5 +1,5 @@
 use crate::path::AcyclicPath;
-use crate::value::{CastKind, SymValue, SymValueData, SymValueKind, SyntheticSymValue};
+use crate::value::{BackwardsFn, CastKind, SymValue, SymValueData, SymValueKind, SyntheticSymValue};
 use crate::{
     rustc_interface::{
         ast::Mutability,
@@ -117,6 +117,13 @@ impl<'tcx> SymExContext<'tcx> {
         self.mk_sym_value(SymValueKind::Synthetic(t))
     }
 
+    pub fn mk_backwards_fn<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
+        &'sym self,
+        backwards_fn: BackwardsFn<'sym, 'tcx, T>,
+    ) -> SymValue<'sym, 'tcx, T> {
+        self.mk_sym_value(SymValueKind::BackwardsFn(backwards_fn))
+    }
+
     pub fn mk_projection<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
         kind: mir::ProjectionElem<mir::Local, ty::Ty<'tcx>>,
@@ -125,10 +132,10 @@ impl<'tcx> SymExContext<'tcx> {
         match kind {
             mir::ProjectionElem::Field(_, _) => {
                 if val.kind.ty(self.tcx).rust_ty().is_enum() {
-                    // assert!(
-                    //     val.kind.ty(self.tcx).variant_index().is_some(),
-                    //     "Enum value must have a variant index set"
-                    // );
+                    assert!(
+                        val.kind.ty(self.tcx).variant_index().is_some(),
+                        "Enum value must have a variant index set"
+                    );
                 }
             }
             _ => {}

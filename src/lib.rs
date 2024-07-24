@@ -7,6 +7,7 @@
 pub mod context;
 mod debug_info;
 mod execute;
+mod function_call_snapshot;
 pub mod havoc;
 pub mod heap;
 pub mod path;
@@ -33,9 +34,11 @@ use crate::{
         },
         span::ErrorGuaranteed,
     },
+    value::BackwardsFn,
     visualization::StepType,
 };
 use context::{ErrorContext, ErrorLocation, SymExContext};
+use function_call_snapshot::FunctionCallSnapshots;
 use havoc::HavocData;
 use heap::{HeapData, SymbolicHeap};
 use pcs::{
@@ -69,20 +72,13 @@ pub enum Assertion<'sym, 'tcx, T> {
 }
 
 impl<'sym, 'tcx, T: VisFormat> VisFormat for Assertion<'sym, 'tcx, T> {
-    fn to_vis_string(&self, debug_info: &[VarDebugInfo]) -> String {
+    fn to_vis_string(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> String {
         match self {
             Assertion::False => "false".to_string(),
-            Assertion::Eq(val, true) => val.to_vis_string(debug_info),
-            Assertion::Eq(val, false) => format!("!{}", val.to_vis_string(debug_info)),
+            Assertion::Eq(val, true) => val.to_vis_string(tcx, debug_info),
+            Assertion::Eq(val, false) => format!("!{}", val.to_vis_string(tcx, debug_info)),
             Assertion::Precondition(def_id, substs, args) => {
-                format!(
-                    "{:?}({})",
-                    def_id,
-                    args.iter()
-                        .map(|arg| arg.to_vis_string(debug_info))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
+                format!("{:?}({})", def_id, args.to_vis_string(tcx, debug_info))
             }
         }
     }
@@ -239,6 +235,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         actions: Vec<UnblockAction<'tcx>>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        function_call_snapshots: &FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
         for action in actions {
@@ -253,9 +250,26 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 UnblockAction::Collapse(place, places) => {
                     self.collapse_place_from(&place.place(), &places[0].place(), heap, location);
                 }
-                UnblockAction::TerminateRegion(_) => {
-                    // do nothing for now
-                }
+                UnblockAction::TerminateRegion(_, typ) => match &typ {
+                    pcs::borrows::domain::AbstractionType::FunctionCall {
+                        def_id,
+                        location: call_location,
+                        blocks_args,
+                        blocked_place,
+                    } => {
+                        let snapshot = function_call_snapshots.get_snapshot(&call_location);
+                        for (idx, place) in blocks_args {
+                            let value = self.arena.mk_backwards_fn(BackwardsFn {
+                                def_id: *def_id,
+                                arg_snapshots: snapshot.args,
+                                return_snapshot: self
+                                    .encode_place::<LookupGet, _>(heap.0, blocked_place),
+                                arg_index: *idx,
+                            });
+                            heap.insert_maybe_old_place(*place, value);
+                        }
+                    }
+                },
             }
         }
     }
