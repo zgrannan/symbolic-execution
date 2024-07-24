@@ -72,7 +72,7 @@ impl<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>> HeapData<'sym, 't
                     key = format!("{:?}", place.to_short_string(repacker));
                     assert!(!acc.contains_key(&key));
                 }
-                acc.insert(key, serde_json::json!({ "value": value_str, "ty": ty_str }));
+                acc.insert(key, serde_json::json!({ "old": !place.is_current(), "value": value_str, "ty": ty_str }));
                 acc
             });
         serde_json::to_value(map).unwrap()

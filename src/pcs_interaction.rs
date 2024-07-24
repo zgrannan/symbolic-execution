@@ -34,8 +34,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             pcs.extra_middle.clone()
         };
         let (ug_actions, added_reborrows, reborrow_expands) = if let Some(mut bridge) = bridge {
-            bridge.ug.filter_for_path(path.to_slice());
-            (bridge.ug.actions(), bridge.added_reborrows, bridge.expands)
+            eprintln!("Pre filter for {:?}: {:#?}", location, bridge.ug);
+            bridge.ug.filter_for_path(path.to_slice(), self.tcx);
+            eprintln!("Post filter for {:?}: {:#?}", location, bridge.ug);
+            (
+                bridge.ug.actions(self.tcx),
+                bridge.added_reborrows,
+                bridge.expands,
+            )
         } else {
             (
                 vec![],
@@ -43,6 +49,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 vec![].into_iter().collect(),
             )
         };
+        eprintln!("Actions for {:?}: {:#?}", location, ug_actions);
         self.apply_unblock_actions(ug_actions, heap, location);
         let repacks = if start {
             &pcs.repacks_start

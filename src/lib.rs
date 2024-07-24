@@ -253,6 +253,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 UnblockAction::Collapse(place, places) => {
                     self.collapse_place_from(&place.place(), &places[0].place(), heap, location);
                 }
+                UnblockAction::TerminateRegion(_) => {
+                    // do nothing for now
+                }
             }
         }
     }
@@ -373,7 +376,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
         let place_ty = place.ty(self.fpcs_analysis.repacker());
         let args: Vec<_> = if from.is_downcast_of(*place).is_some() || place_ty.ty.is_box() {
-            vec![heap.0.take(from).unwrap()]
+            vec![heap.0.take(from).unwrap_or_else(|| {
+                self.mk_internal_err_expr(
+                    format!("Place {:?} not found in heap[collapse]", from),
+                    from.ty(self.fpcs_analysis.repacker()).ty,
+                )
+            })]
         } else {
             place
                 .expand_field(None, self.fpcs_analysis.repacker())
