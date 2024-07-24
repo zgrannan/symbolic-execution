@@ -134,7 +134,7 @@ pub fn export_path_list<'sym, 'tcx, T: VisFormat>(
 ) {
     let result_paths_json: Vec<Vec<usize>> = result_paths
         .iter()
-        .map(|(path, _, _)| path_to_vec(path))
+        .map(|path| path_to_vec(&path.path))
         .collect();
 
     let json_string = serde_json::to_string_pretty(&result_paths_json)
@@ -176,10 +176,10 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for SymValueData<'sym, 'tcx, T> {
 
 impl<'sym, 'tcx, T: VisFormat> VisFormat for &'sym [SymValue<'sym, 'tcx, T>] {
     fn to_vis_string(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> String {
-    self.iter()
-        .map(|value| value.to_vis_string(tcx, debug_info))
-        .collect::<Vec<_>>()
-        .join(", ")
+        self.iter()
+            .map(|value| value.to_vis_string(tcx, debug_info))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 

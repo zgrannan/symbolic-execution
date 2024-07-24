@@ -122,12 +122,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 &mut assertions,
                 &mut result_paths,
                 &mut path,
-                //For havocing data behind references in fn calls, we use the
-                //reborrow state before the terminator action has been applied
-                //to PC
-                last_fpcs_loc.extra.before_start.reborrows(),
                 pcs_block.terminator,
-                last_fpcs_loc.location,
+                &last_fpcs_loc,
             );
         }
         if let Some(debug_output_dir) = &self.debug_output_dir {

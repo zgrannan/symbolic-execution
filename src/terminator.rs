@@ -9,6 +9,7 @@ use crate::context::ErrorLocation;
 use crate::heap::SymbolicHeap;
 use crate::path::Path;
 use crate::path_conditions::{PathConditionAtom, PathConditionPredicate};
+use crate::pcs_interaction::PcsLocation;
 use crate::results::{ResultAssertion, ResultPath};
 use crate::value::SymValue;
 use crate::visualization::{export_path_json, StepType};
@@ -30,10 +31,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         assertions: &mut BTreeSet<ResultAssertion<'sym, 'tcx, S::SymValSynthetic>>,
         result_paths: &mut BTreeSet<ResultPath<'sym, 'tcx, S::SymValSynthetic>>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
-        reborrows: &ReborrowingDag<'tcx>,
         fpcs_terminator: FreePcsTerminator<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
-        location: Location,
+        location: &PcsLocation<'mir, 'tcx>,
     ) {
+        //For havocing data behind references in fn calls, we use the
+        //reborrow state before the terminator action has been applied
+        //to PC
+        let reborrows = location.extra.before_start.reborrows();
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
         match &terminator.kind {
             mir::TerminatorKind::Drop { target, .. }
@@ -52,9 +56,19 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         old_path.clone(),
                         ErrorLocation::TerminatorStart(*target),
                     );
-                    self.handle_pcs(&mut path, &fpcs_terminator.succs[0], true, location);
+                    self.handle_pcs(
+                        &mut path,
+                        &fpcs_terminator.succs[0],
+                        true,
+                        location.location,
+                    );
                     self.set_error_context(old_path, ErrorLocation::TerminatorMid(*target));
-                    self.handle_pcs(&mut path, &fpcs_terminator.succs[0], false, location);
+                    self.handle_pcs(
+                        &mut path,
+                        &fpcs_terminator.succs[0],
+                        false,
+                        location.location,
+                    );
                     if let Some(debug_output_dir) = &self.debug_output_dir {
                         export_path_json(
                             &debug_output_dir,
@@ -145,7 +159,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         )
                     } else {
                         path.function_call_snapshots
-                            .add_snapshot(location, encoded_args);
+                            .add_snapshot(location.location, encoded_args);
                         self.verifier_semantics
                             .encode_fn_call(self.arena, *def_id, substs, encoded_args)
                             .unwrap_or_else(|| {
@@ -160,7 +174,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 sym_var
                             })
                     };
-                    heap.insert(*destination, result, location);
+                    heap.insert(*destination, result, location.location);
                     path.pcs.insert(PathConditionAtom::new(
                         result,
                         PathConditionPredicate::Postcondition(*def_id, substs, encoded_args),
@@ -180,7 +194,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
         match terminator.kind {
             mir::TerminatorKind::Return => {
-                self.add_to_result_paths(&path, result_paths);
+                self.add_to_result_paths(&path, location, result_paths);
             }
             _ => {}
         }

@@ -48,7 +48,8 @@ use pcs::{
     utils::PlaceRepacker,
     FpcsOutput,
 };
-use results::{ResultAssertion, ResultPath, SymbolicExecutionResult};
+use pcs_interaction::PcsLocation;
+use results::{BackwardsFacts, ResultAssertion, ResultPath, SymbolicExecutionResult};
 use semantics::VerifierSemantics;
 use std::{
     collections::{BTreeSet, VecDeque},
@@ -274,14 +275,29 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
     }
 
+    fn compute_backwards_facts(
+        &self,
+        path: &Path<'sym, 'tcx, S::SymValSynthetic>,
+        pcs: &PcsLocation<'mir, 'tcx>,
+    ) -> BackwardsFacts<'sym, 'tcx, S::SymValSynthetic> {
+        BackwardsFacts::new()
+    }
+
     fn add_to_result_paths(
         &mut self,
         path: &Path<'sym, 'tcx, S::SymValSynthetic>,
+        pcs: &PcsLocation<'mir, 'tcx>,
         result_paths: &mut BTreeSet<ResultPath<'sym, 'tcx, S::SymValSynthetic>>,
     ) {
         let return_place: Place<'tcx> = mir::RETURN_PLACE.into();
         let expr = self.encode_place::<LookupGet, _>(&path.heap, &return_place);
-        result_paths.insert((path.path.clone(), path.pcs.clone(), expr));
+        let backwards_facts = self.compute_backwards_facts(path, pcs);
+        result_paths.insert(ResultPath::new(
+            path.path.clone(),
+            path.pcs.clone(),
+            expr,
+            backwards_facts,
+        ));
     }
 
     fn repacker(&self) -> PlaceRepacker<'_, 'tcx> {
