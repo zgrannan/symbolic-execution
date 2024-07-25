@@ -269,17 +269,20 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
     ) -> String {
         let self_category = self.kind.prec_category();
         let result = match &self.kind {
-            SymValueKind::Var(idx, ty) => {
-                let info = debug_info.iter().find(|d| {
-                    d.argument_index
-                        .map_or(false, |arg_idx| arg_idx == (*idx + 1) as u16)
-                });
-                if let Some(info) = info {
-                    format!("α<sub>{}</sub>", info.name)
-                } else {
-                    format!("α<sub>{}</sub>: {}", idx, ty)
+            SymValueKind::Var(var, ty) => match var {
+                crate::value::SymVar::Normal(idx) => {
+                    let info = debug_info.iter().find(|d| {
+                        d.argument_index
+                            .map_or(false, |arg_idx| arg_idx == (*idx + 1) as u16)
+                    });
+                    if let Some(info) = info {
+                        format!("α<sub>{}</sub>", info.name)
+                    } else {
+                        format!("α<sub>{}</sub>: {}", idx, ty)
+                    }
                 }
-            }
+                crate::value::SymVar::ReservedBackwardsFnResult => "α<sub>result</sub>".to_string(),
+            },
             SymValueKind::Constant(c) => format!("{}", c.literal()),
             SymValueKind::CheckedBinaryOp(_, op, lhs, rhs)
             | SymValueKind::BinaryOp(_, op, lhs, rhs) => {

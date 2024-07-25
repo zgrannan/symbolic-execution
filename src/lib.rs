@@ -29,7 +29,7 @@ use crate::{
         ast::Mutability,
         hir::def_id::{DefId, LocalDefId},
         middle::{
-            mir::{self, Body, Location, ProjectionElem, VarDebugInfo},
+            mir::{self, Body, Local, Location, ProjectionElem, VarDebugInfo},
             ty::{self, GenericArgsRef, TyCtxt, TyKind},
         },
         span::ErrorGuaranteed,
@@ -42,7 +42,12 @@ use function_call_snapshot::FunctionCallSnapshots;
 use havoc::HavocData;
 use heap::{HeapData, SymbolicHeap};
 use pcs::{
-    borrows::{domain::MaybeOldPlace, reborrowing_dag::ReborrowingDag},
+    borrows::{
+        domain::MaybeOldPlace,
+        reborrowing_dag::ReborrowingDag,
+        unblock_graph::UnblockGraph,
+        unblock_reason::{UnblockReason, UnblockReasons},
+    },
     combined_pcs::UnblockAction,
     free_pcs::RepackOp,
     utils::PlaceRepacker,
@@ -55,7 +60,7 @@ use std::{
     collections::{BTreeSet, VecDeque},
     ops::Deref,
 };
-use value::SymValueKind;
+use value::{SymValueKind, SymVar};
 use visualization::{export_assertions, export_path_json, export_path_list, VisFormat};
 
 use self::{
@@ -276,16 +281,45 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     }
 
     fn compute_backwards_facts(
-        &self,
+        &mut self,
         path: &Path<'sym, 'tcx, S::SymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
     ) -> BackwardsFacts<'sym, 'tcx, S::SymValSynthetic> {
+        let return_place = &self.body.local_decls[Local::from_usize(0)];
+        let mut borrow_state = pcs.extra.after.clone();
+        borrow_state.filter_for_path(&path.path.to_slice());
+        if return_place.ty.ref_mutability() == Some(Mutability::Mut) {
+            for arg in 1..=self.body.arg_count {
+                let mut heap = path.heap.clone();
+                let mut heap = SymbolicHeap::new(&mut heap, self.tcx, self.body);
+                let local = Local::from_usize(arg);
+                let arg_place: mir::Place<'tcx> = local.into();
+                let arg_place: Place<'tcx> = arg_place.into();
+                if arg_place.is_mut_ref(self.body, self.tcx) {
+                    let mut ug = UnblockGraph::new();
+                    ug.unblock_place(
+                        arg_place.project_deref(self.repacker()).into(),
+                        &borrow_state,
+                        pcs.location.block,
+                        UnblockReasons::new(UnblockReason::BackwardsFunction(local)),
+                        self.tcx,
+                    );
+                    let actions = ug.actions(self.tcx);
+                    self.apply_unblock_actions(
+                        actions,
+                        &mut heap,
+                        &path.function_call_snapshots,
+                        pcs.location,
+                    );
+                }
+            }
+        }
         BackwardsFacts::new()
     }
 
     fn add_to_result_paths(
         &mut self,
-        path: &Path<'sym, 'tcx, S::SymValSynthetic>,
+        path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
         result_paths: &mut BTreeSet<ResultPath<'sym, 'tcx, S::SymValSynthetic>>,
     ) {
@@ -331,9 +365,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     }
 
     fn mk_fresh_symvar(&mut self, ty: ty::Ty<'tcx>) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
-        let var = self.arena.mk_var(self.symvars.len(), ty);
+        let var = SymVar::Normal(self.symvars.len());
         self.symvars.push(ty);
-        var
+        self.arena.mk_var(var, ty)
     }
 
     fn alloc_slice<T: Copy>(&self, t: &[T]) -> &'sym [T] {

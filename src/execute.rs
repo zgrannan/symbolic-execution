@@ -1,18 +1,8 @@
 use crate::{
-    add_debug_note,
-    context::ErrorLocation,
-    heap::{HeapData, SymbolicHeap},
-    path::{AcyclicPath, Path},
-    path_conditions::PathConditions,
-    place::Place,
-    results::{ResultAssertion, ResultPath, SymbolicExecutionResult},
-    rustc_interface::middle::{
+    add_debug_note, context::ErrorLocation, heap::{HeapData, SymbolicHeap}, path::{AcyclicPath, Path}, path_conditions::PathConditions, place::Place, results::{ResultAssertion, ResultPath, SymbolicExecutionResult}, rustc_interface::middle::{
         mir::{Location, ProjectionElem},
         ty::{self, TyKind},
-    },
-    semantics::VerifierSemantics,
-    visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat},
-    SymbolicExecution,
+    }, semantics::VerifierSemantics, value::SymVar, visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat}, SymbolicExecution
 };
 use std::{
     collections::{BTreeSet, VecDeque},
@@ -32,7 +22,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         for (idx, arg) in self.body.args_iter().enumerate() {
             let local = &self.body.local_decls[arg];
             self.symvars.push(local.ty);
-            let sym_var = self.arena.mk_var(idx, local.ty);
+            let sym_var = self.arena.mk_var(SymVar::Normal(idx), local.ty);
             let place = Place::new(arg, &[]);
             add_debug_note!(
                 sym_var.debug_info,

@@ -194,7 +194,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
         match terminator.kind {
             mir::TerminatorKind::Return => {
-                self.add_to_result_paths(&path, location, result_paths);
+                self.add_to_result_paths(path, location, result_paths);
             }
             _ => {}
         }

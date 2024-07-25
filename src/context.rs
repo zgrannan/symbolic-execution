@@ -1,5 +1,5 @@
 use crate::path::AcyclicPath;
-use crate::value::{BackwardsFn, CastKind, SymValue, SymValueData, SymValueKind, SyntheticSymValue};
+use crate::value::{BackwardsFn, CastKind, SymValue, SymValueData, SymValueKind, SymVar, SyntheticSymValue};
 use crate::{
     rustc_interface::{
         ast::Mutability,
@@ -97,10 +97,10 @@ impl<'tcx> SymExContext<'tcx> {
 
     pub fn mk_var<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
         &'sym self,
-        idx: usize,
+        var: SymVar,
         ty: ty::Ty<'tcx>,
     ) -> SymValue<'sym, 'tcx, T> {
-        self.mk_sym_value(SymValueKind::Var(idx, ty))
+        self.mk_sym_value(SymValueKind::Var(var, ty))
     }
 
     pub fn mk_constant<'sym, T: SyntheticSymValue<'sym, 'tcx>>(

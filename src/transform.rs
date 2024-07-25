@@ -1,24 +1,27 @@
-use crate::{rustc_interface::{
-    ast::Mutability,
-    abi::VariantIdx,
-    const_eval::interpret::ConstValue,
-    data_structures::fx::FxHasher,
-    middle::{
-        mir::{self, tcx::PlaceTy, ProjectionElem, VarDebugInfo},
-        ty,
-    },
-    span::{def_id::DefId, DUMMY_SP},
-}, value::{AggregateKind, CastKind, Constant, SymValue}};
 use crate::{context::SymExContext, value::SyntheticSymValue};
+use crate::{
+    rustc_interface::{
+        abi::VariantIdx,
+        ast::Mutability,
+        const_eval::interpret::ConstValue,
+        data_structures::fx::FxHasher,
+        middle::{
+            mir::{self, tcx::PlaceTy, ProjectionElem, VarDebugInfo},
+            ty,
+        },
+        span::{def_id::DefId, DUMMY_SP},
+    },
+    value::{AggregateKind, CastKind, Constant, SymValue, SymVar},
+};
 
 pub trait SymValueTransformer<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> {
     fn transform_var(
         &mut self,
         arena: &'sym SymExContext<'tcx>,
-        idx: usize,
+        var: SymVar,
         ty: ty::Ty<'tcx>,
     ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_var(idx, ty)
+        arena.mk_var(var, ty)
     }
     fn transform_constant(
         &mut self,
@@ -97,5 +100,9 @@ pub trait SymValueTransformer<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> {
         arena.mk_ref(val, mutability)
     }
 
-    fn transform_synthetic(&mut self, arena: &'sym SymExContext<'tcx>, s: T) -> SymValue<'sym, 'tcx, T>;
+    fn transform_synthetic(
+        &mut self,
+        arena: &'sym SymExContext<'tcx>,
+        s: T,
+    ) -> SymValue<'sym, 'tcx, T>;
 }

@@ -110,9 +110,15 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> BackwardsFn<'sym, 'tcx, T> {
     }
 }
 
+#[derive(Copy, Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
+pub enum SymVar {
+    Normal(usize),
+    ReservedBackwardsFnResult,
+}
+
 #[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub enum SymValueKind<'sym, 'tcx, T> {
-    Var(usize, ty::Ty<'tcx>),
+    Var(SymVar, ty::Ty<'tcx>),
     Constant(Constant<'tcx>),
     CheckedBinaryOp(
         ty::Ty<'tcx>,
@@ -165,7 +171,7 @@ impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tc
         F: SymValueTransformer<'sym, 'tcx, T>,
     {
         match &self.kind {
-            SymValueKind::Var(idx, ty, ..) => transformer.transform_var(arena, *idx, *ty),
+            SymValueKind::Var(var, ty) => transformer.transform_var(arena, *var, *ty),
             SymValueKind::Constant(c) => transformer.transform_constant(arena, c),
             SymValueKind::CheckedBinaryOp(ty, op, lhs, rhs) => {
                 let transformed_lhs = lhs.apply_transformer(arena, transformer);
@@ -316,18 +322,23 @@ impl<'substs, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueTransformer<
     fn transform_var(
         &mut self,
         arena: &'sym SymExContext<'tcx>,
-        idx: usize,
+        var: SymVar,
         ty: ty::Ty<'tcx>,
     ) -> SymValue<'sym, 'tcx, T> {
-        let subst = self.1.get(&idx);
-        if let Some(val) = subst {
-            assert_eq!(
-                self.0.erase_regions(val.kind.ty(self.0).rust_ty()),
-                self.0.erase_regions(ty)
-            );
-            val
-        } else {
-            arena.mk_var(idx, ty)
+        match var {
+            SymVar::Normal(idx) => {
+                let subst = self.1.get(&idx);
+                if let Some(val) = subst {
+                    assert_eq!(
+                        self.0.erase_regions(val.kind.ty(self.0).rust_ty()),
+                        self.0.erase_regions(ty)
+                    );
+                    val
+                } else {
+                    arena.mk_var(SymVar::Normal(idx), ty)
+                }
+            }
+            SymVar::ReservedBackwardsFnResult => todo!(),
         }
     }
 
