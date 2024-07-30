@@ -1,3 +1,4 @@
+use crate::value::BackwardsFn;
 use crate::{context::SymExContext, value::SyntheticSymValue};
 use crate::{
     rustc_interface::{
@@ -105,4 +106,12 @@ pub trait SymValueTransformer<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> {
         arena: &'sym SymExContext<'tcx>,
         s: T,
     ) -> SymValue<'sym, 'tcx, T>;
+
+    fn transform_backwards_fn(
+        &mut self,
+        arena: &'sym SymExContext<'tcx>,
+        backwards_fn: BackwardsFn<'sym, 'tcx, T>,
+    ) -> SymValue<'sym, 'tcx, T> {
+        arena.mk_backwards_fn(backwards_fn)
+    }
 }

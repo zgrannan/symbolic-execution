@@ -9,11 +9,15 @@ use crate::{path::AcyclicPath, path_conditions::PathConditions, value::SymValue,
 /// ... a_n), the i'th backwards fact is the return value of back_f_i(a_1, ...,
 /// a_n, result) that is, the value of *a_i after `result` expires down this
 /// path
-pub struct BackwardsFacts<'sym, 'tcx, T>(BTreeMap<usize, SymValue<'sym, 'tcx, T>>);
+pub struct BackwardsFacts<'sym, 'tcx, T>(pub BTreeMap<usize, SymValue<'sym, 'tcx, T>>);
 
 impl<'sym, 'tcx, T> BackwardsFacts<'sym, 'tcx, T> {
     pub fn new() -> Self {
         Self(BTreeMap::new())
+    }
+
+    pub fn insert(&mut self, index: usize, value: SymValue<'sym, 'tcx, T>) {
+        self.0.insert(index, value);
     }
 }
 

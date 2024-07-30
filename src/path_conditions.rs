@@ -2,7 +2,7 @@ use std::collections::{btree_set::Iter, BTreeSet};
 
 use serde_json::{json, Value};
 
-use crate::VisFormat;
+use crate::{visualization::OutputMode, VisFormat};
 
 use super::{
     value::{Substs, SymValue, SymValueData, SyntheticSymValue},
@@ -29,7 +29,7 @@ pub enum PathConditionPredicate<'sym, 'tcx, T> {
     Postcondition(DefId, GenericArgsRef<'tcx>, &'sym [SymValue<'sym, 'tcx, T>]),
 }
 
-impl<'sym, 'tcx, T: Copy + Clone + SyntheticSymValue<'sym, 'tcx>>
+impl<'sym, 'tcx, T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
     PathConditionPredicate<'sym, 'tcx, T>
 {
     pub fn subst(
@@ -64,31 +64,36 @@ pub struct PathConditionAtom<'sym, 'tcx, T> {
 
 impl<'sym, 'tcx, T: VisFormat> PathConditionAtom<'sym, 'tcx, T> {
     pub fn to_json(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> Value {
-        let json_string = self.to_vis_string(tcx, debug_info);
+        let json_string = self.to_vis_string(tcx, debug_info, OutputMode::HTML);
         serde_json::Value::String(json_string)
     }
 }
 
 impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditionAtom<'sym, 'tcx, T> {
-    fn to_vis_string(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> String {
+    fn to_vis_string(
+        &self,
+        tcx: Option<TyCtxt<'_>>,
+        debug_info: &[VarDebugInfo],
+        mode: OutputMode,
+    ) -> String {
         match &self.predicate {
             PathConditionPredicate::Eq(v, ty) => match ty.kind() {
                 TyKind::Bool if *v == 0 => {
-                    format!("!({})", self.expr.to_vis_string(tcx, debug_info),)
+                    format!("!({})", self.expr.to_vis_string(tcx, debug_info, mode))
                 }
                 _ => format!(
                     "({} = {} as {})",
-                    self.expr.to_vis_string(tcx, debug_info),
+                    self.expr.to_vis_string(tcx, debug_info, mode),
                     v,
                     ty
                 ),
             },
             PathConditionPredicate::Ne(vs, ty) if vs.len() == 1 => match ty.kind() {
-                TyKind::Bool if vs[0] == 0 => self.expr.to_vis_string(tcx, debug_info),
+                TyKind::Bool if vs[0] == 0 => self.expr.to_vis_string(tcx, debug_info, mode),
                 _ => {
                     format!(
                         "({} != {}: {})",
-                        self.expr.to_vis_string(tcx, debug_info),
+                        self.expr.to_vis_string(tcx, debug_info, mode),
                         vs[0],
                         ty
                     )
@@ -97,7 +102,7 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditionAtom<'sym, 'tcx, T> {
             PathConditionPredicate::Ne(vs, ty) => {
                 format!(
                     "({} does not equal any of [{}] as {})",
-                    self.expr.to_vis_string(tcx, debug_info),
+                    self.expr.to_vis_string(tcx, debug_info, mode),
                     vs.iter()
                         .map(|v| v.to_string())
                         .collect::<Vec<_>>()
@@ -108,9 +113,9 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditionAtom<'sym, 'tcx, T> {
             PathConditionPredicate::Postcondition(def_id, _, values) => {
                 format!(
                     "({} satisfies the postcondition of {:?} applied to args [{}])",
-                    self.expr.to_vis_string(tcx, debug_info),
+                    self.expr.to_vis_string(tcx, debug_info, mode),
                     def_id,
-                    values.to_vis_string(tcx, debug_info)
+                    values.to_vis_string(tcx, debug_info, mode)
                 )
             }
         }
@@ -126,7 +131,9 @@ impl<'sym, 'tcx, T> PathConditionAtom<'sym, 'tcx, T> {
     }
 }
 
-impl<'sym, 'tcx, T: Copy + Clone + SyntheticSymValue<'sym, 'tcx>> PathConditionAtom<'sym, 'tcx, T> {
+impl<'sym, 'tcx, T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
+    PathConditionAtom<'sym, 'tcx, T>
+{
     pub fn subst(
         self,
         arena: &'sym SymExContext<'tcx>,
@@ -174,7 +181,7 @@ impl<'sym, 'tcx, T: Ord> PathConditions<'sym, 'tcx, T> {
     }
 }
 
-impl<'sym, 'tcx, T: Copy + Clone + Ord + SyntheticSymValue<'sym, 'tcx>>
+impl<'sym, 'tcx, T: Copy + Clone + std::fmt::Debug + Ord + SyntheticSymValue<'sym, 'tcx>>
     PathConditions<'sym, 'tcx, T>
 {
     pub fn subst(

@@ -6,11 +6,12 @@ use crate::rustc_interface::{
     data_structures::fx::FxHasher,
     middle::{
         mir::{self, tcx::PlaceTy, ProjectionElem, VarDebugInfo},
-        ty::{self},
+        ty::{self, GenericArgsRef},
     },
     span::{def_id::DefId, DUMMY_SP},
 };
 use crate::transform::SymValueTransformer;
+use crate::visualization::OutputMode;
 
 use std::{
     cmp::Ordering,
@@ -85,10 +86,14 @@ impl From<mir::CastKind> for CastKind {
     }
 }
 
-#[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub struct BackwardsFn<'sym, 'tcx, T> {
     /// The DefId of the Rust (forwards) function
     pub def_id: DefId,
+
+    pub substs: GenericArgsRef<'tcx>,
+
+    pub caller_def_id: Option<DefId>,
 
     /// Snapshots of the values when the forwards function was called
     pub arg_snapshots: &'sym [SymValue<'sym, 'tcx, T>],
@@ -113,7 +118,33 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> BackwardsFn<'sym, 'tcx, T> {
 #[derive(Copy, Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub enum SymVar {
     Normal(usize),
+
+    /// The final `result` value that is applied to a backwards function
+    /// For a function that returns an `&mut T`, this should be of type `T`
     ReservedBackwardsFnResult,
+}
+
+fn format_as_sym(value: impl std::fmt::Display, output_mode: OutputMode) -> String {
+    format!("α{}", output_mode.subscript(value))
+}
+
+impl SymVar {
+    pub fn to_string(&self, debug_info: &[VarDebugInfo], output_mode: OutputMode) -> String {
+        match self {
+            SymVar::Normal(idx) => {
+                let info = debug_info.iter().find(|d| {
+                    d.argument_index
+                        .map_or(false, |arg_idx| arg_idx == (*idx + 1) as u16)
+                });
+                if let Some(info) = info {
+                    format_as_sym(info.name, output_mode)
+                } else {
+                    format_as_sym(idx, output_mode)
+                }
+            }
+            SymVar::ReservedBackwardsFnResult => format_as_sym("result", output_mode),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
@@ -146,18 +177,34 @@ pub enum SymValueKind<'sym, 'tcx, T> {
     BackwardsFn(BackwardsFn<'sym, 'tcx, T>),
 }
 
+pub trait ToSymVar {
+    fn to_symvar(self) -> SymVar;
+}
+
+impl ToSymVar for SymVar {
+    fn to_symvar(self) -> SymVar {
+        self
+    }
+}
+
+impl ToSymVar for usize {
+    fn to_symvar(self) -> SymVar {
+        SymVar::Normal(self)
+    }
+}
+
 #[derive(Debug)]
-pub struct Substs<'sym, 'tcx, T>(BTreeMap<usize, SymValue<'sym, 'tcx, T>>);
+pub struct Substs<'sym, 'tcx, T>(BTreeMap<SymVar, SymValue<'sym, 'tcx, T>>);
 
 impl<'sym, 'tcx, T> Substs<'sym, 'tcx, T> {
-    pub fn from_iter(iter: impl Iterator<Item = (usize, SymValue<'sym, 'tcx, T>)>) -> Self {
-        Substs(iter.collect())
+    pub fn from_iter(iter: impl Iterator<Item = (impl ToSymVar, SymValue<'sym, 'tcx, T>)>) -> Self {
+        Substs(iter.map(|(k, v)| (k.to_symvar(), v)).collect())
     }
-    pub fn get(&self, idx: &usize) -> Option<SymValue<'sym, 'tcx, T>> {
+    pub fn get(&self, idx: &SymVar) -> Option<SymValue<'sym, 'tcx, T>> {
         self.0.get(idx).copied()
     }
-    pub fn singleton(idx: usize, val: SymValue<'sym, 'tcx, T>) -> Self {
-        Substs(std::iter::once((idx, val)).collect())
+    pub fn singleton(idx: impl ToSymVar, val: SymValue<'sym, 'tcx, T>) -> Self {
+        Substs(std::iter::once((idx.to_symvar(), val)).collect())
     }
 }
 
@@ -223,7 +270,7 @@ impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tc
                 transformer.transform_ref(arena, transformed_val, *mutability)
             }
             SymValueKind::BackwardsFn(backwards_fn) => {
-                todo!()
+                transformer.transform_backwards_fn(arena, *backwards_fn)
             }
         }
     }
@@ -316,8 +363,8 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueKind<'sym, 'tcx, T> {
 
 struct SubstsTransformer<'substs, 'sym, 'tcx, T>(ty::TyCtxt<'tcx>, &'substs Substs<'sym, 'tcx, T>);
 
-impl<'substs, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueTransformer<'sym, 'tcx, T>
-    for SubstsTransformer<'substs, 'sym, 'tcx, T>
+impl<'substs, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug>
+    SymValueTransformer<'sym, 'tcx, T> for SubstsTransformer<'substs, 'sym, 'tcx, T>
 {
     fn transform_var(
         &mut self,
@@ -325,20 +372,18 @@ impl<'substs, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueTransformer<
         var: SymVar,
         ty: ty::Ty<'tcx>,
     ) -> SymValue<'sym, 'tcx, T> {
-        match var {
-            SymVar::Normal(idx) => {
-                let subst = self.1.get(&idx);
-                if let Some(val) = subst {
-                    assert_eq!(
-                        self.0.erase_regions(val.kind.ty(self.0).rust_ty()),
-                        self.0.erase_regions(ty)
-                    );
-                    val
-                } else {
-                    arena.mk_var(SymVar::Normal(idx), ty)
-                }
-            }
-            SymVar::ReservedBackwardsFnResult => todo!(),
+        let subst = self.1.get(&var);
+        if let Some(val) = subst {
+            assert_eq!(
+                self.0.erase_regions(val.kind.ty(self.0).rust_ty()),
+                self.0.erase_regions(ty),
+                "Cannot subst {var:?}: {:?} with {val:?}: {:?} of different type",
+                ty,
+                val.kind.ty(self.0),
+            );
+            val
+        } else {
+            arena.mk_var(var, ty)
         }
     }
 
@@ -351,7 +396,9 @@ impl<'substs, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueTransformer<
     }
 }
 
-impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tcx, T> {
+impl<'sym, 'tcx, T: Clone + Copy + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
+    SymValueData<'sym, 'tcx, T>
+{
     pub fn subst<'substs>(
         &'sym self,
         arena: &'sym SymExContext<'tcx>,
@@ -488,6 +535,10 @@ impl<'tcx> AggregateKind<'tcx> {
     pub fn def_id(&self) -> Option<DefId> {
         match self {
             AggregateKind::Rust(mir::AggregateKind::Adt(def_id, ..), _) => Some(*def_id),
+            AggregateKind::PCS(ty, _) => match ty.kind() {
+                ty::TyKind::Adt(adt_def, _) => Some(adt_def.did()),
+                _ => None,
+            },
             _ => None,
         }
     }

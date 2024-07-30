@@ -152,27 +152,29 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         self.havoc_refs_in_operand(arg, &mut heap, reborrows);
                     }
 
-                    let result = if fn_name == "std::intrinsics::discriminant_value" {
-                        self.arena.mk_discriminant(
+                    let result = match fn_name.as_str() {
+                        "prusti_contracts::before_expiry" => encoded_args[0],
+                        "std::intrinsics::discriminant_value" => self.arena.mk_discriminant(
                             self.arena
                                 .mk_projection(mir::ProjectionElem::Deref, encoded_args[0]),
-                        )
-                    } else {
-                        path.function_call_snapshots
-                            .add_snapshot(location.location, encoded_args);
-                        self.verifier_semantics
-                            .encode_fn_call(self.arena, *def_id, substs, encoded_args)
-                            .unwrap_or_else(|| {
-                                let sym_var = self.mk_fresh_symvar(
-                                    destination.ty(&self.body.local_decls, self.tcx).ty,
-                                );
-                                add_debug_note!(
-                                    sym_var.debug_info,
-                                    "Fresh symvar for call to {:?}",
-                                    def_id
-                                );
-                                sym_var
-                            })
+                        ),
+                        _ => {
+                            path.function_call_snapshots
+                                .add_snapshot(location.location, encoded_args);
+                            self.verifier_semantics
+                                .encode_fn_call(self.arena, *def_id, substs, encoded_args)
+                                .unwrap_or_else(|| {
+                                    let sym_var = self.mk_fresh_symvar(
+                                        destination.ty(&self.body.local_decls, self.tcx).ty,
+                                    );
+                                    add_debug_note!(
+                                        sym_var.debug_info,
+                                        "Fresh symvar for call to {:?}",
+                                        def_id
+                                    );
+                                    sym_var
+                                })
+                        }
                     };
                     heap.insert(*destination, result, location.location);
                     path.pcs.insert(PathConditionAtom::new(

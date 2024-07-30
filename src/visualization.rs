@@ -20,8 +20,45 @@ use crate::{
     value::{SymValue, SymValueData, SymValueKind, SyntheticSymValue, Ty},
 };
 
+#[derive(Copy, Clone)]
+pub enum OutputMode {
+    HTML,
+    Text,
+}
+
+impl OutputMode {
+    fn lt(&self) -> &'static str {
+        match self {
+            OutputMode::HTML => "&lt;",
+            OutputMode::Text => "<",
+        }
+    }
+    fn gt(&self) -> &'static str {
+        match self {
+            OutputMode::HTML => "&gt;",
+            OutputMode::Text => ">",
+        }
+    }
+
+    pub fn in_lt_gt(&self, s: impl std::fmt::Display) -> String {
+        format!("{}{}{}", self.lt(), s, self.gt())
+    }
+
+    pub fn subscript(&self, s: impl std::fmt::Display) -> String {
+        match self {
+            OutputMode::Text => format!("_{}", s),
+            OutputMode::HTML => format!("<sub>{}</sub>", s),
+        }
+    }
+}
+
 pub trait VisFormat {
-    fn to_vis_string(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> String;
+    fn to_vis_string(
+        &self,
+        tcx: Option<TyCtxt<'_>>,
+        debug_info: &[VarDebugInfo],
+        mode: OutputMode,
+    ) -> String;
 }
 
 pub enum StepType {
@@ -115,7 +152,7 @@ pub fn export_assertions<'sym, 'tcx, T: VisFormat>(
             json!({
                 "path": path_to_vec(path),
                 "pcs": pcs.to_json(Some(tcx), debug_info),
-                "assertion": assertion.to_vis_string(Some(tcx), debug_info)
+                "assertion": assertion.to_vis_string(Some(tcx), debug_info, OutputMode::HTML)
             })
         })
         .collect();
@@ -163,21 +200,31 @@ impl<'sym, 'tcx, T: VisFormat> std::fmt::Display for SymValueData<'sym, 'tcx, T>
         write!(
             f,
             "{}",
-            self.to_vis_string_prec(None, &[], PrecCategory::Bottom)
+            self.to_vis_string_prec(None, &[], PrecCategory::Bottom, OutputMode::Text)
         )
     }
 }
 
 impl<'sym, 'tcx, T: VisFormat> VisFormat for SymValueData<'sym, 'tcx, T> {
-    fn to_vis_string(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> String {
-        self.to_vis_string_prec(tcx, debug_info, PrecCategory::Bottom)
+    fn to_vis_string(
+        &self,
+        tcx: Option<TyCtxt<'_>>,
+        debug_info: &[VarDebugInfo],
+        mode: OutputMode,
+    ) -> String {
+        self.to_vis_string_prec(tcx, debug_info, PrecCategory::Bottom, mode)
     }
 }
 
 impl<'sym, 'tcx, T: VisFormat> VisFormat for &'sym [SymValue<'sym, 'tcx, T>] {
-    fn to_vis_string(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> String {
+    fn to_vis_string(
+        &self,
+        tcx: Option<TyCtxt<'_>>,
+        debug_info: &[VarDebugInfo],
+        mode: OutputMode,
+    ) -> String {
         self.iter()
-            .map(|value| value.to_vis_string(tcx, debug_info))
+            .map(|value| value.to_vis_string(tcx, debug_info, mode))
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -266,23 +313,11 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
         tcx: Option<TyCtxt<'_>>,
         debug_info: &[VarDebugInfo],
         parent_category: PrecCategory,
+        mode: OutputMode,
     ) -> String {
         let self_category = self.kind.prec_category();
         let result = match &self.kind {
-            SymValueKind::Var(var, ty) => match var {
-                crate::value::SymVar::Normal(idx) => {
-                    let info = debug_info.iter().find(|d| {
-                        d.argument_index
-                            .map_or(false, |arg_idx| arg_idx == (*idx + 1) as u16)
-                    });
-                    if let Some(info) = info {
-                        format!("α<sub>{}</sub>", info.name)
-                    } else {
-                        format!("α<sub>{}</sub>: {}", idx, ty)
-                    }
-                }
-                crate::value::SymVar::ReservedBackwardsFnResult => "α<sub>result</sub>".to_string(),
-            },
+            SymValueKind::Var(var, _) => var.to_string(debug_info, mode),
             SymValueKind::Constant(c) => format!("{}", c.literal()),
             SymValueKind::CheckedBinaryOp(_, op, lhs, rhs)
             | SymValueKind::BinaryOp(_, op, lhs, rhs) => {
@@ -307,9 +342,9 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                 };
                 format!(
                     "{} {} {}",
-                    lhs.to_vis_string_prec(tcx, debug_info, self_category),
+                    lhs.to_vis_string_prec(tcx, debug_info, self_category, mode),
                     op_str,
-                    rhs.to_vis_string_prec(tcx, debug_info, self_category)
+                    rhs.to_vis_string_prec(tcx, debug_info, self_category, mode)
                 )
             }
             SymValueKind::UnaryOp(_, op, expr) => {
@@ -320,19 +355,19 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                 format!(
                     "{}{}",
                     op_str,
-                    expr.to_vis_string_prec(tcx, debug_info, self_category)
+                    expr.to_vis_string_prec(tcx, debug_info, self_category, mode)
                 )
             }
             SymValueKind::Projection(kind, value) => match kind {
                 ProjectionElem::Deref => {
                     format!(
                         "*{}",
-                        value.to_vis_string_prec(tcx, debug_info, self_category)
+                        value.to_vis_string_prec(tcx, debug_info, self_category, mode)
                     )
                 }
                 ProjectionElem::Field(lhs, _) => format!(
                     "{}.{:?}",
-                    value.to_vis_string_prec(tcx, debug_info, self_category),
+                    value.to_vis_string_prec(tcx, debug_info, self_category, mode),
                     lhs
                 ),
                 ProjectionElem::Index(_) => todo!(),
@@ -344,12 +379,12 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                 ProjectionElem::Subslice { from, to, from_end } => todo!(),
                 ProjectionElem::Downcast(Some(sym), _) => format!(
                     "{}@{}",
-                    value.to_vis_string_prec(tcx, debug_info, self_category),
+                    value.to_vis_string_prec(tcx, debug_info, self_category, mode),
                     sym
                 ),
                 ProjectionElem::Downcast(None, idx) => format!(
                     "{:?}@{:?}",
-                    value.to_vis_string_prec(tcx, debug_info, self_category),
+                    value.to_vis_string_prec(tcx, debug_info, self_category, mode),
                     idx
                 ),
                 ProjectionElem::OpaqueCast(_) => todo!(),
@@ -359,32 +394,37 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                     crate::value::AggregateKind::Rust(_, _) => "R",
                     crate::value::AggregateKind::PCS(_, _) => "P",
                 };
+                let lt = mode.lt();
+                let gt = mode.gt();
                 format!(
-                    "pack[{}]&lt;{}&gt;({})",
-                    pack_ty,
-                    kind.ty(),
-                    values.to_vis_string(tcx, debug_info)
+                    "pack[{pack_ty}]{}({})",
+                    mode.in_lt_gt(kind.ty()),
+                    values.to_vis_string(tcx, debug_info, mode)
                 )
             }
             SymValueKind::Discriminant(val) => {
-                format!("discriminant({})", val.to_vis_string(tcx, debug_info))
+                format!("discriminant({})", val.to_vis_string(tcx, debug_info, mode))
             }
-            SymValueKind::Synthetic(s) => s.to_vis_string(tcx, debug_info),
+            SymValueKind::Synthetic(s) => s.to_vis_string(tcx, debug_info, mode),
             SymValueKind::Cast(_, _, _) => "todo!()".to_string(),
             SymValueKind::InternalError(err, _) => format!("INTERNAL ERROR: {}", err),
             SymValueKind::Ref(val, Mutability::Mut) => {
-                format!("&mut {}", val.to_vis_string(tcx, debug_info))
+                format!("&mut {}", val.to_vis_string(tcx, debug_info, mode))
             }
             SymValueKind::Ref(val, Mutability::Not) => {
-                format!("&{}", val.to_vis_string(tcx, debug_info))
+                format!("&{}", val.to_vis_string(tcx, debug_info, mode))
             }
             SymValueKind::BackwardsFn(backwards_fn) => {
                 format!(
                     "{}<sub>back_{}</sub>({}, {})",
                     get_fn_name(tcx, backwards_fn.def_id),
                     get_arg_name(tcx, backwards_fn.def_id, backwards_fn.arg_index),
-                    backwards_fn.arg_snapshots.to_vis_string(tcx, debug_info),
-                    backwards_fn.return_snapshot.to_vis_string(tcx, debug_info)
+                    backwards_fn
+                        .arg_snapshots
+                        .to_vis_string(tcx, debug_info, mode),
+                    backwards_fn
+                        .return_snapshot
+                        .to_vis_string(tcx, debug_info, mode)
                 )
             }
         };

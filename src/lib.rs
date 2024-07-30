@@ -61,7 +61,7 @@ use std::{
     ops::Deref,
 };
 use value::{SymValueKind, SymVar};
-use visualization::{export_assertions, export_path_json, export_path_list, VisFormat};
+use visualization::{export_assertions, export_path_json, export_path_list, OutputMode, VisFormat};
 
 use self::{
     path::{AcyclicPath, Path},
@@ -78,13 +78,22 @@ pub enum Assertion<'sym, 'tcx, T> {
 }
 
 impl<'sym, 'tcx, T: VisFormat> VisFormat for Assertion<'sym, 'tcx, T> {
-    fn to_vis_string(&self, tcx: Option<TyCtxt<'_>>, debug_info: &[VarDebugInfo]) -> String {
+    fn to_vis_string(
+        &self,
+        tcx: Option<TyCtxt<'_>>,
+        debug_info: &[VarDebugInfo],
+        mode: OutputMode,
+    ) -> String {
         match self {
             Assertion::False => "false".to_string(),
-            Assertion::Eq(val, true) => val.to_vis_string(tcx, debug_info),
-            Assertion::Eq(val, false) => format!("!{}", val.to_vis_string(tcx, debug_info)),
+            Assertion::Eq(val, true) => val.to_vis_string(tcx, debug_info, mode),
+            Assertion::Eq(val, false) => format!("!{}", val.to_vis_string(tcx, debug_info, mode)),
             Assertion::Precondition(def_id, substs, args) => {
-                format!("{:?}({})", def_id, args.to_vis_string(tcx, debug_info))
+                format!(
+                    "{:?}({})",
+                    def_id,
+                    args.to_vis_string(tcx, debug_info, mode)
+                )
             }
         }
     }
@@ -262,17 +271,26 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         location: call_location,
                         blocks_args,
                         blocked_place,
+                        substs,
                     } => {
                         let snapshot = function_call_snapshots.get_snapshot(&call_location);
                         for (idx, place) in blocks_args {
                             let value = self.arena.mk_backwards_fn(BackwardsFn {
+                                caller_def_id: Some(self.def_id.into()),
                                 def_id: *def_id,
+                                substs,
                                 arg_snapshots: snapshot.args,
-                                return_snapshot: self
-                                    .encode_place::<LookupGet, _>(heap.0, blocked_place),
+                                return_snapshot: self.arena.mk_ref(
+                                    self.encode_place::<LookupGet, _>(heap.0, blocked_place),
+                                    Mutability::Mut,
+                                ),
                                 arg_index: *idx,
                             });
-                            heap.insert_maybe_old_place(*place, value);
+                            assert_eq!(value.ty(self.tcx), snapshot.args[*idx].ty(self.tcx));
+                            heap.insert_maybe_old_place(
+                                *place,
+                                self.arena.mk_projection(ProjectionElem::Deref, value),
+                            );
                         }
                     }
                 },
@@ -285,36 +303,57 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         path: &Path<'sym, 'tcx, S::SymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
     ) -> BackwardsFacts<'sym, 'tcx, S::SymValSynthetic> {
-        let return_place = &self.body.local_decls[Local::from_usize(0)];
-        let mut borrow_state = pcs.extra.after.clone();
-        borrow_state.filter_for_path(&path.path.to_slice());
-        if return_place.ty.ref_mutability() == Some(Mutability::Mut) {
+        let return_place: mir::Place<'tcx> = mir::RETURN_PLACE.into();
+        let return_place: Place<'tcx> = return_place.into();
+        let mut facts = BackwardsFacts::new();
+        if return_place.is_mut_ref(self.body, self.tcx) {
+            let mut borrow_state = pcs.extra.after.clone();
+            borrow_state.filter_for_path(&path.path.to_slice());
             for arg in 1..=self.body.arg_count {
-                let mut heap = path.heap.clone();
-                let mut heap = SymbolicHeap::new(&mut heap, self.tcx, self.body);
                 let local = Local::from_usize(arg);
                 let arg_place: mir::Place<'tcx> = local.into();
                 let arg_place: Place<'tcx> = arg_place.into();
+                let blocked_place = arg_place.project_deref(self.repacker());
                 if arg_place.is_mut_ref(self.body, self.tcx) {
+                    let mut heap = path.heap.clone();
+                    let mut heap = SymbolicHeap::new(&mut heap, self.tcx, self.body);
+                    heap.insert(
+                        return_place.project_deref(self.repacker()),
+                        self.arena.mk_var(
+                            SymVar::ReservedBackwardsFnResult,
+                            return_place
+                                .project_deref(self.repacker())
+                                .ty(self.body, self.tcx)
+                                .ty,
+                        ),
+                        pcs.location,
+                    );
                     let mut ug = UnblockGraph::new();
                     ug.unblock_place(
-                        arg_place.project_deref(self.repacker()).into(),
+                        blocked_place.into(),
                         &borrow_state,
                         pcs.location.block,
                         UnblockReasons::new(UnblockReason::BackwardsFunction(local)),
                         self.tcx,
                     );
                     let actions = ug.actions(self.tcx);
+                    eprintln!("actions: {:#?}", actions);
                     self.apply_unblock_actions(
                         actions,
                         &mut heap,
                         &path.function_call_snapshots,
                         pcs.location,
                     );
+                    eprintln!(
+                        "At the place {:?} is {}",
+                        blocked_place,
+                        heap.0.get(&blocked_place).unwrap()
+                    );
+                    facts.insert(arg - 1, heap.0.get(&blocked_place).unwrap());
                 }
             }
         }
-        BackwardsFacts::new()
+        facts
     }
 
     fn add_to_result_paths(
@@ -462,17 +501,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 })
                 .collect()
         };
-        heap.insert(
-            *place,
-            self.arena.mk_aggregate(
-                AggregateKind::pcs(
-                    place_ty.ty,
-                    from.ty(self.fpcs_analysis.repacker()).variant_index,
-                ),
-                self.arena.alloc_slice(&args),
+        let value = self.arena.mk_aggregate(
+            AggregateKind::pcs(
+                place_ty.ty,
+                place_ty.variant_index,
             ),
-            location,
+            self.arena.alloc_slice(&args),
         );
+        eprintln!("Collapse ty: {:#?} for {}: {}", place_ty, args[0], value);
+        heap.insert(*place, value, location);
     }
 
     fn handle_repack(
