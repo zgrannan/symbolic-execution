@@ -46,7 +46,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 vec![].into_iter().collect(),
             )
         };
-        let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
+        let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         self.apply_unblock_actions(
             ug_actions,
             &mut heap,

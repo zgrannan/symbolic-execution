@@ -325,7 +325,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let blocked_place = arg_place.project_deref(self.repacker());
                 if arg_place.is_mut_ref(self.body, self.tcx) {
                     let mut heap = path.heap.clone();
-                    let mut heap = SymbolicHeap::new(&mut heap, self.tcx, self.body);
+                    let mut heap = SymbolicHeap::new(&mut heap, self.tcx, self.body, &self.arena);
                     heap.insert(
                         return_place.project_deref(self.repacker()),
                         self.arena.mk_var(

@@ -40,7 +40,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         //reborrow state before the terminator action has been applied
         //to PC
         let reborrows = location.extra.before_start.reborrows();
-        let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
+        let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         match &terminator.kind {
             mir::TerminatorKind::Drop { target, .. }
             | mir::TerminatorKind::FalseEdge {

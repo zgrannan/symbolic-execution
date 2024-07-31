@@ -39,7 +39,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         )];
         while let Some(mut path) = paths.pop() {
             let block = path.last_block();
-            let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
+            let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
             for local in self.havoc.get(block).iter() {
                 let place = Place::new(*local, &[]);
                 heap.insert(
@@ -61,7 +61,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 );
                 self.handle_pcs(&mut path, &fpcs_loc, true, fpcs_loc.location);
                 self.handle_pcs(&mut path, &fpcs_loc, false, fpcs_loc.location);
-                let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
+                let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
                 self.handle_stmt(stmt, &mut heap, fpcs_loc);
                 if let Some(debug_output_dir) = &self.debug_output_dir {
                     export_path_json(

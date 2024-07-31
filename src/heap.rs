@@ -20,6 +20,7 @@ pub(crate) struct SymbolicHeap<'mir, 'sym, 'tcx, T>(
     pub &'mir mut HeapData<'sym, 'tcx, T>,
     TyCtxt<'tcx>,
     &'mir Body<'tcx>,
+    &'sym SymExContext<'tcx>,
 );
 
 impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
@@ -29,8 +30,9 @@ impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
         heap: &'mir mut HeapData<'sym, 'tcx, T>,
         tcx: TyCtxt<'tcx>,
         body: &'mir Body<'tcx>,
+        arena: &'sym SymExContext<'tcx>,
     ) -> Self {
-        SymbolicHeap(heap, tcx, body)
+        SymbolicHeap(heap, tcx, body, arena)
     }
 
     pub fn insert<P: Clone + Into<Place<'tcx>>>(
@@ -39,9 +41,18 @@ impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
         value: SymValue<'sym, 'tcx, T>,
         location: Location,
     ) {
-        self.insert_maybe_old_place(place.clone().into(), value);
+        let place: Place<'tcx> = place.into();
+        // let (place, value) = if value.kind.ty(self.1).rust_ty().is_ref() {
+        //     (
+        //         place.project_deref(PlaceRepacker::new(self.2, self.1)),
+        //         self.3.mk_projection(ProjectionElem::Deref, value),
+        //     )
+        // } else {
+        //     (place, value)
+        // };
+        self.insert_maybe_old_place(place.clone(), value);
         self.insert_maybe_old_place(
-            MaybeOldPlace::OldPlace(PlaceSnapshot::new(place.into().0, location)),
+            MaybeOldPlace::OldPlace(PlaceSnapshot::new(place.0, location)),
             value,
         );
     }
@@ -90,7 +101,7 @@ impl<'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>> HeapData<'s
         body: &mir::Body<'tcx>,
     ) -> (HeapData<'sym, 'tcx, T>, Vec<ty::Ty<'tcx>>) {
         let mut heap_data = HeapData::new();
-        let mut heap = SymbolicHeap::new(&mut heap_data, tcx, body);
+        let mut heap = SymbolicHeap::new(&mut heap_data, tcx, body, arena);
         let mut sym_vars = Vec::new();
         for (idx, arg) in body.args_iter().enumerate() {
             let local = &body.local_decls[arg];
