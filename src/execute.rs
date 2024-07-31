@@ -1,8 +1,19 @@
 use crate::{
-    add_debug_note, context::ErrorLocation, heap::{HeapData, SymbolicHeap}, path::{AcyclicPath, Path}, path_conditions::PathConditions, place::Place, results::{ResultAssertion, ResultPath, SymbolicExecutionResult}, rustc_interface::middle::{
+    add_debug_note,
+    context::ErrorLocation,
+    heap::{HeapData, SymbolicHeap},
+    path::{AcyclicPath, Path},
+    path_conditions::PathConditions,
+    place::Place,
+    results::{ResultAssertion, ResultPath, ResultPaths, SymbolicExecutionResult},
+    rustc_interface::middle::{
         mir::{Location, ProjectionElem},
         ty::{self, TyKind},
-    }, semantics::VerifierSemantics, value::SymVar, visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat}, SymbolicExecution
+    },
+    semantics::VerifierSemantics,
+    value::SymVar,
+    visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat},
+    SymbolicExecution,
 };
 use std::{
     collections::{BTreeSet, VecDeque},
@@ -12,41 +23,15 @@ use std::{
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
-    pub fn execute(&mut self) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {
-        let mut result_paths: BTreeSet<ResultPath<'sym, 'tcx, S::SymValSynthetic>> =
-            BTreeSet::new();
+    pub fn execute(
+        &mut self,
+        heap_data: HeapData<'sym, 'tcx, S::SymValSynthetic>,
+        symvars: Vec<ty::Ty<'tcx>>,
+    ) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {
+        self.symvars = symvars;
+        let mut result_paths: ResultPaths<'sym, 'tcx, S::SymValSynthetic> = ResultPaths::new();
         let mut assertions: BTreeSet<ResultAssertion<'sym, 'tcx, S::SymValSynthetic>> =
             BTreeSet::new();
-        let mut heap_data = HeapData::new();
-        let mut heap = SymbolicHeap::new(&mut heap_data, self.tcx, &self.body);
-        for (idx, arg) in self.body.args_iter().enumerate() {
-            let local = &self.body.local_decls[arg];
-            self.symvars.push(local.ty);
-            let sym_var = self.arena.mk_var(SymVar::Normal(idx), local.ty);
-            let place = Place::new(arg, &[]);
-            add_debug_note!(
-                sym_var.debug_info,
-                "Symvar for arg {:?} in {:?}",
-                arg,
-                self.body.span
-            );
-            /*
-             * If we're passed in a reference-typed field, store in the heap its
-             * dereference. TODO: Explain why
-             */
-            match sym_var.ty(self.tcx).rust_ty().kind() {
-                ty::TyKind::Ref(_, _, _) => {
-                    heap.insert(
-                        place.project_deref(self.repacker()),
-                        self.arena.mk_projection(ProjectionElem::Deref, sym_var),
-                        Location::START,
-                    );
-                }
-                _ => {
-                    heap.insert(place, sym_var, Location::START);
-                }
-            }
-        }
         let mut paths = vec![Path::new(
             AcyclicPath::from_start_block(),
             PathConditions::new(),
@@ -54,8 +39,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         )];
         while let Some(mut path) = paths.pop() {
             let block = path.last_block();
+            let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
             for local in self.havoc.get(block).iter() {
-                let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body);
                 let place = Place::new(*local, &[]);
                 heap.insert(
                     place,

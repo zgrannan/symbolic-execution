@@ -8,7 +8,7 @@ use crate::{
     debug_info::DebugInfo,
     path::{AcyclicPath, Path},
     pcs_interaction::PcsLocation,
-    results::{ResultAssertion, ResultPath},
+    results::{ResultAssertion, ResultPath, ResultPaths},
     rustc_interface::{
         ast::Mutability,
         hir::{def_id::DefId, ItemKind, Node},
@@ -167,7 +167,7 @@ pub fn export_assertions<'sym, 'tcx, T: VisFormat>(
 
 pub fn export_path_list<'sym, 'tcx, T: VisFormat>(
     debug_output_dir: &str,
-    result_paths: &BTreeSet<ResultPath<'sym, 'tcx, T>>,
+    result_paths: &ResultPaths<'sym, 'tcx, T>,
 ) {
     let result_paths_json: Vec<Vec<usize>> = result_paths
         .iter()

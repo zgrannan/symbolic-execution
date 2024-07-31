@@ -1,11 +1,12 @@
 use crate::debug_info::DebugInfo;
+use crate::place::Place;
 use crate::rustc_interface::{
     abi::VariantIdx,
     ast::Mutability,
     const_eval::interpret::ConstValue,
     data_structures::fx::FxHasher,
     middle::{
-        mir::{self, tcx::PlaceTy, ProjectionElem, VarDebugInfo},
+        mir::{self, tcx::PlaceTy, ProjectionElem, VarDebugInfo, PlaceElem},
         ty::{self, GenericArgsRef},
     },
     span::{def_id::DefId, DUMMY_SP},
@@ -164,10 +165,7 @@ pub enum SymValueKind<'sym, 'tcx, T> {
         SymValue<'sym, 'tcx, T>,
     ),
     UnaryOp(ty::Ty<'tcx>, mir::UnOp, SymValue<'sym, 'tcx, T>),
-    Projection(
-        ProjectionElem<mir::Local, ty::Ty<'tcx>>,
-        SymValue<'sym, 'tcx, T>,
-    ),
+    Projection(PlaceElem<'tcx>, SymValue<'sym, 'tcx, T>),
     Ref(SymValue<'sym, 'tcx, T>, Mutability),
     Aggregate(AggregateKind<'tcx>, &'sym [SymValue<'sym, 'tcx, T>]),
     Discriminant(SymValue<'sym, 'tcx, T>),

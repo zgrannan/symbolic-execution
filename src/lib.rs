@@ -18,18 +18,20 @@ pub mod results;
 mod rustc_interface;
 pub mod semantics;
 mod stmt;
-mod terminator;
+pub mod terminator;
 pub mod transform;
 mod util;
 pub mod value;
 pub mod visualization;
+
+use std::marker::PhantomData;
 
 use crate::{
     rustc_interface::{
         ast::Mutability,
         hir::def_id::{DefId, LocalDefId},
         middle::{
-            mir::{self, Body, Local, Location, ProjectionElem, VarDebugInfo},
+            mir::{self, Body, Local, Location, ProjectionElem, Rvalue, VarDebugInfo},
             ty::{self, GenericArgsRef, TyCtxt, TyKind},
         },
         span::ErrorGuaranteed,
@@ -54,18 +56,13 @@ use pcs::{
     FpcsOutput,
 };
 use pcs_interaction::PcsLocation;
-use results::{BackwardsFacts, ResultAssertion, ResultPath, SymbolicExecutionResult};
+use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
 use semantics::VerifierSemantics;
-use std::{
-    collections::{BTreeSet, VecDeque},
-    ops::Deref,
-};
-use value::{SymValueKind, SymVar};
-use visualization::{export_assertions, export_path_json, export_path_list, OutputMode, VisFormat};
+use value::SymVar;
+use visualization::{OutputMode, VisFormat};
 
 use self::{
     path::{AcyclicPath, Path},
-    path_conditions::{PathConditionAtom, PathConditionPredicate, PathConditions},
     place::Place,
     value::{AggregateKind, SymValue},
 };
@@ -102,19 +99,20 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for Assertion<'sym, 'tcx, T> {
 pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>> {
     tcx: TyCtxt<'tcx>,
     def_id: LocalDefId,
-    body: &'mir Body<'tcx>,
+    pub body: &'mir Body<'tcx>,
     fpcs_analysis: FpcsOutput<'mir, 'tcx>,
     havoc: HavocData,
     symvars: Vec<ty::Ty<'tcx>>,
-    arena: &'sym SymExContext<'tcx>,
-    verifier_semantics: S,
+    pub arena: &'sym SymExContext<'tcx>,
     debug_output_dir: Option<String>,
     err_ctx: Option<ErrorContext>,
+    verifier_semantics: PhantomData<S>,
+    new_symvars_allowed: bool,
 }
 
 trait LookupType {
-    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym>;
-    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug>(
+    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone>: std::fmt::Debug;
+    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone>(
         heap: Self::Heap<'heap, 'sym, 'tcx, S>,
         place: &MaybeOldPlace<'tcx>,
     ) -> Option<SymValue<'sym, 'tcx, S>>;
@@ -123,10 +121,25 @@ trait LookupType {
 struct LookupGet;
 struct LookupTake;
 
-impl LookupType for LookupGet {
-    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym> = &'heap HeapData<'sym, 'tcx, S>;
+struct LookupGetOldest;
 
-    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug>(
+impl LookupType for LookupGetOldest {
+    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone> =
+        &'heap HeapData<'sym, 'tcx, S>;
+
+    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone>(
+        heap: Self::Heap<'heap, 'sym, 'tcx, S>,
+        place: &MaybeOldPlace<'tcx>,
+    ) -> Option<SymValue<'sym, 'tcx, S>> {
+        heap.get_oldest_for_place(&place.place())
+    }
+}
+
+impl LookupType for LookupGet {
+    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone> =
+        &'heap HeapData<'sym, 'tcx, S>;
+
+    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone>(
         heap: Self::Heap<'heap, 'sym, 'tcx, S>,
         place: &MaybeOldPlace<'tcx>,
     ) -> Option<SymValue<'sym, 'tcx, S>> {
@@ -135,9 +148,10 @@ impl LookupType for LookupGet {
 }
 
 impl LookupType for LookupTake {
-    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym> = &'heap mut HeapData<'sym, 'tcx, S>;
+    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone> =
+        &'heap mut HeapData<'sym, 'tcx, S>;
 
-    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug>(
+    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone>(
         heap: Self::Heap<'heap, 'sym, 'tcx, S>,
         place: &MaybeOldPlace<'tcx>,
     ) -> Option<SymValue<'sym, 'tcx, S>> {
@@ -148,26 +162,19 @@ impl LookupType for LookupTake {
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
-    pub fn new(
-        tcx: TyCtxt<'tcx>,
-        def_id: LocalDefId,
-        body: &'mir Body<'tcx>,
-        fpcs_analysis: FpcsOutput<'mir, 'tcx>,
-        verifier_semantics: S,
-        arena: &'sym SymExContext<'tcx>,
-        debug_output_dir: Option<String>,
-    ) -> Self {
+    pub fn new(params: SymExParams<'mir, 'sym, 'tcx, S>) -> Self {
         SymbolicExecution {
-            tcx,
-            def_id,
-            body,
-            fpcs_analysis,
-            havoc: HavocData::new(&body),
-            symvars: Vec::with_capacity(body.arg_count),
-            verifier_semantics,
-            arena,
-            debug_output_dir,
+            new_symvars_allowed: params.new_symvars_allowed,
+            tcx: params.tcx,
+            def_id: params.def_id,
+            body: params.body,
+            fpcs_analysis: params.fpcs_analysis,
+            havoc: HavocData::new(&params.body),
+            verifier_semantics: PhantomData,
+            arena: params.arena,
+            debug_output_dir: params.debug_output_dir,
             err_ctx: None,
+            symvars: vec![],
         }
     }
 
@@ -218,22 +225,24 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap: T::Heap<'heap, 'sym, 'tcx, S::SymValSynthetic>,
         place: &P,
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
+        let heap_str = format!("{:#?}", heap);
         self.encode_place_opt::<T, P>(heap, place)
             .unwrap_or_else(|| {
                 let place = (*place).into();
                 self.mk_internal_err_expr(
                     format!(
-                        "Heap lookup failed for place [{}: {:?}]",
+                        "Heap lookup failed for place [{}: {:?}] in {}",
                         place.to_short_string(self.repacker()),
-                        place.place().ty(self.repacker())
+                        place.place().ty(self.repacker()),
+                        heap_str
                     ),
                     place.place().ty(self.repacker()).ty,
                 )
             })
     }
 
-    fn encode_operand(
-        &mut self,
+    pub fn encode_operand(
+        &self,
         heap: &HeapData<'sym, 'tcx, S::SymValSynthetic>,
         operand: &mir::Operand<'tcx>,
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
@@ -360,7 +369,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
-        result_paths: &mut BTreeSet<ResultPath<'sym, 'tcx, S::SymValSynthetic>>,
+        result_paths: &mut ResultPaths<'sym, 'tcx, S::SymValSynthetic>,
     ) {
         let return_place: Place<'tcx> = mir::RETURN_PLACE.into();
         let expr = self.encode_place::<LookupGet, _>(&path.heap, &return_place);
@@ -370,6 +379,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             path.pcs.clone(),
             expr,
             backwards_facts,
+            path.heap.clone(),
         ));
     }
 
@@ -377,12 +387,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         PlaceRepacker::new(&self.body, self.tcx)
     }
 
-    fn havoc_refs_in_operand(
+    fn havoc_operand_ref(
         &mut self,
         operand: &mir::Operand<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         reborrows: &ReborrowingDag<'tcx>,
-    ) {
+    ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>> {
         match operand {
             mir::Operand::Move(place) => {
                 let place: Place<'tcx> = (*place).into();
@@ -396,14 +406,20 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     );
                     assert!(blocked.len() == 1);
                     let blocked_by = blocked.into_iter().next().unwrap();
-                    heap.insert_maybe_old_place(blocked_by, self.mk_fresh_symvar(*ty));
-                };
+                    let sym_var = self.mk_fresh_symvar(*ty);
+                    assert_eq!(blocked_by.ty(self.repacker()).ty, *ty);
+                    heap.insert_maybe_old_place(blocked_by, sym_var);
+                    Some(self.arena.mk_ref(sym_var, Mutability::Mut))
+                } else {
+                    None
+                }
             }
-            _ => {}
+            _ => None,
         }
     }
 
     fn mk_fresh_symvar(&mut self, ty: ty::Ty<'tcx>) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
+        assert!(self.new_symvars_allowed);
         let var = SymVar::Normal(self.symvars.len());
         self.symvars.push(ty);
         self.arena.mk_var(var, ty)
@@ -502,10 +518,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 .collect()
         };
         let value = self.arena.mk_aggregate(
-            AggregateKind::pcs(
-                place_ty.ty,
-                place_ty.variant_index,
-            ),
+            AggregateKind::pcs(place_ty.ty, place_ty.variant_index),
             self.arena.alloc_slice(&args),
         );
         eprintln!("Collapse ty: {:#?} for {}: {}", place_ty, args[0], value);
@@ -533,28 +546,37 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     }
 }
 
+pub struct SymExParams<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>> {
+    pub def_id: LocalDefId,
+    pub body: &'mir Body<'tcx>,
+    pub tcx: TyCtxt<'tcx>,
+    pub fpcs_analysis: FpcsOutput<'mir, 'tcx>,
+    pub verifier_semantics: S,
+    pub arena: &'sym SymExContext<'tcx>,
+    pub debug_output_dir: Option<String>,
+    pub new_symvars_allowed: bool,
+}
+
+pub fn run_symbolic_execution_with<
+    'mir,
+    'sym,
+    'tcx,
+    S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>,
+>(
+    params: SymExParams<'mir, 'sym, 'tcx, S>,
+    heap_data: HeapData<'sym, 'tcx, S::SymValSynthetic>,
+    symvars: Vec<ty::Ty<'tcx>>,
+) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {
+    SymbolicExecution::new(params).execute(heap_data, symvars)
+}
 pub fn run_symbolic_execution<
     'mir,
     'sym,
     'tcx,
     S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>,
 >(
-    def_id: LocalDefId,
-    mir: &'mir Body<'tcx>,
-    tcx: TyCtxt<'tcx>,
-    fpcs_analysis: FpcsOutput<'mir, 'tcx>,
-    verifier_semantics: S,
-    arena: &'sym SymExContext<'tcx>,
-    debug_output_dir: Option<&str>,
+    params: SymExParams<'mir, 'sym, 'tcx, S>,
 ) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {
-    SymbolicExecution::new(
-        tcx,
-        def_id,
-        mir,
-        fpcs_analysis,
-        verifier_semantics,
-        arena,
-        debug_output_dir.map(|s| s.to_string()),
-    )
-    .execute()
+    let (heap_data, symvars) = HeapData::init_for_body(params.arena, params.tcx, params.body);
+    SymbolicExecution::new(params).execute(heap_data, symvars)
 }
