@@ -147,7 +147,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             value,
                             postcondition,
                         } => {
-                            heap.insert(*destination, value, location.location);
+                            heap.insert_maybe_deref(*destination, value, location.location);
                             if let Some(postcondition) = postcondition {
                                 path.pcs
                                     .insert(PathConditionAtom::new(value, postcondition));
@@ -243,11 +243,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     })
                     .collect::<Vec<_>>();
                 FunctionCallResult::Unknown {
-                    postcondition: PathConditionPredicate::Postcondition(
+                    postcondition: PathConditionPredicate::Postcondition {
                         def_id,
                         substs,
-                        self.alloc_slice(&postcondition_args),
-                    ),
+                        pre_values: self.alloc_slice(&encoded_args),
+                        post_values: self.alloc_slice(&postcondition_args),
+                    },
                 }
             }
         };

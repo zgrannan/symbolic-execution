@@ -192,7 +192,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         ty: ty::Ty<'tcx>,
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
         self.arena
-            .mk_internal_error(err, ty, self.err_ctx.as_ref().unwrap())
+            .mk_internal_error(err, ty, self.err_ctx.as_ref())
     }
 
     fn encode_place_opt<'heap, T: LookupType, P: Into<MaybeOldPlace<'tcx>> + Copy>(

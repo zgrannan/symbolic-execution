@@ -35,6 +35,24 @@ impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
         SymbolicHeap(heap, tcx, body, arena)
     }
 
+    pub fn insert_maybe_deref<P: Clone + Into<Place<'tcx>>>(
+        &mut self,
+        place: P,
+        value: SymValue<'sym, 'tcx, T>,
+        location: Location,
+    ) {
+        let p: Place<'tcx> = place.into();
+        if p.ty(self.2, self.1).ty.is_ref() {
+            self.insert(
+                p.project_deref(PlaceRepacker::new(self.2, self.1)),
+                self.3.mk_projection(ProjectionElem::Deref, value),
+                location,
+            );
+        } else {
+            self.insert(p, value, location);
+        }
+    }
+
     pub fn insert<P: Clone + Into<Place<'tcx>>>(
         &mut self,
         place: P,

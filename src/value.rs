@@ -285,11 +285,11 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueKind<'sym, 'tcx, T> {
                 ProjectionElem::Deref => {
                     let ty = val.kind.ty(tcx);
                     match ty.rust_ty().kind() {
-                        ty::TyKind::Bool => todo!(),
-                        ty::TyKind::Char => todo!(),
-                        ty::TyKind::Int(_) => todo!(),
-                        ty::TyKind::Uint(_) => todo!(),
-                        ty::TyKind::Float(_) => todo!(),
+                        ty::TyKind::Bool => panic!(),
+                        ty::TyKind::Char => panic!(),
+                        ty::TyKind::Int(_) => panic!(),
+                        ty::TyKind::Uint(_) => panic!(),
+                        ty::TyKind::Float(_) => panic!(),
                         ty::TyKind::Adt(def, substs) => {
                             if let Some(box_def_id) = tcx.lang_items().owned_box() {
                                 if def.did() == box_def_id {
@@ -400,10 +400,9 @@ impl<'sym, 'tcx, T: Clone + Copy + std::fmt::Debug + SyntheticSymValue<'sym, 'tc
     pub fn subst<'substs>(
         &'sym self,
         arena: &'sym SymExContext<'tcx>,
-        tcx: ty::TyCtxt<'tcx>,
         substs: &'substs Substs<'sym, 'tcx, T>,
     ) -> SymValue<'sym, 'tcx, T> {
-        self.apply_transformer(arena, &mut SubstsTransformer(tcx, substs))
+        self.apply_transformer(arena, &mut SubstsTransformer(arena.tcx, substs))
     }
 }
 
