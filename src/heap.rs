@@ -4,8 +4,9 @@ use crate::value::SymVar;
 use crate::visualization::OutputMode;
 use crate::{place::Place, VisFormat};
 use crate::{
+    rustc_interface::hir::Mutability,
     rustc_interface::middle::{
-        mir::{self, Body, Location, ProjectionElem},
+        mir::{self, Body, Location, PlaceElem, ProjectionElem, VarDebugInfo},
         ty::{self, TyCtxt},
     },
     util::assert_tys_match,
@@ -26,6 +27,22 @@ pub(crate) struct SymbolicHeap<'mir, 'sym, 'tcx, T>(
 impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
     SymbolicHeap<'mir, 'sym, 'tcx, T>
 {
+    fn arena(&self) -> &'sym SymExContext<'tcx> {
+        self.3
+    }
+
+    fn body(&self) -> &'mir Body<'tcx> {
+        self.2
+    }
+
+    fn tcx(&self) -> TyCtxt<'tcx> {
+        self.1
+    }
+
+    fn repacker(&self) -> PlaceRepacker<'_, 'tcx> {
+        PlaceRepacker::new(self.2, self.1)
+    }
+
     pub fn new(
         heap: &'mir mut HeapData<'sym, 'tcx, T>,
         tcx: TyCtxt<'tcx>,
@@ -35,24 +52,6 @@ impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
         SymbolicHeap(heap, tcx, body, arena)
     }
 
-    pub fn insert_maybe_deref<P: Clone + Into<Place<'tcx>>>(
-        &mut self,
-        place: P,
-        value: SymValue<'sym, 'tcx, T>,
-        location: Location,
-    ) {
-        let p: Place<'tcx> = place.into();
-        if p.ty(self.2, self.1).ty.is_ref() {
-            self.insert(
-                p.project_deref(PlaceRepacker::new(self.2, self.1)),
-                self.3.mk_projection(ProjectionElem::Deref, value),
-                location,
-            );
-        } else {
-            self.insert(p, value, location);
-        }
-    }
-
     pub fn insert<P: Clone + Into<Place<'tcx>>>(
         &mut self,
         place: P,
@@ -60,14 +59,6 @@ impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
         location: Location,
     ) {
         let place: Place<'tcx> = place.into();
-        // let (place, value) = if value.kind.ty(self.1).rust_ty().is_ref() {
-        //     (
-        //         place.project_deref(PlaceRepacker::new(self.2, self.1)),
-        //         self.3.mk_projection(ProjectionElem::Deref, value),
-        //     )
-        // } else {
-        //     (place, value)
-        // };
         self.insert_maybe_old_place(place.clone(), value);
         self.insert_maybe_old_place(
             MaybeOldPlace::OldPlace(PlaceSnapshot::new(place.0, location)),
@@ -84,12 +75,62 @@ impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
         let place_ty = place.ty(PlaceRepacker::new(self.2, self.1));
         let value_ty = value.kind.ty(self.1);
         assert_tys_match(self.1, place_ty.ty, value_ty.rust_ty());
+        if let Some(PlaceElem::Deref) = place.place().projection.last() {
+            if let Some(base_place) = place.place().prefix_place(self.repacker()) {
+                if base_place.is_ref(self.body(), self.tcx()) {
+                    let place = MaybeOldPlace::new(base_place, place.location());
+                    let value = self.arena().mk_ref(value, Mutability::Mut);
+                    self.0.insert(place, value);
+                    return;
+                }
+            }
+        }
         self.0.insert(place, value);
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HeapData<'sym, 'tcx, T>(Vec<(MaybeOldPlace<'tcx>, SymValue<'sym, 'tcx, T>)>);
+
+impl<'heap, 'sym, 'tcx, T: VisFormat> VisFormat for &'heap HeapData<'sym, 'tcx, T> {
+    fn to_vis_string(
+        &self,
+        tcx: Option<TyCtxt<'_>>,
+        debug_info: &[VarDebugInfo],
+        mode: OutputMode,
+    ) -> String {
+        self.vis_string(tcx, debug_info, mode)
+    }
+}
+impl<'heap, 'sym, 'tcx, T: VisFormat> VisFormat for &'heap mut HeapData<'sym, 'tcx, T> {
+    fn to_vis_string(
+        &self,
+        tcx: Option<TyCtxt<'_>>,
+        debug_info: &[VarDebugInfo],
+        mode: OutputMode,
+    ) -> String {
+        self.vis_string(tcx, debug_info, mode)
+    }
+}
+impl<'sym, 'tcx, T: VisFormat> HeapData<'sym, 'tcx, T> {
+    pub fn vis_string(
+        &self,
+        tcx: Option<TyCtxt<'_>>,
+        debug_info: &[VarDebugInfo],
+        mode: OutputMode,
+    ) -> String {
+        let mut str = String::new();
+        for (place, value) in &self.0 {
+            str.push_str(&format!(
+                "{:?} -> {}{}",
+                place,
+                value.to_vis_string(tcx, debug_info, mode),
+                mode.newline(),
+            ));
+        }
+        str
+    }
+}
 
 impl<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>> HeapData<'sym, 'tcx, T> {
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
@@ -132,22 +173,7 @@ impl<'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>> HeapData<'s
                 arg,
                 body.span
             );
-            /*
-             * If we're passed in a reference-typed field, store in the heap its
-             * dereference. TODO: Explain why
-             */
-            match sym_var.ty(tcx).rust_ty().kind() {
-                ty::TyKind::Ref(_, _, _) => {
-                    heap.insert(
-                        place.project_deref(PlaceRepacker::new(body, tcx)),
-                        arena.mk_projection(ProjectionElem::Deref, sym_var),
-                        Location::START,
-                    );
-                }
-                _ => {
-                    heap.insert(place, sym_var, Location::START);
-                }
-            }
+            heap.insert(place, sym_var, Location::START);
         }
         (heap_data, sym_vars)
     }
@@ -162,19 +188,6 @@ impl<'sym, 'tcx, T: std::fmt::Debug> HeapData<'sym, 'tcx, T> {
         let place: MaybeOldPlace<'tcx> = place.into();
         self.remove(&place);
         self.0.push((place, value));
-    }
-
-    pub fn get_oldest_for_place(
-        &self,
-        place: &pcs::utils::Place<'tcx>,
-    ) -> Option<SymValue<'sym, 'tcx, T>> {
-        self.0
-            .iter()
-            .filter(|(k, _)| k.place() == *place)
-            .flat_map(|(k, v)| (k.old_place().map(|p| (p, v))))
-            .min_by_key(|(k, _)| k.at)
-            .map(|(_, v)| v)
-            .copied()
     }
 
     pub fn get<P: Into<MaybeOldPlace<'tcx>> + Copy>(
@@ -195,18 +208,15 @@ impl<'sym, 'tcx, T: std::fmt::Debug> HeapData<'sym, 'tcx, T> {
     ) -> Option<SymValue<'sym, 'tcx, T>> {
         let place = place.into();
         let elem = self.get(place);
-        if let Some(value) = elem {
-            self.remove(place);
-        }
+        // TODO: actually remove
+        // if let Some(_) = elem {
+        //     self.remove(place);
+        // }
         elem
     }
 
     pub fn remove<P: Into<MaybeOldPlace<'tcx>> + Copy>(&mut self, place: &P) {
         let place: MaybeOldPlace<'tcx> = (*place).into();
         self.0.retain(|(p, _)| *p != place);
-    }
-
-    pub fn get_return_place_expr(&self) -> Option<SymValue<'sym, 'tcx, T>> {
-        self.get(&Into::<Place<'tcx>>::into(mir::RETURN_PLACE))
     }
 }

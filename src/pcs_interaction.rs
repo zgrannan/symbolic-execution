@@ -2,7 +2,7 @@ use crate::{path::Path, rustc_interface::middle::mir::Location};
 
 use pcs::{
     borrows::{
-        domain::{DerefExpansion, MaybeOldPlace, Reborrow},
+        domain::{BorrowDerefExpansion, DerefExpansion, MaybeOldPlace, Reborrow},
         engine::BorrowsDomain,
     },
     free_pcs::{FreePcsLocation, RepackOp},
@@ -47,6 +47,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             )
         };
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
+        eprintln!(
+            "{:?} {:?} actions; start: {}",
+            self.body.source, ug_actions, start
+        );
         self.apply_unblock_actions(
             ug_actions,
             &mut heap,
@@ -80,11 +84,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         is_mut: bool,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
     ) {
-        let heap_value = if is_mut {
-            self.encode_place::<LookupTake, _>(heap.0, assigned_place)
-        } else {
-            self.encode_place::<LookupGet, _>(heap.0, assigned_place)
-        };
+        if !is_mut {
+            return;
+        }
+        let heap_value = self.encode_place::<LookupTake, _>(heap, assigned_place);
         heap.insert_maybe_old_place(*blocked_place, heap_value);
     }
 
@@ -103,41 +106,28 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub(crate) fn handle_reborrow_expands(
         &self,
-        mut expands: Vec<DerefExpansion<'tcx>>,
+        expands: Vec<DerefExpansion<'tcx>>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         path: &AcyclicPath,
         location: Location,
     ) {
-        expands.sort_by_key(|ep| ep.base.place().projection.len());
+        // TODO: Explain why owned expansions don't need to be handled
+        let mut expands: Vec<BorrowDerefExpansion<'tcx>> = expands
+            .into_iter()
+            .flat_map(|ep| ep.borrow_expansion().cloned())
+            .collect();
+        expands.sort_by_key(|ep| ep.base().place().projection.len());
         for ep in expands {
-            if !path.contains(ep.location.block) {
+            if !path.contains(ep.location().block) {
                 continue;
             }
-            let place = ep.base.place();
-            if place.is_ref(self.body, self.tcx) {
-                // The expansion from x to *x isn't necessary!
-                continue;
-            }
-            let value = if place.projects_shared_ref(self.fpcs_analysis.repacker()) {
-                heap.0.get(&place)
-            } else {
-                heap.0.take(&place)
-            };
-            let value = value.unwrap_or_else(|| {
-                self.mk_internal_err_expr(
-                    format!(
-                        "Place {:?} not found in heap[reborrow_expand]",
-                        place.to_string(self.fpcs_analysis.repacker())
-                    ),
-                    (*place).ty(self.body, self.tcx).ty,
-                )
-            });
+            let place = ep.base();
+            let value = self.encode_place::<LookupGet, _>(heap, &place);
 
-            // TODO: old places
             self.explode_value(
                 &place,
                 value,
-                ep.expansion(self.tcx).iter().map(|p| p.place()),
+                ep.expansion(self.fpcs_analysis.repacker()).into_iter(),
                 heap,
                 location,
             );
@@ -155,9 +145,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 continue;
             }
             let blocked_value = if reborrow.mutability.is_mut() {
-                self.encode_place::<LookupTake, _>(heap.0, &reborrow.blocked_place)
+                self.encode_place::<LookupTake, _>(heap, &reborrow.blocked_place)
             } else {
-                self.encode_place::<LookupGet, _>(heap.0, &reborrow.blocked_place)
+                self.encode_place::<LookupGet, _>(heap, &reborrow.blocked_place)
             };
             heap.insert_maybe_old_place(reborrow.assigned_place, blocked_value);
         }

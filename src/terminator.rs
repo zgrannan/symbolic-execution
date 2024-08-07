@@ -89,7 +89,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let pred = PathConditionPredicate::Eq(value, ty);
                     if let Some(mut path) = path.push_if_acyclic(target) {
                         path.pcs.insert(PathConditionAtom::new(
-                            self.encode_operand(&path.heap, discr),
+                            self.encode_operand(&mut path.heap, discr),
                             pred.clone(),
                         ));
                         paths.push(path);
@@ -99,7 +99,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let pred =
                         PathConditionPredicate::Ne(targets.iter().map(|t| t.0).collect(), ty);
                     path.pcs.insert(PathConditionAtom::new(
-                        self.encode_operand(&path.heap, discr),
+                        self.encode_operand(&mut path.heap, discr),
                         pred.clone(),
                     ));
                     paths.push(path);
@@ -111,7 +111,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 target,
                 ..
             } => {
-                let cond = self.encode_operand(&path.heap, cond);
+                let cond = self.encode_operand(&mut path.heap, cond);
                 assertions.insert((
                     path.path.clone(),
                     path.pcs.clone(),
@@ -147,7 +147,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             value,
                             postcondition,
                         } => {
-                            heap.insert_maybe_deref(*destination, value, location.location);
+                            heap.insert(*destination, value, location.location);
                             if let Some(postcondition) = postcondition {
                                 path.pcs
                                     .insert(PathConditionAtom::new(value, postcondition));
@@ -238,7 +238,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     .iter()
                     .zip(encoded_args)
                     .map(|(operand, encoded)| {
-                        self.havoc_operand_ref(operand, heap, reborrows)
+                        self.havoc_operand_ref(operand, heap, reborrows, location)
                             .unwrap_or(encoded)
                     })
                     .collect::<Vec<_>>();

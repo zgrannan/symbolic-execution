@@ -7,8 +7,8 @@ use crate::{
     heap::SymbolicHeap,
     pcs_interaction::PcsLocation,
     place::Place,
-    rustc_interface::middle::mir::{self, ProjectionElem},
-    value::AggregateKind,
+    rustc_interface::{hir::Mutability, middle::mir::{self, ProjectionElem}},
+    value::{AggregateKind, SymValue},
     LookupGet, LookupTake,
 };
 use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExecution};
@@ -16,28 +16,16 @@ use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExec
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
-    pub(crate) fn handle_stmt(
+    pub(crate) fn handle_stmt_rhs(
         &mut self,
         stmt: &mir::Statement<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
-    ) {
+    ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>> {
         match &stmt.kind {
             mir::StatementKind::Assign(box (place, rvalue)) => {
                 let sym_value = match rvalue {
-                    mir::Rvalue::Use(operand) => {
-                        let value = self.encode_operand(heap.0, &operand);
-                        if operand.ty(&self.body.local_decls, self.tcx).is_ref() {
-                            let place: Place<'tcx> = (*place).into();
-                            return heap.insert(
-                                place.project_deref(self.repacker()),
-                                self.arena.mk_projection(ProjectionElem::Deref, value),
-                                pcs.location,
-                            );
-                        } else {
-                            value
-                        }
-                    }
+                    mir::Rvalue::Use(operand) => self.encode_operand(heap.0, &operand),
                     mir::Rvalue::CheckedBinaryOp(op, box (lhs, rhs)) => {
                         let lhs = self.encode_operand(heap.0, &lhs);
                         let rhs = self.encode_operand(heap.0, &rhs);
@@ -73,19 +61,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     }
                     mir::Rvalue::Discriminant(target) => self
                         .arena
-                        .mk_discriminant(self.encode_place::<LookupGet, _>(heap.0, target)),
+                        .mk_discriminant(self.encode_place::<LookupGet, _>(heap, target)),
                     mir::Rvalue::Ref(_, kind, referred_place) => {
-                        let base = if *kind == mir::BorrowKind::Shared {
-                            self.encode_place::<LookupGet, _>(heap.0, referred_place)
+                        let base = if kind.mutability() == Mutability::Not {
+                            self.encode_place::<LookupGet, _>(heap, referred_place)
                         } else {
-                            self.encode_place::<LookupTake, _>(heap.0, referred_place)
+                            self.encode_place::<LookupTake, _>(heap, referred_place)
                         };
-                        let place: Place<'tcx> = (*place).into();
-                        return heap.insert(
-                            place.project_deref(self.repacker()),
-                            base,
-                            pcs.location,
-                        );
+                        self.arena.mk_ref(base, kind.mutability())
                     }
                     mir::Rvalue::UnaryOp(op, operand) => {
                         let operand = self.encode_operand(heap.0, operand);
@@ -101,7 +84,21 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     }
                     _ => todo!("{rvalue:?}"),
                 };
-                heap.insert(*place, sym_value, pcs.location);
+                Some(sym_value)
+            }
+            _ => None
+        }
+    }
+    pub(crate) fn handle_stmt_lhs(
+        &mut self,
+        stmt: &mir::Statement<'tcx>,
+        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        pcs: &PcsLocation<'mir, 'tcx>,
+        rhs: Option<SymValue<'sym, 'tcx, S::SymValSynthetic>>,
+    ) {
+        match &stmt.kind {
+            mir::StatementKind::Assign(box (place, _)) => {
+                heap.insert(*place, rhs.unwrap(), pcs.location);
             }
             mir::StatementKind::StorageDead(local) => {
                 heap.0.remove(&Place::new(*local, &[]));

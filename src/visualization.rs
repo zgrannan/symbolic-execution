@@ -27,6 +27,12 @@ pub enum OutputMode {
 }
 
 impl OutputMode {
+    pub fn newline(&self) -> &'static str {
+        match self {
+            OutputMode::HTML => "<br>",
+            OutputMode::Text => "\n",
+        }
+    }
     fn lt(&self) -> &'static str {
         match self {
             OutputMode::HTML => "&lt;",

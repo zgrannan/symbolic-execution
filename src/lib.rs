@@ -31,7 +31,7 @@ use crate::{
         ast::Mutability,
         hir::def_id::{DefId, LocalDefId},
         middle::{
-            mir::{self, Body, Local, Location, ProjectionElem, Rvalue, VarDebugInfo},
+            mir::{self, Body, Local, Location, PlaceElem, ProjectionElem, Rvalue, VarDebugInfo},
             ty::{self, GenericArgsRef, TyCtxt, TyKind},
         },
         span::ErrorGuaranteed,
@@ -45,10 +45,7 @@ use havoc::HavocData;
 use heap::{HeapData, SymbolicHeap};
 use pcs::{
     borrows::{
-        domain::MaybeOldPlace,
-        reborrowing_dag::ReborrowingDag,
-        unblock_graph::UnblockGraph,
-        unblock_reason::{UnblockReason, UnblockReasons},
+        domain::MaybeOldPlace, reborrowing_dag::ReborrowingDag, unblock_graph::UnblockGraph,
     },
     combined_pcs::UnblockAction,
     free_pcs::RepackOp,
@@ -111,8 +108,8 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
 }
 
 trait LookupType {
-    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone>: std::fmt::Debug;
-    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone>(
+    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone + VisFormat>: std::fmt::Debug + VisFormat;
+    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone + VisFormat>(
         heap: Self::Heap<'heap, 'sym, 'tcx, S>,
         place: &MaybeOldPlace<'tcx>,
     ) -> Option<SymValue<'sym, 'tcx, S>>;
@@ -121,25 +118,11 @@ trait LookupType {
 struct LookupGet;
 struct LookupTake;
 
-struct LookupGetOldest;
-
-impl LookupType for LookupGetOldest {
-    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone> =
-        &'heap HeapData<'sym, 'tcx, S>;
-
-    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone>(
-        heap: Self::Heap<'heap, 'sym, 'tcx, S>,
-        place: &MaybeOldPlace<'tcx>,
-    ) -> Option<SymValue<'sym, 'tcx, S>> {
-        heap.get_oldest_for_place(&place.place())
-    }
-}
-
 impl LookupType for LookupGet {
-    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone> =
+    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone + VisFormat> =
         &'heap HeapData<'sym, 'tcx, S>;
 
-    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone>(
+    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone + VisFormat>(
         heap: Self::Heap<'heap, 'sym, 'tcx, S>,
         place: &MaybeOldPlace<'tcx>,
     ) -> Option<SymValue<'sym, 'tcx, S>> {
@@ -148,14 +131,20 @@ impl LookupType for LookupGet {
 }
 
 impl LookupType for LookupTake {
-    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone> =
+    type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone + VisFormat> =
         &'heap mut HeapData<'sym, 'tcx, S>;
 
-    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone>(
+    fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone + VisFormat>(
         heap: Self::Heap<'heap, 'sym, 'tcx, S>,
         place: &MaybeOldPlace<'tcx>,
     ) -> Option<SymValue<'sym, 'tcx, S>> {
-        heap.take(place)
+        eprintln!(
+            "Take place: {place:?} from {}",
+            heap.vis_string(None, &[], OutputMode::Text)
+        );
+        // TODO: In principle we could make take actually remove from the heap, but
+        // doing so would require a bit of refactoring
+        heap.get(place)
     }
 }
 
@@ -191,30 +180,29 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         err: String,
         ty: ty::Ty<'tcx>,
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
-        self.arena
-            .mk_internal_error(err, ty, self.err_ctx.as_ref())
+        self.arena.mk_internal_error(err, ty, self.err_ctx.as_ref())
     }
 
     fn encode_place_opt<'heap, T: LookupType, P: Into<MaybeOldPlace<'tcx>> + Copy>(
         &self,
-        heap: T::Heap<'heap, 'sym, 'tcx, S::SymValSynthetic>,
+        heap: &SymbolicHeap<'heap, 'sym, 'tcx, S::SymValSynthetic>,
         place: &P,
     ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>> {
-        let place = (*place).into();
-        if place.is_ref(self.body, self.tcx) {
-            return T::lookup(heap, &place.project_deref(self.repacker())).map(|v| {
-                self.arena.mk_ref(
-                    v,
-                    if place.is_mut_ref(self.body, self.tcx) {
-                        Mutability::Mut
-                    } else {
-                        Mutability::Not
-                    },
-                )
-            });
-        } else {
-            return T::lookup(heap, &place);
+        let place: MaybeOldPlace<'tcx> = (*place).into();
+        if let Some(PlaceElem::Deref) = place.place().projection.last() {
+            if let Some(base_place) = place.place().prefix_place(self.repacker()) {
+                if base_place.is_ref(self.body, self.tcx) {
+                    return Some(
+                        self.arena.mk_projection(
+                            ProjectionElem::Deref,
+                            heap.0
+                                .get(&MaybeOldPlace::new(base_place, place.location()))?,
+                        ),
+                    );
+                }
+            }
         }
+        heap.0.get(&place)
     }
 
     /// Encodes the symbolic value that the place currently holds. In the most
@@ -222,10 +210,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     /// reference, we return a reference to the dereferenced value in the heap.
     fn encode_place<'heap, T: LookupType, P: Into<MaybeOldPlace<'tcx>> + Copy>(
         &self,
-        heap: T::Heap<'heap, 'sym, 'tcx, S::SymValSynthetic>,
+        heap: &mut SymbolicHeap<'heap, 'sym, 'tcx, S::SymValSynthetic>,
         place: &P,
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
-        let heap_str = format!("{:#?}", heap);
+        let heap_str =
+            heap.0
+                .to_vis_string(Some(self.tcx), &self.body.var_debug_info, OutputMode::Text);
         self.encode_place_opt::<T, P>(heap, place)
             .unwrap_or_else(|| {
                 let place = (*place).into();
@@ -243,13 +233,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub fn encode_operand(
         &self,
-        heap: &HeapData<'sym, 'tcx, S::SymValSynthetic>,
+        heap: &mut HeapData<'sym, 'tcx, S::SymValSynthetic>,
         operand: &mir::Operand<'tcx>,
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
+        let mut heap = SymbolicHeap::new(heap, self.tcx, self.body, &self.arena);
         match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => {
                 let place: Place<'tcx> = (*place).into();
-                self.encode_place::<LookupGet, _>(heap, &place)
+                self.encode_place::<LookupGet, _>(&mut heap, &place)
             }
             mir::Operand::Constant(c) => self.arena.mk_constant(c.into()),
         }
@@ -274,32 +265,48 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 UnblockAction::Collapse(place, places) => {
                     self.collapse_place_from(&place.place(), &places[0].place(), heap, location);
                 }
-                UnblockAction::TerminateRegion(_, typ) => match &typ {
+                UnblockAction::TerminateAbstraction(_, typ) => match &typ {
                     pcs::borrows::domain::AbstractionType::FunctionCall {
                         def_id,
                         location: call_location,
-                        blocks_args,
-                        blocked_place,
+                        edges,
                         substs,
                     } => {
                         let snapshot = function_call_snapshots.get_snapshot(&call_location);
-                        for (idx, place) in blocks_args {
-                            let value = self.arena.mk_backwards_fn(BackwardsFn {
-                                caller_def_id: Some(self.def_id.into()),
-                                def_id: *def_id,
-                                substs,
-                                arg_snapshots: snapshot.args,
-                                return_snapshot: self.arena.mk_ref(
-                                    self.encode_place::<LookupGet, _>(heap.0, blocked_place),
-                                    Mutability::Mut,
-                                ),
-                                arg_index: *idx,
-                            });
-                            assert_eq!(value.ty(self.tcx), snapshot.args[*idx].ty(self.tcx));
-                            heap.insert_maybe_old_place(
-                                *place,
-                                self.arena.mk_projection(ProjectionElem::Deref, value),
-                            );
+                        for (idx, edge) in edges {
+                            match edge.input {
+                                pcs::borrows::domain::AbstractionTarget::MaybeOldPlace(place) => {
+                                    let assigned_place = match edge.output {
+                                        pcs::borrows::domain::AbstractionTarget::MaybeOldPlace(
+                                            place,
+                                        ) => place,
+                                        _ => unreachable!(),
+                                    };
+                                    let value = self.arena.mk_backwards_fn(BackwardsFn {
+                                        caller_def_id: Some(self.def_id.into()),
+                                        def_id: *def_id,
+                                        substs,
+                                        arg_snapshots: snapshot.args,
+                                        return_snapshot: self.arena.mk_ref(
+                                            self.encode_place::<LookupGet, _>(
+                                                heap,
+                                                &assigned_place,
+                                            ),
+                                            Mutability::Mut,
+                                        ),
+                                        arg_index: *idx,
+                                    });
+                                    assert_eq!(
+                                        value.ty(self.tcx),
+                                        snapshot.args[*idx].ty(self.tcx)
+                                    );
+                                    heap.insert_maybe_old_place(
+                                        place,
+                                        self.arena.mk_projection(ProjectionElem::Deref, value),
+                                    );
+                                }
+                                _ => todo!(),
+                            }
                         }
                     }
                 },
@@ -337,28 +344,23 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         ),
                         pcs.location,
                     );
-                    let mut ug = UnblockGraph::new();
-                    ug.unblock_place(
-                        blocked_place.into(),
+                    let ug = UnblockGraph::for_place(
+                        blocked_place.0,
                         &borrow_state,
                         pcs.location.block,
-                        UnblockReasons::new(UnblockReason::BackwardsFunction(local)),
-                        self.tcx,
+                        self.repacker(),
                     );
                     let actions = ug.actions(self.tcx);
-                    eprintln!("actions: {:#?}", actions);
                     self.apply_unblock_actions(
                         actions,
                         &mut heap,
                         &path.function_call_snapshots,
                         pcs.location,
                     );
-                    eprintln!(
-                        "At the place {:?} is {}",
-                        blocked_place,
-                        heap.0.get(&blocked_place).unwrap()
+                    facts.insert(
+                        arg - 1,
+                        self.encode_place::<LookupGet, _>(&mut heap, &blocked_place),
                     );
-                    facts.insert(arg - 1, heap.0.get(&blocked_place).unwrap());
                 }
             }
         }
@@ -372,7 +374,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         result_paths: &mut ResultPaths<'sym, 'tcx, S::SymValSynthetic>,
     ) {
         let return_place: Place<'tcx> = mir::RETURN_PLACE.into();
-        let expr = self.encode_place::<LookupGet, _>(&path.heap, &return_place);
+        let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
+        let expr = self.encode_place::<LookupGet, _>(&mut heap, &return_place);
         let backwards_facts = self.compute_backwards_facts(path, pcs);
         result_paths.insert(ResultPath::new(
             path.path.clone(),
@@ -392,6 +395,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         operand: &mir::Operand<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         reborrows: &ReborrowingDag<'tcx>,
+        location: Location,
     ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>> {
         match operand {
             mir::Operand::Move(place) => {
@@ -399,17 +403,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 if let ty::TyKind::Ref(_, ty, Mutability::Mut) =
                     place.ty(self.body, self.tcx).ty.kind()
                 {
-                    let blocked = reborrows.get_places_blocked_by(
-                        pcs::borrows::domain::MaybeOldPlace::Current {
-                            place: place.project_deref(self.repacker()).0,
-                        },
+                    let sym_var = self.mk_fresh_symvar(place.ty(self.body, self.tcx).ty);
+                    heap.insert_maybe_old_place(
+                        MaybeOldPlace::new(place.0, Some(location)),
+                        sym_var,
                     );
-                    assert!(blocked.len() == 1);
-                    let blocked_by = blocked.into_iter().next().unwrap();
-                    let sym_var = self.mk_fresh_symvar(*ty);
-                    assert_eq!(blocked_by.ty(self.repacker()).ty, *ty);
-                    heap.insert_maybe_old_place(blocked_by, sym_var);
-                    Some(self.arena.mk_ref(sym_var, Mutability::Mut))
+                    Some(sym_var)
                 } else {
                     None
                 }
@@ -431,27 +430,25 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn explode_value(
         &self,
-        place: &pcs::utils::Place<'tcx>,
+        place: &MaybeOldPlace<'tcx>,
         value: SymValue<'sym, 'tcx, S::SymValSynthetic>,
-        places: impl Iterator<Item = pcs::utils::Place<'tcx>>,
+        places: impl Iterator<Item = MaybeOldPlace<'tcx>>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
-        let old_proj_len = place.projection.len();
+        let old_proj_len = place.place().projection.len();
         for f in places {
-            assert_eq!(f.projection.len(), place.projection.len() + 1);
+            assert_eq!(
+                f.place().projection.len(),
+                place.place().projection.len() + 1
+            );
             let mut value = value;
-            for elem in f.projection.iter().skip(old_proj_len) {
+            for elem in f.place().projection.iter().skip(old_proj_len) {
                 value = self.arena.mk_projection(elem.clone(), value);
             }
-            if f.is_ref(self.body, self.tcx) {
-                heap.insert(
-                    f.project_deref(self.repacker()),
-                    self.arena.mk_projection(ProjectionElem::Deref, value),
-                    location,
-                );
-            } else {
-                heap.insert(f, value, location);
+            match f {
+                MaybeOldPlace::Current { place } => heap.insert(place, value, location),
+                MaybeOldPlace::OldPlace(snapshot) => heap.insert_maybe_old_place(f, value),
             }
         }
     }
@@ -465,19 +462,22 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) {
         let value = match place.ty(self.fpcs_analysis.repacker()).ty.kind() {
             ty::TyKind::Ref(_, _, Mutability::Mut) => {
-                // Expanding x into *x shouldn't expand sth in the heap
-                return;
+                self.encode_place::<LookupTake, _>(heap, place)
             }
             ty::TyKind::Ref(_, _, Mutability::Not) => {
-                self.encode_place::<LookupGet, _>(heap.0, place)
+                self.encode_place::<LookupGet, _>(heap, place)
             }
-            _ => self.encode_place::<LookupTake, _>(heap.0, place),
+            _ => self.encode_place::<LookupTake, _>(heap, place),
         };
         let (field, rest, _) = place.expand_one_level(*guide, self.fpcs_analysis.repacker());
         self.explode_value(
-            place,
+            &MaybeOldPlace::Current {
+                place: place.clone(),
+            },
             value,
-            std::iter::once(field).chain(rest.into_iter()),
+            std::iter::once(field)
+                .chain(rest.into_iter())
+                .map(|p| p.into()),
             heap,
             location,
         );
@@ -490,9 +490,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
-        if place.ty(self.fpcs_analysis.repacker()).ty.is_ref() {
-            return;
-        }
         let place_ty = place.ty(self.fpcs_analysis.repacker());
         let args: Vec<_> = if from.is_downcast_of(*place).is_some() || place_ty.ty.is_box() {
             vec![heap.0.take(from).unwrap_or_else(|| {
@@ -507,7 +504,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 .iter()
                 .map(|p| {
                     let place_to_take: MaybeOldPlace<'tcx> = (*p).into();
-                    self.encode_place_opt::<LookupTake, MaybeOldPlace<'tcx>>(heap.0, &place_to_take)
+                    self.encode_place_opt::<LookupTake, MaybeOldPlace<'tcx>>(heap, &place_to_take)
                         .unwrap_or_else(|| {
                             self.mk_internal_err_expr(
                                 format!("Place {:?} not found in heap[collapse]", place_to_take),
@@ -521,7 +518,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             AggregateKind::pcs(place_ty.ty, place_ty.variant_index),
             self.arena.alloc_slice(&args),
         );
-        eprintln!("Collapse ty: {:#?} for {}: {}", place_ty, args[0], value);
         heap.insert(*place, value, location);
     }
 
@@ -557,18 +553,6 @@ pub struct SymExParams<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>> {
     pub new_symvars_allowed: bool,
 }
 
-pub fn run_symbolic_execution_with<
-    'mir,
-    'sym,
-    'tcx,
-    S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>,
->(
-    params: SymExParams<'mir, 'sym, 'tcx, S>,
-    heap_data: HeapData<'sym, 'tcx, S::SymValSynthetic>,
-    symvars: Vec<ty::Ty<'tcx>>,
-) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {
-    SymbolicExecution::new(params).execute(heap_data, symvars)
-}
 pub fn run_symbolic_execution<
     'mir,
     'sym,

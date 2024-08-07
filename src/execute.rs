@@ -12,7 +12,9 @@ use crate::{
     },
     semantics::VerifierSemantics,
     value::SymVar,
-    visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat},
+    visualization::{
+        export_assertions, export_path_json, export_path_list, OutputMode, StepType, VisFormat,
+    },
     SymbolicExecution,
 };
 use std::{
@@ -60,9 +62,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     ErrorLocation::Location(fpcs_loc.location),
                 );
                 self.handle_pcs(&mut path, &fpcs_loc, true, fpcs_loc.location);
+                let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
+                let rhs = self.handle_stmt_rhs(stmt, &mut heap, fpcs_loc);
                 self.handle_pcs(&mut path, &fpcs_loc, false, fpcs_loc.location);
                 let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
-                self.handle_stmt(stmt, &mut heap, fpcs_loc);
+                self.handle_stmt_lhs(stmt, &mut heap, fpcs_loc, rhs);
                 if let Some(debug_output_dir) = &self.debug_output_dir {
                     export_path_json(
                         &debug_output_dir,

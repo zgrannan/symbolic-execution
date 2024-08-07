@@ -18,7 +18,7 @@ pub trait VerifierSemantics<'sym, 'tcx> : std::marker::Sized {
         sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, Self>,
         def_id: DefId,
         substs: GenericArgsRef<'tcx>,
-        heap: &HeapData<'sym, 'tcx, Self::SymValSynthetic>,
+        heap: &mut HeapData<'sym, 'tcx, Self::SymValSynthetic>,
         args: &Vec<Operand<'tcx>>,
     ) -> Option<FunctionCallEffects<'sym, 'tcx, Self::SymValSynthetic>>;
 }
