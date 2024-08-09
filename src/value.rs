@@ -206,6 +206,15 @@ impl<'sym, 'tcx, T> Substs<'sym, 'tcx, T> {
     }
 }
 
+impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug> std::fmt::Display for Substs<'sym, 'tcx, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (k, v) in self.0.iter() {
+            writeln!(f, "{:?}: {:?}", k, v.kind)?;
+        }
+        Ok(())
+    }
+}
+
 impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tcx, T> {
     pub fn apply_transformer<F>(
         &'sym self,

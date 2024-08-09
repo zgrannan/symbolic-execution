@@ -2,8 +2,7 @@ use crate::{path::Path, rustc_interface::middle::mir::Location};
 
 use pcs::{
     borrows::{
-        domain::{BorrowDerefExpansion, DerefExpansion, MaybeOldPlace, Reborrow},
-        engine::BorrowsDomain,
+        deref_expansion::{BorrowDerefExpansion, DerefExpansion}, domain::{MaybeOldPlace, Reborrow}, engine::BorrowsDomain
     },
     free_pcs::{FreePcsLocation, RepackOp},
     ReborrowBridge,
