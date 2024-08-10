@@ -135,7 +135,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         &mut heap,
                         args,
                         location.location,
-                        reborrows,
+                        &reborrows,
                     );
 
                     if let Some(assertion) = effects.precondition_assertion {
