@@ -394,7 +394,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         operand: &mir::Operand<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
-        reborrows: &ReborrowingDag<'tcx>,
         location: Location,
     ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>> {
         match operand {

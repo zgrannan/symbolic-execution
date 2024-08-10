@@ -135,7 +135,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         &mut heap,
                         args,
                         location.location,
-                        &reborrows,
                     );
 
                     if let Some(assertion) = effects.precondition_assertion {
@@ -201,7 +200,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         args: &Vec<Operand<'tcx>>,
         location: Location,
-        reborrows: &ReborrowingDag<'tcx>,
     ) -> FunctionCallEffects<'sym, 'tcx, S::SymValSynthetic> {
         if let Some(result) = S::encode_fn_call(location, self, def_id, substs, heap.0, args) {
             return result;
@@ -238,7 +236,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     .iter()
                     .zip(encoded_args)
                     .map(|(operand, encoded)| {
-                        self.havoc_operand_ref(operand, heap, reborrows, location)
+                        self.havoc_operand_ref(operand, heap, location)
                             .unwrap_or(encoded)
                     })
                     .collect::<Vec<_>>();
