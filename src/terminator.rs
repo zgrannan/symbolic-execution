@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
 use pcs::borrows::engine::{BorrowsDomain, ReborrowAction};
-use pcs::borrows::reborrowing_dag::ReborrowingDag;
 use pcs::free_pcs::{FreePcsLocation, FreePcsTerminator};
 use pcs::ReborrowBridge;
 
@@ -36,10 +35,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         fpcs_terminator: FreePcsTerminator<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
         location: &PcsLocation<'mir, 'tcx>,
     ) {
-        //For havocing data behind references in fn calls, we use the
-        //reborrow state before the terminator action has been applied
-        //to PC
-        let reborrows = location.extra.before_start.reborrows();
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         match &terminator.kind {
             mir::TerminatorKind::Drop { target, .. }

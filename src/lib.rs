@@ -45,7 +45,7 @@ use havoc::HavocData;
 use heap::{HeapData, SymbolicHeap};
 use pcs::{
     borrows::{
-        domain::MaybeOldPlace, reborrowing_dag::ReborrowingDag, unblock_graph::UnblockGraph,
+        domain::MaybeOldPlace, unblock_graph::UnblockGraph,
     },
     combined_pcs::UnblockAction,
     free_pcs::RepackOp,
