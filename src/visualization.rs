@@ -5,7 +5,7 @@ use serde_json::json;
 
 use crate::{
     context::SymExContext,
-    debug_info::DebugInfo,
+    debug_info::{DebugInfo, DEBUGINFO_NONE},
     path::{AcyclicPath, Path},
     pcs_interaction::PcsLocation,
     results::{ResultAssertion, ResultPath, ResultPaths},
@@ -72,7 +72,11 @@ pub enum StepType {
     Transition,
 }
 
-pub fn export_path_json<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>>(
+pub fn export_path_json<
+    'sym,
+    'tcx,
+    T: VisFormat + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug,
+>(
     debug_output_dir: &str,
     path: &Path<'sym, 'tcx, T>,
     fpcs_loc: &PcsLocation<'_, 'tcx>,
@@ -192,7 +196,7 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tcx, T> {
     pub fn new(kind: SymValueKind<'sym, 'tcx, T>, arena: &'sym SymExContext) -> Self {
         SymValueData {
             kind,
-            debug_info: DebugInfo::new(|t| arena.alloc(t)),
+            debug_info: DEBUGINFO_NONE
         }
     }
 

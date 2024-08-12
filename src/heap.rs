@@ -132,21 +132,20 @@ impl<'sym, 'tcx, T: VisFormat> HeapData<'sym, 'tcx, T> {
     }
 }
 
-impl<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx>> HeapData<'sym, 'tcx, T> {
+impl<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug> HeapData<'sym, 'tcx, T> {
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         let map = self
             .0
             .iter()
             .fold(BTreeMap::new(), |mut acc, (place, value)| {
-                let mut key = place.to_short_string(repacker);
+                let key = place.to_short_string(repacker);
                 let value_str = format!("{}", value.to_vis_string(
                     Some(repacker.tcx()), &repacker.body().var_debug_info, OutputMode::HTML));
                 let ty_str = format!("{}", value.ty(repacker.tcx()));
 
-                if acc.contains_key(&key) {
-                    key = format!("{:?}", place.to_short_string(repacker));
-                    assert!(!acc.contains_key(&key));
-                }
+                // if acc.contains_key(&key) {
+                //     assert!(!acc.contains_key(&key), "Duplicate key: {:?} for {:?} {:?}", key, place, self);
+                // }
                 acc.insert(key, serde_json::json!({ "old": !place.is_current(), "value": value_str, "ty": ty_str }));
                 acc
             });
