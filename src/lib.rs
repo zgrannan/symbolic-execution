@@ -333,8 +333,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let local = Local::from_usize(arg);
                 let arg_place: mir::Place<'tcx> = local.into();
                 let arg_place: Place<'tcx> = arg_place.into();
-                let blocked_place = arg_place.project_deref(self.repacker());
                 if arg_place.is_mut_ref(self.body, self.tcx) {
+                    let blocked_place = arg_place.project_deref(self.repacker());
                     let mut heap = path.heap.clone();
                     let mut heap = SymbolicHeap::new(&mut heap, self.tcx, self.body, &self.arena);
                     heap.insert(

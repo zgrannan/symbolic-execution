@@ -146,7 +146,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         path: &AcyclicPath,
     ) {
         for reborrow in reborrows {
-            if !path.contains(reborrow.location.block) {
+            if !path.contains(reborrow.reservation_location().block) {
                 continue;
             }
             let blocked_value = if reborrow.mutability.is_mut() {
