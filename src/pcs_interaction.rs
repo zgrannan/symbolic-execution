@@ -34,7 +34,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             pcs.extra_middle.clone()
         };
         let (ug_actions, added_reborrows, reborrow_expands) = if let Some(mut bridge) = bridge {
-            bridge.ug.filter_for_path(path.path.to_slice(), self.tcx);
+            bridge.ug.filter_for_path(path.path.to_slice());
             (
                 bridge.ug.actions(self.repacker()),
                 bridge.added_reborrows,
@@ -146,7 +146,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         path: &AcyclicPath,
     ) {
         for reborrow in reborrows {
-            if !path.contains(reborrow.reservation_location().block) {
+            if !path.contains(reborrow.reserve_location().block) {
                 continue;
             }
             let blocked_value = if reborrow.mutability.is_mut() {

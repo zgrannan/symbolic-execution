@@ -136,10 +136,6 @@ impl LookupType for LookupTake {
         heap: Self::Heap<'heap, 'sym, 'tcx, S>,
         place: &MaybeOldPlace<'tcx>,
     ) -> Option<SymValue<'sym, 'tcx, S>> {
-        eprintln!(
-            "Take place: {place:?} from {}",
-            heap.vis_string(None, &[], OutputMode::Text)
-        );
         // TODO: In principle we could make take actually remove from the heap, but
         // doing so would require a bit of refactoring
         heap.get(place)
@@ -257,6 +253,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     blocked_place,
                     assigned_place,
                     is_mut,
+                    ..
                 } => {
                     self.handle_removed_reborrow(
                         &blocked_place,
@@ -270,14 +267,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     self.collapse_place_from(place, places[0], heap, location);
                 }
                 UnblockAction::TerminateAbstraction(_, typ) => match &typ {
-                    pcs::borrows::domain::AbstractionType::FunctionCall {
-                        def_id,
-                        location: call_location,
-                        edges,
-                        substs,
-                    } => {
-                        let snapshot = function_call_snapshots.get_snapshot(&call_location);
-                        for (idx, edge) in edges {
+                    pcs::borrows::domain::AbstractionType::FunctionCall(c) => {
+                        let snapshot = function_call_snapshots.get_snapshot(&c.location());
+                        for (idx, edge) in c.edges() {
                             match edge.input {
                                 pcs::borrows::domain::AbstractionTarget::MaybeOldPlace(place) => {
                                     let assigned_place = match edge.output {
@@ -288,8 +280,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                     };
                                     let value = self.arena.mk_backwards_fn(BackwardsFn {
                                         caller_def_id: Some(self.def_id.into()),
-                                        def_id: *def_id,
-                                        substs,
+                                        def_id: c.def_id(),
+                                        substs: c.substs(),
                                         arg_snapshots: snapshot.args,
                                         return_snapshot: self.arena.mk_ref(
                                             self.encode_place::<LookupGet, _>(
