@@ -1,14 +1,13 @@
-use crate::context::SymExContext;
 use crate::heap::HeapData;
 use crate::rustc_interface::{
     hir::def_id::DefId,
     middle::{
-        mir::{self, Body, Operand, VarDebugInfo},
-        ty::{self, GenericArgsRef, TyCtxt},
+        mir::{self, Operand},
+        ty::GenericArgsRef,
     },
 };
 use crate::terminator::FunctionCallEffects;
-use crate::value::{SymValue, SyntheticSymValue};
+use crate::value::SyntheticSymValue;
 use crate::SymbolicExecution;
 
 pub trait VerifierSemantics<'sym, 'tcx> : std::marker::Sized {

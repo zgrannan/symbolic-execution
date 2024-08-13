@@ -2,7 +2,9 @@ use crate::{path::Path, rustc_interface::middle::mir::Location};
 
 use pcs::{
     borrows::{
-        deref_expansion::{BorrowDerefExpansion, DerefExpansion}, domain::{MaybeOldPlace, Reborrow}, engine::BorrowsDomain
+        deref_expansion::{BorrowDerefExpansion, DerefExpansion},
+        domain::{MaybeOldPlace, Reborrow},
+        engine::BorrowsDomain,
     },
     free_pcs::{FreePcsLocation, RepackOp},
     ReborrowBridge,
@@ -34,7 +36,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let (ug_actions, added_reborrows, reborrow_expands) = if let Some(mut bridge) = bridge {
             bridge.ug.filter_for_path(path.path.to_slice(), self.tcx);
             (
-                bridge.ug.actions(self.tcx),
+                bridge.ug.actions(self.repacker()),
                 bridge.added_reborrows,
                 bridge.expands,
             )
@@ -60,13 +62,16 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         self.handle_repack_collapses(repacks, &mut heap, location);
         self.handle_repack_expands(repacks, &mut heap, location);
         self.handle_reborrow_expands(
-            reborrow_expands.into_iter().collect(),
+            reborrow_expands.into_iter().map(|ep| ep.value).collect(),
             &mut heap,
             &path.path,
             location,
         );
         self.handle_added_reborrows(
-            &added_reborrows.into_iter().collect::<Vec<_>>(),
+            &added_reborrows
+                .into_iter()
+                .map(|r| r.value)
+                .collect::<Vec<_>>(),
             &mut heap,
             &path.path,
         );
@@ -78,12 +83,17 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         assigned_place: &MaybeOldPlace<'tcx>,
         is_mut: bool,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        location: Location,
     ) {
         if !is_mut {
             return;
         }
         let heap_value = self.encode_place::<LookupTake, _>(heap, assigned_place);
-        heap.insert_maybe_old_place(*blocked_place, heap_value);
+        if blocked_place.is_old() {
+            heap.insert_maybe_old_place(*blocked_place, heap_value);
+        } else {
+            heap.insert(blocked_place.place(), heap_value, location);
+        }
     }
 
     pub(crate) fn handle_repack_collapses(

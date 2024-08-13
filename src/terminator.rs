@@ -152,14 +152,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 path.function_call_snapshots
                                     .add_snapshot(location.location, snapshot.args);
                             }
-                            eprintln!("Fresh symvar for call to {:?}", def_id);
                             let sym_var = self.mk_fresh_symvar(
                                 destination.ty(&self.body.local_decls, self.tcx).ty,
-                            );
-                            add_debug_note!(
-                                sym_var.debug_info,
-                                "Fresh symvar for call to {:?}",
-                                def_id
                             );
                             heap.insert(*destination, sym_var, location.location);
                             path.pcs

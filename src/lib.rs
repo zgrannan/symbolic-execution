@@ -44,9 +44,7 @@ use function_call_snapshot::FunctionCallSnapshots;
 use havoc::HavocData;
 use heap::{HeapData, SymbolicHeap};
 use pcs::{
-    borrows::{
-        domain::MaybeOldPlace, unblock_graph::UnblockGraph,
-    },
+    borrows::{domain::MaybeOldPlace, unblock_graph::UnblockGraph},
     combined_pcs::UnblockAction,
     free_pcs::RepackOp,
     utils::PlaceRepacker,
@@ -260,10 +258,16 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     assigned_place,
                     is_mut,
                 } => {
-                    self.handle_removed_reborrow(&blocked_place, &assigned_place, is_mut, heap);
+                    self.handle_removed_reborrow(
+                        &blocked_place,
+                        &assigned_place,
+                        is_mut,
+                        heap,
+                        location,
+                    );
                 }
                 UnblockAction::Collapse(place, places) => {
-                    self.collapse_place_from(&place.place(), &places[0].place(), heap, location);
+                    self.collapse_place_from(place, places[0], heap, location);
                 }
                 UnblockAction::TerminateAbstraction(_, typ) => match &typ {
                     pcs::borrows::domain::AbstractionType::FunctionCall {
@@ -344,13 +348,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         ),
                         pcs.location,
                     );
-                    let ug = UnblockGraph::for_place(
-                        blocked_place.0,
-                        &borrow_state,
-                        pcs.location.block,
-                        self.repacker(),
-                    );
-                    let actions = ug.actions(self.tcx);
+                    let ug =
+                        UnblockGraph::for_place(blocked_place.0, &borrow_state, self.repacker());
+                    let actions = ug.actions(self.repacker());
                     self.apply_unblock_actions(
                         actions,
                         &mut heap,
@@ -484,14 +484,16 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn collapse_place_from(
         &self,
-        place: &pcs::utils::Place<'tcx>,
-        from: &pcs::utils::Place<'tcx>,
+        place: MaybeOldPlace<'tcx>,
+        from: MaybeOldPlace<'tcx>,
         heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
         let place_ty = place.ty(self.fpcs_analysis.repacker());
-        let args: Vec<_> = if from.is_downcast_of(*place).is_some() || place_ty.ty.is_box() {
-            vec![heap.0.take(from).unwrap_or_else(|| {
+        let args: Vec<_> = if from.place().is_downcast_of(place.place()).is_some()
+            || place_ty.ty.is_box()
+        {
+            vec![heap.0.take(&from).unwrap_or_else(|| {
                 self.mk_internal_err_expr(
                     format!("Place {:?} not found in heap[collapse]", from),
                     from.ty(self.fpcs_analysis.repacker()).ty,
@@ -499,10 +501,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             })]
         } else {
             place
+                .place()
                 .expand_field(None, self.fpcs_analysis.repacker())
                 .iter()
                 .map(|p| {
-                    let place_to_take: MaybeOldPlace<'tcx> = (*p).into();
+                    let place_to_take: MaybeOldPlace<'tcx> =
+                        MaybeOldPlace::new(p.clone(), place.location());
                     self.encode_place_opt::<LookupTake, MaybeOldPlace<'tcx>>(heap, &place_to_take)
                         .unwrap_or_else(|| {
                             self.mk_internal_err_expr(
@@ -517,7 +521,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             AggregateKind::pcs(place_ty.ty, place_ty.variant_index),
             self.arena.alloc_slice(&args),
         );
-        heap.insert(*place, value, location);
+        if place.is_current() {
+            heap.insert(place.place(), value, location);
+        } else {
+            heap.insert_maybe_old_place(place, value);
+        }
     }
 
     fn handle_repack(
@@ -534,7 +542,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 self.expand_place_with_guide(place, guide, heap, location)
             }
             RepackOp::Collapse(place, from, _) => {
-                self.collapse_place_from(place, from, heap, location)
+                self.collapse_place_from((*place).into(), (*from).into(), heap, location)
             }
             RepackOp::DerefShallowInit(_, _) => todo!(),
         }
