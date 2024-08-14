@@ -6,8 +6,8 @@ use crate::rustc_interface::{
     const_eval::interpret::ConstValue,
     data_structures::fx::FxHasher,
     middle::{
-        mir::{self, tcx::PlaceTy, ProjectionElem, VarDebugInfo, PlaceElem},
-        ty::{self, GenericArgsRef},
+        mir::{self, tcx::PlaceTy, PlaceElem, ProjectionElem, VarDebugInfo},
+        ty::{self, adjustment::PointerCoercion, GenericArgsRef},
     },
     span::{def_id::DefId, DUMMY_SP},
 };
@@ -76,13 +76,15 @@ pub struct SymValueData<'sym, 'tcx, T> {
 #[derive(Copy, Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub enum CastKind {
     IntToInt,
+    PointerCoercion,
 }
 
 impl From<mir::CastKind> for CastKind {
     fn from(value: mir::CastKind) -> Self {
         match value {
             mir::CastKind::IntToInt => CastKind::IntToInt,
-            _ => todo!(),
+            mir::CastKind::PointerCoercion(_) => CastKind::PointerCoercion,
+            other => todo!("{:?}", other),
         }
     }
 }
@@ -206,7 +208,9 @@ impl<'sym, 'tcx, T> Substs<'sym, 'tcx, T> {
     }
 }
 
-impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug> std::fmt::Display for Substs<'sym, 'tcx, T> {
+impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug> std::fmt::Display
+    for Substs<'sym, 'tcx, T>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (k, v) in self.0.iter() {
             writeln!(f, "{:?}: {:?}", k, v.kind)?;

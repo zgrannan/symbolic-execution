@@ -301,7 +301,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                         self.arena.mk_projection(ProjectionElem::Deref, value),
                                     );
                                 }
-                                _ => todo!(),
+                                _ => {
+                                    // TODO: Region projection
+                                }
                             }
                         }
                     }

@@ -40,8 +40,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             heap_data,
         )];
         while let Some(mut path) = paths.pop() {
+            eprintln!("Executing path {:?}", path.path);
             let block = path.last_block();
             let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
+            heap.snapshot_values(block);
+            eprintln!("snapshot");
             for local in self.havoc.get(block).iter() {
                 let place = Place::new(*local, &[]);
                 heap.insert(
@@ -53,6 +56,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     },
                 );
             }
+            eprintln!("havoc");
             let pcs_block = self.fpcs_analysis.get_all_for_bb(block);
             let block_data = &self.body.basic_blocks[block];
             for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
@@ -77,6 +81,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     );
                 }
             }
+            eprintln!("stmts");
             // Actions made to evaluate terminator
             let last_fpcs_loc = pcs_block.statements.last().unwrap();
             self.set_error_context(

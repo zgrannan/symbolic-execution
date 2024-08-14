@@ -12,7 +12,7 @@ use crate::{
     util::assert_tys_match,
 };
 use pcs::borrows::domain::MaybeOldPlace;
-use pcs::utils::{PlaceRepacker, PlaceSnapshot};
+use pcs::utils::{PlaceRepacker, PlaceSnapshot, SnapshotLocation};
 use std::collections::BTreeMap;
 
 use super::value::{SymValue, SyntheticSymValue};
@@ -52,6 +52,18 @@ impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
         SymbolicHeap(heap, tcx, body, arena)
     }
 
+    pub fn snapshot_values(&mut self, block: mir::BasicBlock) {
+        for (place, value) in &self.0.current_values() {
+            self.0.insert(
+                MaybeOldPlace::OldPlace(PlaceSnapshot::new(
+                    place.clone(),
+                    SnapshotLocation::Join(block),
+                )),
+                value
+            );
+        }
+    }
+
     pub fn insert<P: Clone + Into<Place<'tcx>>>(
         &mut self,
         place: P,
@@ -77,9 +89,9 @@ impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
         assert_tys_match(self.1, place_ty.ty, value_ty.rust_ty());
         if let Some(PlaceElem::Deref) = place.place().projection.last() {
             if let Some(base_place) = place.place().prefix_place(self.repacker()) {
-                if base_place.is_ref(self.body(), self.tcx()) {
+                if let Some(mutability) = base_place.ref_mutability(self.body(), self.tcx()) {
                     let place = MaybeOldPlace::new(base_place, place.location());
-                    let value = self.arena().mk_ref(value, Mutability::Mut);
+                    let value = self.arena().mk_ref(value, mutability);
                     self.0.insert(place, value);
                     return;
                 }
@@ -132,7 +144,9 @@ impl<'sym, 'tcx, T: VisFormat> HeapData<'sym, 'tcx, T> {
     }
 }
 
-impl<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug> HeapData<'sym, 'tcx, T> {
+impl<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug>
+    HeapData<'sym, 'tcx, T>
+{
     pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
         let map = self
             .0
@@ -217,5 +231,18 @@ impl<'sym, 'tcx, T: std::fmt::Debug> HeapData<'sym, 'tcx, T> {
     pub fn remove<P: Into<MaybeOldPlace<'tcx>> + Copy>(&mut self, place: &P) {
         let place: MaybeOldPlace<'tcx> = (*place).into();
         self.0.retain(|(p, _)| *p != place);
+    }
+
+    pub fn current_values(&self) -> Vec<(pcs::utils::Place<'tcx>, SymValue<'sym, 'tcx, T>)> {
+        self.0
+            .iter()
+            .filter_map(|(p, v)| {
+                if p.is_current() {
+                    Some((p.place(), *v))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
