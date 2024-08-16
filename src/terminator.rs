@@ -30,7 +30,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         terminator: &mir::Terminator<'tcx>,
         paths: &mut Vec<Path<'sym, 'tcx, S::SymValSynthetic>>,
         assertions: &mut BTreeSet<ResultAssertion<'sym, 'tcx, S::SymValSynthetic>>,
-        result_paths: &mut ResultPaths<'sym, 'tcx, S::SymValSynthetic>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         fpcs_terminator: FreePcsTerminator<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
         location: &PcsLocation<'mir, 'tcx>,
@@ -76,6 +75,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         );
                     }
                     paths.push(path);
+                } else {
+                    self.debug_paths.push(path.clone());
                 }
             }
             mir::TerminatorKind::SwitchInt { discr, targets } => {
@@ -176,7 +177,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
         match terminator.kind {
             mir::TerminatorKind::Return => {
-                self.add_to_result_paths(path, location, result_paths);
+                self.add_to_result_paths(path, location);
             }
             _ => {}
         }

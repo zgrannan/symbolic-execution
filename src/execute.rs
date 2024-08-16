@@ -26,12 +26,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
     pub fn execute(
-        &mut self,
+        mut self,
         heap_data: HeapData<'sym, 'tcx, S::SymValSynthetic>,
         symvars: Vec<ty::Ty<'tcx>>,
     ) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {
         self.symvars = symvars;
-        let mut result_paths: ResultPaths<'sym, 'tcx, S::SymValSynthetic> = ResultPaths::new();
         let mut assertions: BTreeSet<ResultAssertion<'sym, 'tcx, S::SymValSynthetic>> =
             BTreeSet::new();
         let mut paths = vec![Path::new(
@@ -40,11 +39,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             heap_data,
         )];
         while let Some(mut path) = paths.pop() {
-            eprintln!("Executing path {:?}", path.path);
             let block = path.last_block();
             let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
             heap.snapshot_values(block);
-            eprintln!("snapshot");
             for local in self.havoc.get(block).iter() {
                 let place = Place::new(*local, &[]);
                 heap.insert(
@@ -56,7 +53,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     },
                 );
             }
-            eprintln!("havoc");
             let pcs_block = self.fpcs_analysis.get_all_for_bb(block);
             let block_data = &self.body.basic_blocks[block];
             for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
@@ -81,7 +77,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     );
                 }
             }
-            eprintln!("stmts");
             // Actions made to evaluate terminator
             let last_fpcs_loc = pcs_block.statements.last().unwrap();
             self.set_error_context(
@@ -104,7 +99,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 block_data.terminator(),
                 &mut paths,
                 &mut assertions,
-                &mut result_paths,
                 &mut path,
                 pcs_block.terminator,
                 &last_fpcs_loc,
@@ -117,10 +111,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 &self.body.var_debug_info,
                 self.tcx,
             );
-            export_path_list(&debug_output_dir, &result_paths);
+            export_path_list(&debug_output_dir, &self.result_paths, &self.debug_paths);
         }
         SymbolicExecutionResult {
-            paths: result_paths,
+            paths: self.result_paths,
             assertions,
             symvars: self.symvars.clone(),
         }

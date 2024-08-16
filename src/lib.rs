@@ -103,6 +103,8 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     err_ctx: Option<ErrorContext>,
     verifier_semantics: PhantomData<S>,
     new_symvars_allowed: bool,
+    result_paths: ResultPaths<'sym, 'tcx, S::SymValSynthetic>,
+    debug_paths: Vec<Path<'sym, 'tcx, S::SymValSynthetic>>,
 }
 
 trait LookupType {
@@ -158,6 +160,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             debug_output_dir: params.debug_output_dir,
             err_ctx: None,
             symvars: vec![],
+            result_paths: ResultPaths::new(),
+            debug_paths: vec![],
         }
     }
 
@@ -365,13 +369,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
-        result_paths: &mut ResultPaths<'sym, 'tcx, S::SymValSynthetic>,
     ) {
         let return_place: Place<'tcx> = mir::RETURN_PLACE.into();
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
         let expr = self.encode_place::<LookupGet, _>(&mut heap, &return_place);
         let backwards_facts = self.compute_backwards_facts(path, pcs);
-        result_paths.insert(ResultPath::new(
+        self.result_paths.insert(ResultPath::new(
             path.path.clone(),
             path.pcs.clone(),
             expr,

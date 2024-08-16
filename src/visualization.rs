@@ -178,10 +178,13 @@ pub fn export_assertions<'sym, 'tcx, T: VisFormat>(
 pub fn export_path_list<'sym, 'tcx, T: VisFormat>(
     debug_output_dir: &str,
     result_paths: &ResultPaths<'sym, 'tcx, T>,
+    debug_paths: &[Path<'sym, 'tcx, T>],
 ) {
     let result_paths_json: Vec<Vec<usize>> = result_paths
         .iter()
-        .map(|path| path_to_vec(&path.path))
+        .map(|path| &path.path)
+        .chain(debug_paths.iter().map(|path| &path.path))
+        .map(|path| path_to_vec(path))
         .collect();
 
     let json_string = serde_json::to_string_pretty(&result_paths_json)
