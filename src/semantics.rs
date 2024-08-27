@@ -1,4 +1,5 @@
 use crate::heap::HeapData;
+use crate::path::OldMap;
 use crate::rustc_interface::{
     hir::def_id::DefId,
     middle::{
@@ -18,6 +19,7 @@ pub trait VerifierSemantics<'sym, 'tcx> : std::marker::Sized {
         def_id: DefId,
         substs: GenericArgsRef<'tcx>,
         heap: &mut HeapData<'sym, 'tcx, Self::SymValSynthetic>,
+        old_map: &OldMap<'sym, 'tcx, Self::SymValSynthetic>,
         args: &Vec<Operand<'tcx>>,
     ) -> Option<FunctionCallEffects<'sym, 'tcx, Self::SymValSynthetic>>;
 }

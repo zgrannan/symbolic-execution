@@ -82,13 +82,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         blocked_place: &MaybeOldPlace<'tcx>,
         assigned_place: &MaybeOldPlace<'tcx>,
         is_mut: bool,
-        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
         if !is_mut {
             return;
         }
-        let heap_value = self.encode_place::<LookupTake, _>(heap, assigned_place);
+        let heap_value = self.encode_maybe_old_place::<LookupTake, _>(heap, assigned_place);
         if blocked_place.is_old() {
             heap.insert_maybe_old_place(*blocked_place, heap_value);
         } else {
@@ -99,7 +99,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     pub(crate) fn handle_repack_collapses(
         &self,
         repacks: &Vec<RepackOp<'tcx>>,
-        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
         for repack in repacks {
@@ -112,7 +112,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     pub(crate) fn handle_reborrow_expands(
         &self,
         expands: Vec<DerefExpansion<'tcx>>,
-        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         path: &AcyclicPath,
         location: Location,
     ) {
@@ -127,7 +127,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 continue;
             }
             let place = ep.base();
-            let value = self.encode_place::<LookupGet, _>(heap, &place);
+            let value = self.encode_maybe_old_place::<LookupGet, _>(heap, &place);
 
             self.explode_value(
                 &place,
@@ -142,7 +142,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     pub(crate) fn handle_added_reborrows(
         &self,
         reborrows: &[Reborrow<'tcx>],
-        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         path: &AcyclicPath,
     ) {
         for reborrow in reborrows {
@@ -150,9 +150,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 continue;
             }
             let blocked_value = if reborrow.mutability.is_mut() {
-                self.encode_place::<LookupTake, _>(heap, &reborrow.blocked_place)
+                self.encode_maybe_old_place::<LookupTake, _>(heap, &reborrow.blocked_place)
             } else {
-                self.encode_place::<LookupGet, _>(heap, &reborrow.blocked_place)
+                self.encode_maybe_old_place::<LookupGet, _>(heap, &reborrow.blocked_place)
             };
             heap.insert_maybe_old_place(reborrow.assigned_place, blocked_value);
         }
@@ -161,7 +161,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     pub(crate) fn handle_repack_expands(
         &self,
         repacks: &Vec<RepackOp<'tcx>>,
-        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
         for repack in repacks {

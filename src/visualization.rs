@@ -17,7 +17,7 @@ use crate::{
             ty::{self, GenericArgsRef, TyCtxt},
         },
     },
-    value::{SymValue, SymValueData, SymValueKind, SyntheticSymValue, Ty},
+    value::{SymValue, SymValueData, SymValueKind, SymVar, SyntheticSymValue, Ty},
 };
 
 #[derive(Copy, Clone)]
@@ -195,14 +195,16 @@ pub fn export_path_list<'sym, 'tcx, T: VisFormat>(
     std::fs::write(filename, json_string).expect("Failed to write paths.json file");
 }
 
-impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tcx, T> {
-    pub fn new(kind: SymValueKind<'sym, 'tcx, T>, arena: &'sym SymExContext) -> Self {
+impl<'sym, 'tcx, T, V> SymValueData<'sym, 'tcx, T, V> {
+    pub fn new(kind: SymValueKind<'sym, 'tcx, T, V>, arena: &'sym SymExContext) -> Self {
         SymValueData {
             kind,
             debug_info: DEBUGINFO_NONE
         }
     }
+}
 
+impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueData<'sym, 'tcx, T, V> {
     pub fn ty(&self, tcx: ty::TyCtxt<'tcx>) -> Ty<'tcx> {
         self.kind.ty(tcx)
     }

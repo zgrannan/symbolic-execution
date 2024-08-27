@@ -65,11 +65,11 @@ pub trait SyntheticSymValue<'sym, 'tcx>: Sized {
     fn ty(&self, tcx: ty::TyCtxt<'tcx>) -> Ty<'tcx>;
 }
 
-pub type SymValue<'sym, 'tcx, T> = &'sym SymValueData<'sym, 'tcx, T>;
+pub type SymValue<'sym, 'tcx, T, V = SymVar> = &'sym SymValueData<'sym, 'tcx, T, V>;
 
 #[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
-pub struct SymValueData<'sym, 'tcx, T> {
-    pub kind: SymValueKind<'sym, 'tcx, T>,
+pub struct SymValueData<'sym, 'tcx, T, V = SymVar> {
+    pub kind: SymValueKind<'sym, 'tcx, T, V>,
     pub debug_info: DebugInfo<'sym>,
 }
 
@@ -90,7 +90,7 @@ impl From<mir::CastKind> for CastKind {
 }
 
 #[derive(Copy, Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
-pub struct BackwardsFn<'sym, 'tcx, T> {
+pub struct BackwardsFn<'sym, 'tcx, T, V = SymVar> {
     /// The DefId of the Rust (forwards) function
     pub def_id: DefId,
 
@@ -99,11 +99,11 @@ pub struct BackwardsFn<'sym, 'tcx, T> {
     pub caller_def_id: Option<DefId>,
 
     /// Snapshots of the values when the forwards function was called
-    pub arg_snapshots: &'sym [SymValue<'sym, 'tcx, T>],
+    pub arg_snapshots: &'sym [SymValue<'sym, 'tcx, T, V>],
 
     /// The snapshot of the returned value of the function at the point it
     /// expires
-    pub return_snapshot: SymValue<'sym, 'tcx, T>,
+    pub return_snapshot: SymValue<'sym, 'tcx, T, V>,
 
     /// The index of the argument that the backwards function is for. For
     /// example, if the `arg_index` is `i` then backwards_fn(f, args, res, i)
@@ -112,7 +112,7 @@ pub struct BackwardsFn<'sym, 'tcx, T> {
     pub arg_index: usize,
 }
 
-impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> BackwardsFn<'sym, 'tcx, T> {
+impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> BackwardsFn<'sym, 'tcx, T, V> {
     pub fn ty(&self, tcx: ty::TyCtxt<'tcx>) -> Ty<'tcx> {
         self.arg_snapshots[self.arg_index].kind.ty(tcx)
     }
@@ -151,30 +151,30 @@ impl SymVar {
 }
 
 #[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
-pub enum SymValueKind<'sym, 'tcx, T> {
-    Var(SymVar, ty::Ty<'tcx>),
+pub enum SymValueKind<'sym, 'tcx, T, V = SymVar> {
+    Var(V, ty::Ty<'tcx>),
     Constant(Constant<'tcx>),
     CheckedBinaryOp(
         ty::Ty<'tcx>,
         mir::BinOp,
-        SymValue<'sym, 'tcx, T>,
-        SymValue<'sym, 'tcx, T>,
+        SymValue<'sym, 'tcx, T, V>,
+        SymValue<'sym, 'tcx, T, V>,
     ),
     BinaryOp(
         ty::Ty<'tcx>,
         mir::BinOp,
-        SymValue<'sym, 'tcx, T>,
-        SymValue<'sym, 'tcx, T>,
+        SymValue<'sym, 'tcx, T, V>,
+        SymValue<'sym, 'tcx, T, V>,
     ),
-    UnaryOp(ty::Ty<'tcx>, mir::UnOp, SymValue<'sym, 'tcx, T>),
-    Projection(PlaceElem<'tcx>, SymValue<'sym, 'tcx, T>),
-    Ref(SymValue<'sym, 'tcx, T>, Mutability),
-    Aggregate(AggregateKind<'tcx>, &'sym [SymValue<'sym, 'tcx, T>]),
-    Discriminant(SymValue<'sym, 'tcx, T>),
-    Cast(CastKind, SymValue<'sym, 'tcx, T>, ty::Ty<'tcx>),
+    UnaryOp(ty::Ty<'tcx>, mir::UnOp, SymValue<'sym, 'tcx, T, V>),
+    Projection(PlaceElem<'tcx>, SymValue<'sym, 'tcx, T, V>),
+    Ref(SymValue<'sym, 'tcx, T, V>, Mutability),
+    Aggregate(AggregateKind<'tcx>, &'sym [SymValue<'sym, 'tcx, T, V>]),
+    Discriminant(SymValue<'sym, 'tcx, T, V>),
+    Cast(CastKind, SymValue<'sym, 'tcx, T, V>, ty::Ty<'tcx>),
     Synthetic(T),
     InternalError(String, ty::Ty<'tcx>),
-    BackwardsFn(BackwardsFn<'sym, 'tcx, T>),
+    BackwardsFn(BackwardsFn<'sym, 'tcx, T, V>),
 }
 
 pub trait ToSymVar {
@@ -219,14 +219,14 @@ impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug> std:
     }
 }
 
-impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tcx, T> {
-    pub fn apply_transformer<F>(
+impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>, V: Copy> SymValueData<'sym, 'tcx, T, V> {
+    pub fn apply_transformer<U, F>(
         &'sym self,
         arena: &'sym SymExContext<'tcx>,
         transformer: &mut F,
-    ) -> SymValue<'sym, 'tcx, T>
+    ) -> SymValue<'sym, 'tcx, T, U>
     where
-        F: SymValueTransformer<'sym, 'tcx, T>,
+        F: SymValueTransformer<'sym, 'tcx, T, V, U>,
     {
         match &self.kind {
             SymValueKind::Var(var, ty) => transformer.transform_var(arena, *var, *ty),
@@ -256,7 +256,7 @@ impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tc
                 transformer.transform_projection(arena, *elem, transformed_val)
             }
             SymValueKind::Aggregate(kind, vals) => {
-                let transformed_vals: Vec<SymValue<'sym, 'tcx, T>> = vals
+                let transformed_vals: Vec<SymValue<'sym, 'tcx, T, U>> = vals
                     .iter()
                     .map(|v| v.apply_transformer(arena, transformer))
                     .collect();
@@ -275,7 +275,7 @@ impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tc
                 let transformed_val = val.apply_transformer(arena, transformer);
                 transformer.transform_cast(arena, *kind, transformed_val, *ty)
             }
-            SymValueKind::InternalError(_, _) => self,
+            SymValueKind::InternalError(_, _) => todo!(),
             SymValueKind::Ref(val, mutability) => {
                 let transformed_val = val.apply_transformer(arena, transformer);
                 transformer.transform_ref(arena, transformed_val, *mutability)
@@ -287,7 +287,7 @@ impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tc
     }
 }
 
-impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> SymValueKind<'sym, 'tcx, T> {
+impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T, V> {
     pub fn ty(&self, tcx: ty::TyCtxt<'tcx>) -> Ty<'tcx> {
         match self {
             SymValueKind::Var(_, ty, ..) => Ty::new(*ty, None),
@@ -424,6 +424,15 @@ struct OptimizingTransformer<'tcx>(ty::TyCtxt<'tcx>);
 impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx>> SymValueTransformer<'sym, 'tcx, T>
     for OptimizingTransformer<'tcx>
 {
+
+    fn transform_var(
+        &mut self,
+        arena: &'sym SymExContext<'tcx>,
+        var: SymVar,
+        ty: ty::Ty<'tcx>,
+    ) -> SymValue<'sym, 'tcx, T> {
+        arena.mk_var(var, ty)
+    }
     fn transform_synthetic(
         &mut self,
         arena: &'sym SymExContext<'tcx>,

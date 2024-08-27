@@ -17,15 +17,15 @@ use std::collections::BTreeMap;
 
 use super::value::{SymValue, SyntheticSymValue};
 
-pub(crate) struct SymbolicHeap<'mir, 'sym, 'tcx, T>(
-    pub &'mir mut HeapData<'sym, 'tcx, T>,
+pub struct SymbolicHeap<'heap, 'mir, 'sym, 'tcx, T>(
+    pub &'heap mut HeapData<'sym, 'tcx, T>,
     TyCtxt<'tcx>,
     &'mir Body<'tcx>,
     &'sym SymExContext<'tcx>,
 );
 
-impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
-    SymbolicHeap<'mir, 'sym, 'tcx, T>
+impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
+    SymbolicHeap<'heap, 'mir, 'sym, 'tcx, T>
 {
     fn arena(&self) -> &'sym SymExContext<'tcx> {
         self.3
@@ -44,7 +44,7 @@ impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
     }
 
     pub fn new(
-        heap: &'mir mut HeapData<'sym, 'tcx, T>,
+        heap: &'heap mut HeapData<'sym, 'tcx, T>,
         tcx: TyCtxt<'tcx>,
         body: &'mir Body<'tcx>,
         arena: &'sym SymExContext<'tcx>,
@@ -62,7 +62,7 @@ impl<'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
                 value
             );
         }
-    }
+}
 
     pub fn insert<P: Clone + Into<Place<'tcx>>>(
         &mut self,

@@ -1,26 +1,20 @@
 use crate::{
-    add_debug_note,
     context::ErrorLocation,
+    encoder::Encoder,
     heap::{HeapData, SymbolicHeap},
-    path::{AcyclicPath, Path},
+    path::{AcyclicPath, Path, StructureEncoder, StructureTerm},
     path_conditions::PathConditions,
     place::Place,
-    results::{ResultAssertion, ResultPath, ResultPaths, SymbolicExecutionResult},
+    results::{ResultAssertion, SymbolicExecutionResult},
     rustc_interface::middle::{
-        mir::{Location, ProjectionElem},
-        ty::{self, TyKind},
+        mir::{self, Location},
+        ty,
     },
     semantics::VerifierSemantics,
-    value::SymVar,
-    visualization::{
-        export_assertions, export_path_json, export_path_list, OutputMode, StepType, VisFormat,
-    },
+    visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat},
     SymbolicExecution,
 };
-use std::{
-    collections::{BTreeSet, VecDeque},
-    ops::Deref,
-};
+use std::collections::BTreeSet;
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
@@ -37,6 +31,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             AcyclicPath::from_start_block(),
             PathConditions::new(),
             heap_data,
+            self.body.arg_count,
         )];
         while let Some(mut path) = paths.pop() {
             let block = path.last_block();
@@ -67,6 +62,22 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 self.handle_pcs(&mut path, &fpcs_loc, false, fpcs_loc.location);
                 let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
                 self.handle_stmt_lhs(stmt, &mut heap, fpcs_loc, rhs);
+                let structure_encoder = StructureEncoder {
+                    repacker: self.fpcs_analysis.repacker(),
+                    arena: &self.arena,
+                };
+                match &stmt.kind {
+                    mir::StatementKind::Assign(box (place, rvalue)) => {
+                        let encoded_place: StructureTerm<'sym, 'tcx, S::SymValSynthetic> =
+                            <StructureEncoder<'mir, 'sym, 'tcx> as Encoder<'mir, 'sym, 'tcx, S>>::encode_rvalue(
+                                &structure_encoder,
+                                &mut path.old_map,
+                                rvalue,
+                            );
+                        path.old_map.insert((*place).into(), encoded_place);
+                    }
+                    _ => {}
+                }
                 if let Some(debug_output_dir) = &self.debug_output_dir {
                     export_path_json(
                         &debug_output_dir,

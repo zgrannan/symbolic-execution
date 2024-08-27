@@ -5,9 +5,10 @@ use pcs::free_pcs::{FreePcsLocation, FreePcsTerminator};
 use pcs::ReborrowBridge;
 
 use crate::context::ErrorLocation;
+use crate::encoder::Encoder;
 use crate::function_call_snapshot::FunctionCallSnapshot;
 use crate::heap::{HeapData, SymbolicHeap};
-use crate::path::Path;
+use crate::path::{OldMap, Path, StructureTerm};
 use crate::path_conditions::{PathConditionAtom, PathConditionPredicate};
 use crate::pcs_interaction::PcsLocation;
 use crate::results::{ResultAssertion, ResultPath, ResultPaths};
@@ -34,7 +35,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         fpcs_terminator: FreePcsTerminator<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
         location: &PcsLocation<'mir, 'tcx>,
     ) {
-        let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
+        let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
         match &terminator.kind {
             mir::TerminatorKind::Drop { target, .. }
             | mir::TerminatorKind::FalseEdge {
@@ -84,18 +85,22 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 for ((value, target), loc) in targets.iter().zip(fpcs_terminator.succs.iter()) {
                     let pred = PathConditionPredicate::Eq(value, ty);
                     if let Some(mut path) = path.push_if_acyclic(target) {
-                        path.pcs.insert(PathConditionAtom::new(
-                            self.encode_operand(&mut path.heap, discr),
-                            pred.clone(),
-                        ));
+                        let mut heap: SymbolicHeap<'_, 'mir, 'sym, 'tcx, S::SymValSynthetic> =
+                            SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
+                        let operand: SymValue<'sym, 'tcx, S::SymValSynthetic> =
+                            self.encode_operand(&mut heap, discr);
+                        path.pcs
+                            .insert(PathConditionAtom::new(operand, pred.clone()));
                         paths.push(path);
                     }
                 }
                 if let Some(mut path) = path.push_if_acyclic(targets.otherwise()) {
                     let pred =
                         PathConditionPredicate::Ne(targets.iter().map(|t| t.0).collect(), ty);
+                    let mut heap =
+                        SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
                     path.pcs.insert(PathConditionAtom::new(
-                        self.encode_operand(&mut path.heap, discr),
+                        self.encode_operand(&mut heap, discr),
                         pred.clone(),
                     ));
                     paths.push(path);
@@ -107,7 +112,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 target,
                 ..
             } => {
-                let cond = self.encode_operand(&mut path.heap, cond);
+                let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
+                let cond = self.encode_operand(&mut heap, cond);
                 assertions.insert((
                     path.path.clone(),
                     path.pcs.clone(),
@@ -129,6 +135,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         *def_id,
                         substs,
                         &mut heap,
+                        &path.old_map,
                         args,
                         location.location,
                     );
@@ -183,21 +190,25 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
     }
 
-    fn get_function_call_effects(
+    fn get_function_call_effects<'heap>(
         &mut self,
         def_id: DefId,
         substs: GenericArgsRef<'tcx>,
-        heap: &mut SymbolicHeap<'_, 'sym, 'tcx, S::SymValSynthetic>,
+        heap: &mut SymbolicHeap<'heap, 'mir, 'sym, 'tcx, S::SymValSynthetic>,
+        old_map: &OldMap<'sym, 'tcx, S::SymValSynthetic>,
         args: &Vec<Operand<'tcx>>,
         location: Location,
-    ) -> FunctionCallEffects<'sym, 'tcx, S::SymValSynthetic> {
-        if let Some(result) = S::encode_fn_call(location, self, def_id, substs, heap.0, args) {
+    ) -> FunctionCallEffects<'sym, 'tcx, S::SymValSynthetic>
+    where
+        'mir: 'heap,
+    {
+        if let Some(result) = S::encode_fn_call(location, self, def_id, substs, heap.0, old_map, args) {
             return result;
         }
         let function_type = FunctionType::new(self.tcx, def_id);
         let encoded_args: Vec<_> = args
             .iter()
-            .map(|arg| self.encode_operand(heap.0, arg))
+            .map(|arg| self.encode_operand(heap, arg))
             .collect();
         let encoded_args: &'sym [SymValue<'sym, 'tcx, S::SymValSynthetic>] =
             self.alloc_slice(&encoded_args);
