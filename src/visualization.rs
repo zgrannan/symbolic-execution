@@ -76,9 +76,10 @@ pub fn export_path_json<
     'sym,
     'tcx,
     T: VisFormat + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug,
+    U
 >(
     debug_output_dir: &str,
-    path: &Path<'sym, 'tcx, T>,
+    path: &Path<'sym, 'tcx, T, U>,
     fpcs_loc: &PcsLocation<'_, 'tcx>,
     step: StepType,
     repacker: PlaceRepacker<'_, 'tcx>,
@@ -175,10 +176,10 @@ pub fn export_assertions<'sym, 'tcx, T: VisFormat>(
     std::fs::write(filename, json_string).expect("Failed to write assertions.json file");
 }
 
-pub fn export_path_list<'sym, 'tcx, T: VisFormat>(
+pub fn export_path_list<'sym, 'tcx, T: VisFormat, U>(
     debug_output_dir: &str,
     result_paths: &ResultPaths<'sym, 'tcx, T>,
-    debug_paths: &[Path<'sym, 'tcx, T>],
+    debug_paths: &[Path<'sym, 'tcx, T, U>],
 ) {
     let result_paths_json: Vec<Vec<usize>> = result_paths
         .iter()

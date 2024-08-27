@@ -6,6 +6,7 @@
 
 pub mod context;
 mod debug_info;
+pub mod encoder;
 mod execute;
 mod function_call_snapshot;
 pub mod havoc;
@@ -23,7 +24,6 @@ pub mod transform;
 mod util;
 pub mod value;
 pub mod visualization;
-pub mod encoder;
 
 use std::marker::PhantomData;
 
@@ -44,6 +44,7 @@ use context::{ErrorContext, ErrorLocation, SymExContext};
 use function_call_snapshot::FunctionCallSnapshots;
 use havoc::HavocData;
 use heap::{HeapData, SymbolicHeap};
+use path::OldMapEncoder;
 use pcs::{
     borrows::{domain::MaybeOldPlace, unblock_graph::UnblockGraph},
     combined_pcs::UnblockAction,
@@ -105,7 +106,7 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     verifier_semantics: PhantomData<S>,
     new_symvars_allowed: bool,
     result_paths: ResultPaths<'sym, 'tcx, S::SymValSynthetic>,
-    debug_paths: Vec<Path<'sym, 'tcx, S::SymValSynthetic>>,
+    debug_paths: Vec<Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>>,
 }
 
 trait LookupType {
@@ -148,6 +149,12 @@ impl LookupType for LookupTake {
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
+    pub fn old_map_encoder(&self) -> OldMapEncoder<'mir, 'sym, 'tcx> {
+        let repacker: PlaceRepacker<'mir, 'tcx> = self.repacker();
+        let arena: &'sym SymExContext<'tcx> = self.arena;
+        OldMapEncoder { repacker, arena }
+    }
+
     pub fn new(params: SymExParams<'mir, 'sym, 'tcx, S>) -> Self {
         SymbolicExecution {
             new_symvars_allowed: params.new_symvars_allowed,
@@ -304,7 +311,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn compute_backwards_facts(
         &mut self,
-        path: &Path<'sym, 'tcx, S::SymValSynthetic>,
+        path: &Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
     ) -> BackwardsFacts<'sym, 'tcx, S::SymValSynthetic> {
         let return_place: mir::Place<'tcx> = mir::RETURN_PLACE.into();
@@ -353,7 +360,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn add_to_result_paths(
         &mut self,
-        path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
+        path: &mut Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
     ) {
         let return_place: Place<'tcx> = mir::RETURN_PLACE.into();
@@ -369,7 +376,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         ));
     }
 
-    fn repacker(&self) -> PlaceRepacker<'_, 'tcx> {
+    fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
         PlaceRepacker::new(&self.body, self.tcx)
     }
 
@@ -547,7 +554,7 @@ pub fn run_symbolic_execution<
     'mir,
     'sym,
     'tcx,
-    S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>,
+    S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat> + 'sym,
 >(
     params: SymExParams<'mir, 'sym, 'tcx, S>,
 ) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {

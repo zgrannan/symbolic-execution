@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use pcs::borrows::engine::{BorrowsDomain, ReborrowAction};
+use pcs::borrows::engine::BorrowsDomain;
 use pcs::free_pcs::{FreePcsLocation, FreePcsTerminator};
 use pcs::ReborrowBridge;
 
@@ -8,11 +8,11 @@ use crate::context::ErrorLocation;
 use crate::encoder::Encoder;
 use crate::function_call_snapshot::FunctionCallSnapshot;
 use crate::heap::{HeapData, SymbolicHeap};
-use crate::path::{OldMap, Path, StructureTerm};
+use crate::path::{InputPlace, OldMap, OldMapEncoder, Path, StructureTerm};
 use crate::path_conditions::{PathConditionAtom, PathConditionPredicate};
 use crate::pcs_interaction::PcsLocation;
 use crate::results::{ResultAssertion, ResultPath, ResultPaths};
-use crate::value::SymValue;
+use crate::value::{SymValue, SymVar};
 use crate::visualization::{export_path_json, StepType};
 use crate::{add_debug_note, Assertion};
 use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExecution};
@@ -29,9 +29,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     pub fn handle_terminator(
         &mut self,
         terminator: &mir::Terminator<'tcx>,
-        paths: &mut Vec<Path<'sym, 'tcx, S::SymValSynthetic>>,
+        paths: &mut Vec<Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>>,
         assertions: &mut BTreeSet<ResultAssertion<'sym, 'tcx, S::SymValSynthetic>>,
-        path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
+        path: &mut Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
         fpcs_terminator: FreePcsTerminator<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
         location: &PcsLocation<'mir, 'tcx>,
     ) {
@@ -135,7 +135,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         *def_id,
                         substs,
                         &mut heap,
-                        &path.old_map,
+                        &mut path.old_map,
                         args,
                         location.location,
                     );
@@ -146,10 +146,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
                     match effects.result {
                         FunctionCallResult::Value {
+                            old_map_value,
                             value,
                             postcondition,
                         } => {
                             heap.insert(*destination, value, location.location);
+                            if let Some(old_map_value) = old_map_value {
+                                path.old_map.insert((*destination).into(), old_map_value);
+                            }
                             if let Some(postcondition) = postcondition {
                                 path.pcs
                                     .insert(PathConditionAtom::new(value, postcondition));
@@ -195,14 +199,21 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         def_id: DefId,
         substs: GenericArgsRef<'tcx>,
         heap: &mut SymbolicHeap<'heap, 'mir, 'sym, 'tcx, S::SymValSynthetic>,
-        old_map: &OldMap<'sym, 'tcx, S::SymValSynthetic>,
+        old_map: &mut OldMap<'sym, 'tcx, S::OldMapSymValSynthetic>,
         args: &Vec<Operand<'tcx>>,
         location: Location,
-    ) -> FunctionCallEffects<'sym, 'tcx, S::SymValSynthetic>
+    ) -> FunctionCallEffects<
+        'sym,
+        'tcx,
+        S::SymValSynthetic,
+        S::OldMapSymValSynthetic,
+    >
     where
         'mir: 'heap,
     {
-        if let Some(result) = S::encode_fn_call(location, self, def_id, substs, heap.0, old_map, args) {
+        if let Some(result) =
+            S::encode_fn_call(location, self, def_id, substs, heap.0, old_map, args)
+        {
             return result;
         }
         let function_type = FunctionType::new(self.tcx, def_id);
@@ -226,8 +237,17 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     self.arena
                         .mk_projection(mir::ProjectionElem::Deref, encoded_args[0]),
                 );
+                let old_encoder = self.old_map_encoder();
                 FunctionCallResult::Value {
                     value,
+                    old_map_value: Some(self.arena.mk_projection(
+                        mir::ProjectionElem::Deref,
+                        <OldMapEncoder<'mir, 'sym, 'tcx> as Encoder<'mir, 'sym, 'tcx, S::OldMapSymValSynthetic>>::encode_operand(
+                            &old_encoder,
+                            old_map,
+                            &args[0],
+                        ),
+                    )),
                     postcondition: None,
                 }
             }
@@ -283,9 +303,10 @@ impl FunctionType {
     }
 }
 
-pub enum FunctionCallResult<'sym, 'tcx, T> {
+pub enum FunctionCallResult<'sym, 'tcx, T, U> {
     Value {
         value: SymValue<'sym, 'tcx, T>,
+        old_map_value: Option<SymValue<'sym, 'tcx, U, InputPlace<'tcx>>>,
         postcondition: Option<PathConditionPredicate<'sym, 'tcx, T>>,
     },
     Never,
@@ -294,8 +315,8 @@ pub enum FunctionCallResult<'sym, 'tcx, T> {
     },
 }
 
-pub struct FunctionCallEffects<'sym, 'tcx, T> {
+pub struct FunctionCallEffects<'sym, 'tcx, T, U> {
     pub precondition_assertion: Option<Assertion<'sym, 'tcx, T>>,
-    pub result: FunctionCallResult<'sym, 'tcx, T>,
+    pub result: FunctionCallResult<'sym, 'tcx, T, U>,
     pub snapshot: Option<FunctionCallSnapshot<'sym, 'tcx, T>>,
 }

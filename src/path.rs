@@ -7,7 +7,9 @@ use crate::{
     encoder::Encoder,
     function_call_snapshot::FunctionCallSnapshots,
     place::Place,
-    rustc_interface::middle::mir::{self, BasicBlock, Body, Local, Location, START_BLOCK},
+    rustc_interface::middle::mir::{
+        self, BasicBlock, Body, Local, Location, ProjectionElem, START_BLOCK,
+    },
     rustc_interface::middle::ty,
     semantics::VerifierSemantics,
     transform::SymValueTransformer,
@@ -70,8 +72,18 @@ impl AcyclicPath {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Ord, PartialOrd, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct InputPlace<'tcx>(Place<'tcx>);
+
+impl<'tcx> InputPlace<'tcx> {
+    pub fn local(&self) -> mir::Local {
+        self.0.local()
+    }
+
+    pub fn projection(&self) -> &'tcx [ProjectionElem<mir::Local, ty::Ty<'tcx>>] {
+        self.0.projection()
+    }
+}
 
 pub type StructureTerm<'sym, 'tcx, T> = SymValue<'sym, 'tcx, T, InputPlace<'tcx>>;
 
@@ -90,9 +102,10 @@ impl<'mir, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>
             value::SymVar::Normal(var.0.local().as_usize() - 1),
             self.0.local_decls[var.0.local()].ty,
         );
-        var.0.projection().iter().fold(sym_var, |p, elem| {
-            arena.mk_projection(*elem, p)
-        })
+        var.0
+            .projection()
+            .iter()
+            .fold(sym_var, |p, elem| arena.mk_projection(*elem, p))
     }
 
     fn transform_synthetic(
@@ -107,7 +120,11 @@ impl<'mir, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>
 impl<'sym, 'tcx, T: Copy + Clone + SyntheticSymValue<'sym, 'tcx>>
     SymValueData<'sym, 'tcx, T, InputPlace<'tcx>>
 {
-    pub fn to_sym_value<'mir>(&'sym self, body: &'mir Body<'tcx>, arena: &'sym SymExContext<'tcx>) -> SymValue<'sym, 'tcx, T> {
+    pub fn to_sym_value<'mir>(
+        &'sym self,
+        body: &'mir Body<'tcx>,
+        arena: &'sym SymExContext<'tcx>,
+    ) -> SymValue<'sym, 'tcx, T> {
         let mut transformer = Transformer(body);
         self.apply_transformer(arena, &mut transformer)
     }
@@ -116,24 +133,23 @@ impl<'sym, 'tcx, T: Copy + Clone + SyntheticSymValue<'sym, 'tcx>>
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OldMap<'sym, 'tcx, T>(BTreeMap<Place<'tcx>, StructureTerm<'sym, 'tcx, T>>);
 
-pub struct StructureEncoder<'mir, 'sym, 'tcx> {
+pub struct OldMapEncoder<'mir, 'sym, 'tcx> {
     pub repacker: PlaceRepacker<'mir, 'tcx>,
     pub arena: &'sym SymExContext<'tcx>,
 }
 
-impl<'mir, 'sym, 'tcx> StructureEncoder<'mir, 'sym, 'tcx> {
+impl<'mir, 'sym, 'tcx> OldMapEncoder<'mir, 'sym, 'tcx> {
     fn num_args(&self) -> usize {
         self.repacker.num_args()
     }
 }
 
-impl<'mir, 'sym, 'tcx: 'mir, S: VerifierSemantics<'sym, 'tcx>> Encoder<'mir, 'sym, 'tcx, S>
-    for StructureEncoder<'mir, 'sym, 'tcx>
+impl<'mir, 'sym, 'tcx: 'mir, S: SyntheticSymValue<'sym, 'tcx> + 'sym> Encoder<'mir, 'sym, 'tcx, S>
+    for OldMapEncoder<'mir, 'sym, 'tcx>
 where
-    S::SymValSynthetic: 'sym,
 {
     type V = InputPlace<'tcx>;
-    type Ctxt<'ctxt> = OldMap<'sym, 'tcx, S::SymValSynthetic>
+    type Ctxt<'ctxt> = OldMap<'sym, 'tcx, S>
     where
         'mir: 'ctxt,
         'tcx: 'ctxt,
@@ -149,9 +165,9 @@ where
 
     fn encode_place<'ctxt>(
         &self,
-        ctxt: &mut OldMap<'sym, 'tcx, S::SymValSynthetic>,
+        ctxt: &mut OldMap<'sym, 'tcx, S>,
         place: &Place<'tcx>,
-    ) -> StructureTerm<'sym, 'tcx, S::SymValSynthetic>
+    ) -> StructureTerm<'sym, 'tcx, S>
     where
         'tcx: 'ctxt,
         'sym: 'ctxt,
@@ -206,7 +222,12 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> OldMap<'sym, 'tcx, T> {
                                 .fold(v, |p, elem| arena.mk_projection(*elem, p)),
                         );
                     }
-                    None => return todo!(),
+                    None => {}
+                    // None => todo!(
+                    //     "Projection {:?} does not match prefix {:?}",
+                    //     place,
+                    //     k,
+                    // ),
                 }
             }
         }
@@ -215,15 +236,15 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> OldMap<'sym, 'tcx, T> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Path<'sym, 'tcx, T> {
+pub struct Path<'sym, 'tcx, T, U> {
     pub path: AcyclicPath,
     pub pcs: PathConditions<'sym, 'tcx, T>,
     pub heap: HeapData<'sym, 'tcx, T>,
     pub function_call_snapshots: FunctionCallSnapshots<'sym, 'tcx, T>,
-    pub old_map: OldMap<'sym, 'tcx, T>,
+    pub old_map: OldMap<'sym, 'tcx, U>,
 }
 
-impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> Path<'sym, 'tcx, T> {
+impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, U: SyntheticSymValue<'sym, 'tcx>> Path<'sym, 'tcx, T, U> {
     pub fn new(
         path: AcyclicPath,
         pcs: PathConditions<'sym, 'tcx, T>,
@@ -256,8 +277,8 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> Path<'sym, 'tcx, T> {
     }
 }
 
-impl<'sym, 'tcx, T: Clone> Path<'sym, 'tcx, T> {
-    pub fn push_if_acyclic(&self, block: BasicBlock) -> Option<Path<'sym, 'tcx, T>> {
+impl<'sym, 'tcx, T: Clone, U: Clone> Path<'sym, 'tcx, T, U> {
+    pub fn push_if_acyclic(&self, block: BasicBlock) -> Option<Path<'sym, 'tcx, T, U>> {
         let mut result = self.clone();
         if result.path.push_if_acyclic(block) {
             Some(result)

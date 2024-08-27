@@ -12,7 +12,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Place<'tcx>(pub pcs::utils::Place<'tcx>);
 
 impl<'tcx> From<Place<'tcx>> for MaybeOldPlace<'tcx> {
@@ -99,23 +99,5 @@ impl<'tcx> Place<'tcx> {
             ty::TyKind::Ref(_, _, mutbl) => mutbl.is_mut(),
             _ => false,
         }
-    }
-}
-
-fn hash<T: Hash>(t: T) -> u64 {
-    let mut hasher = FxHasher::default();
-    t.hash(&mut hasher);
-    hasher.finish()
-}
-
-impl<'tcx> PartialOrd for Place<'tcx> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        hash(self).partial_cmp(&hash(other))
-    }
-}
-
-impl<'tcx> Ord for Place<'tcx> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        hash(self).cmp(&hash(other))
     }
 }

@@ -2,7 +2,7 @@ use std::collections::{btree_set::Iter, BTreeSet};
 
 use serde_json::{json, Value};
 
-use crate::{visualization::OutputMode, VisFormat};
+use crate::{value::CanSubst, visualization::OutputMode, VisFormat};
 
 use super::{
     value::{Substs, SymValue, SymValueData, SyntheticSymValue},
@@ -38,8 +38,11 @@ pub enum PathConditionPredicate<'sym, 'tcx, T> {
     },
 }
 
-impl<'sym, 'tcx, T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
-    PathConditionPredicate<'sym, 'tcx, T>
+impl<
+        'sym,
+        'tcx,
+        T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
+    > PathConditionPredicate<'sym, 'tcx, T>
 {
     pub fn subst(
         self,
@@ -152,8 +155,11 @@ impl<'sym, 'tcx, T> PathConditionAtom<'sym, 'tcx, T> {
     }
 }
 
-impl<'sym, 'tcx, T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
-    PathConditionAtom<'sym, 'tcx, T>
+impl<
+        'sym,
+        'tcx,
+        T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
+    > PathConditionAtom<'sym, 'tcx, T>
 {
     pub fn subst(
         self,
@@ -201,8 +207,11 @@ impl<'sym, 'tcx, T: Ord> PathConditions<'sym, 'tcx, T> {
     }
 }
 
-impl<'sym, 'tcx, T: Copy + Clone + std::fmt::Debug + Ord + SyntheticSymValue<'sym, 'tcx>>
-    PathConditions<'sym, 'tcx, T>
+impl<
+        'sym,
+        'tcx,
+        T: Copy + Clone + std::fmt::Debug + Ord + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
+    > PathConditions<'sym, 'tcx, T>
 {
     pub fn subst(
         self,

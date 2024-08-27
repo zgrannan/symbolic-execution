@@ -23,7 +23,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 {
     pub(crate) fn handle_pcs(
         &mut self,
-        path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
+        path: &mut Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
         start: bool,
         location: Location,

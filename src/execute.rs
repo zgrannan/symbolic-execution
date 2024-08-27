@@ -2,7 +2,7 @@ use crate::{
     context::ErrorLocation,
     encoder::Encoder,
     heap::{HeapData, SymbolicHeap},
-    path::{AcyclicPath, Path, StructureEncoder, StructureTerm},
+    path::{AcyclicPath, OldMapEncoder, Path, StructureTerm},
     path_conditions::PathConditions,
     place::Place,
     results::{ResultAssertion, SymbolicExecutionResult},
@@ -62,14 +62,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 self.handle_pcs(&mut path, &fpcs_loc, false, fpcs_loc.location);
                 let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
                 self.handle_stmt_lhs(stmt, &mut heap, fpcs_loc, rhs);
-                let structure_encoder = StructureEncoder {
-                    repacker: self.fpcs_analysis.repacker(),
-                    arena: &self.arena,
-                };
+                let structure_encoder = self.old_map_encoder();
                 match &stmt.kind {
                     mir::StatementKind::Assign(box (place, rvalue)) => {
-                        let encoded_place: StructureTerm<'sym, 'tcx, S::SymValSynthetic> =
-                            <StructureEncoder<'mir, 'sym, 'tcx> as Encoder<'mir, 'sym, 'tcx, S>>::encode_rvalue(
+                        let encoded_place: StructureTerm<'sym, 'tcx, S::OldMapSymValSynthetic> =
+                            <OldMapEncoder<'mir, 'sym, 'tcx> as Encoder<'mir, 'sym, 'tcx, S::OldMapSymValSynthetic>>::encode_rvalue(
                                 &structure_encoder,
                                 &mut path.old_map,
                                 rvalue,

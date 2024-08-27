@@ -9,7 +9,7 @@ use crate::visualization::VisFormat;
 use crate::{semantics::VerifierSemantics, value::SymValue};
 use crate::{LookupGet, LookupType, SymbolicExecution};
 
-pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S: VerifierSemantics<'sym, 'tcx>> {
+pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S> {
     type V: 'sym;
     type Ctxt<'ctxt>
     where
@@ -29,7 +29,7 @@ pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S: VerifierSemantics<'sym, 'tcx>> {
         &self,
         ctxt: &mut Self::Ctxt<'ctxt>,
         rvalue: &mir::Rvalue<'tcx>,
-    ) -> SymValue<'sym, 'tcx, S::SymValSynthetic, Self::V>
+    ) -> SymValue<'sym, 'tcx, S, Self::V>
     where
         'tcx: 'ctxt,
         'sym: 'ctxt,
@@ -83,7 +83,7 @@ pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S: VerifierSemantics<'sym, 'tcx>> {
         &self,
         ctxt: &mut Self::Ctxt<'ctxt>,
         operand: &mir::Operand<'tcx>,
-    ) -> SymValue<'sym, 'tcx, S::SymValSynthetic, Self::V>
+    ) -> SymValue<'sym, 'tcx, S, Self::V>
     where
         'tcx: 'ctxt,
         'sym: 'ctxt,
@@ -101,13 +101,13 @@ pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S: VerifierSemantics<'sym, 'tcx>> {
         &self,
         ctxt: &mut Self::Ctxt<'ctxt>,
         place: &Place<'tcx>,
-    ) -> SymValue<'sym, 'tcx, S::SymValSynthetic, Self::V>
+    ) -> SymValue<'sym, 'tcx, S, Self::V>
     where
         'sym: 'ctxt,
         'tcx: 'ctxt;
 }
 
-impl<'mir, 'sym, 'tcx: 'mir, S> Encoder<'mir, 'sym, 'tcx, S>
+impl<'mir, 'sym, 'tcx: 'mir, S> Encoder<'mir, 'sym, 'tcx, S::SymValSynthetic>
     for SymbolicExecution<'mir, 'sym, 'tcx, S>
 where
     S: VerifierSemantics<'sym, 'tcx>,
