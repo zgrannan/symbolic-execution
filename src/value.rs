@@ -500,6 +500,14 @@ impl<'tcx> From<mir::Constant<'tcx>> for Constant<'tcx> {
 pub struct Constant<'tcx>(pub mir::Constant<'tcx>);
 
 impl<'tcx> Constant<'tcx> {
+    pub fn as_bool(&self, tcx: ty::TyCtxt<'tcx>) -> Option<bool> {
+        if self.0.ty() == tcx.types.bool {
+            self.0.literal.try_to_bool()
+        } else {
+            None
+        }
+    }
+
     pub fn literal(&self) -> mir::ConstantKind<'tcx> {
         self.0.literal
     }

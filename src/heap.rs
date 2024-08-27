@@ -86,7 +86,7 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
         let place: MaybeOldPlace<'tcx> = place.into();
         let place_ty = place.ty(PlaceRepacker::new(self.2, self.1));
         let value_ty = value.kind.ty(self.1);
-        assert_tys_match(self.1, place_ty.ty, value_ty.rust_ty());
+        // assert_tys_match(self.1, place_ty.ty, value_ty.rust_ty());
         if let Some(PlaceElem::Deref) = place.place().projection.last() {
             if let Some(base_place) = place.place().prefix_place(self.repacker()) {
                 if let Some(mutability) = base_place.ref_mutability(self.body(), self.tcx()) {

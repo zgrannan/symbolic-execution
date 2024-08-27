@@ -115,17 +115,11 @@ impl<'tcx> SymExContext<'tcx> {
         self.mk_sym_value(SymValueKind::Var(var, ty))
     }
 
-    pub fn mk_constant<'sym, T, V>(
-        &'sym self,
-        c: Constant<'tcx>,
-    ) -> SymValue<'sym, 'tcx, T, V> {
+    pub fn mk_constant<'sym, T, V>(&'sym self, c: Constant<'tcx>) -> SymValue<'sym, 'tcx, T, V> {
         self.mk_sym_value(SymValueKind::Constant(c))
     }
 
-    pub fn mk_synthetic<'sym, T, V>(
-        &'sym self,
-        t: T,
-    ) -> SymValue<'sym, 'tcx, T, V> {
+    pub fn mk_synthetic<'sym, T, V>(&'sym self, t: T) -> SymValue<'sym, 'tcx, T, V> {
         self.mk_sym_value(SymValueKind::Synthetic(t))
     }
 
@@ -141,6 +135,10 @@ impl<'tcx> SymExContext<'tcx> {
         kind: mir::ProjectionElem<mir::Local, ty::Ty<'tcx>>,
         val: SymValue<'sym, 'tcx, T, V>,
     ) -> SymValue<'sym, 'tcx, T, V> {
+        // TODO: Option to disable this optimization
+        if let SymValueKind::Ref(v, _) = val.kind && kind == mir::ProjectionElem::Deref {
+            return v
+        }
         self.mk_sym_value(SymValueKind::Projection(kind, val))
     }
 
@@ -149,6 +147,10 @@ impl<'tcx> SymExContext<'tcx> {
         val: SymValue<'sym, 'tcx, T, V>,
         mutability: Mutability,
     ) -> SymValue<'sym, 'tcx, T, V> {
+        // TODO: Option to disable this optimization
+        if let SymValueKind::Projection(mir::ProjectionElem::Deref, v) = val.kind {
+            return v
+        }
         self.mk_sym_value(SymValueKind::Ref(val, mutability))
     }
 

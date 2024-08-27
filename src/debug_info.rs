@@ -106,10 +106,6 @@ impl<'arena> DebugInfo<'arena> {
         if let Some(mutex) = self.0 {
             let mut data = mutex.lock().unwrap();
             data.add_debug_note(note);
-        } else {
-            eprintln!(
-                "Attempted to add debug note, but the entity was not created with debug info"
-            );
         }
     }
 }

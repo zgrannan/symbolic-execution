@@ -1,16 +1,7 @@
-use crate::{place::Place, VisFormat};
-use crate::{
-    rustc_interface::middle::{
-        mir::{self, Body, Location},
-        ty::TyCtxt,
-    },
-    util::assert_tys_match,
-};
-use pcs::borrows::domain::MaybeOldPlace;
-use pcs::utils::{PlaceRepacker, PlaceSnapshot};
+use crate::rustc_interface::middle::mir::Location;
 use std::collections::BTreeMap;
 
-use super::value::{SymValue, SyntheticSymValue};
+use super::value::SymValue;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionCallSnapshot<'sym, 'tcx, T> {
