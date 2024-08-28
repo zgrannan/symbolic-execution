@@ -276,7 +276,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                         pcs::borrows::domain::AbstractionTarget::MaybeOldPlace(
                                             place,
                                         ) => place,
-                                        _ => unreachable!(),
+                                        _ => {
+                                            // TODO
+                                            continue
+                                        }
                                     };
                                     let value = self.arena.mk_backwards_fn(BackwardsFn {
                                         caller_def_id: Some(self.def_id.into()),
