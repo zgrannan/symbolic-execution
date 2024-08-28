@@ -149,7 +149,9 @@ impl<'tcx> SymExContext<'tcx> {
     ) -> SymValue<'sym, 'tcx, T, V> {
         // TODO: Option to disable this optimization
         if let SymValueKind::Projection(mir::ProjectionElem::Deref, v) = val.kind {
-            return v
+            if let SymValueKind::Ref(v, _) = v.kind {
+                return self.mk_ref(v, mutability);
+            }
         }
         self.mk_sym_value(SymValueKind::Ref(val, mutability))
     }
@@ -159,6 +161,13 @@ impl<'tcx> SymExContext<'tcx> {
         kind: AggregateKind<'tcx>,
         vals: &'sym [SymValue<'sym, 'tcx, T, V>],
     ) -> SymValue<'sym, 'tcx, T, V> {
+        match kind.ty().rust_ty().kind() {
+            // TODO: Option to disable this optimization
+            ty::TyKind::Ref(_, _, mutbl) => {
+                return self.mk_ref(vals[0], *mutbl);
+            }
+            _ => {}
+        }
         self.mk_sym_value(SymValueKind::Aggregate(kind, vals))
     }
 
