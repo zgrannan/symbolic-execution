@@ -3,7 +3,7 @@ use crate::{path::Path, rustc_interface::middle::mir::Location};
 use pcs::{
     borrows::{
         deref_expansion::{BorrowDerefExpansion, DerefExpansion},
-        domain::{MaybeOldPlace, Reborrow},
+        domain::{Latest, MaybeOldPlace, Reborrow},
         engine::BorrowsDomain,
     },
     free_pcs::{FreePcsLocation, RepackOp},
@@ -59,13 +59,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         } else {
             &pcs.repacks_middle
         };
-        self.handle_repack_collapses(repacks, &mut heap, location);
-        self.handle_repack_expands(repacks, &mut heap, location);
+        self.handle_repack_collapses(repacks, &mut heap, location, &pcs.extra.after.latest);
+        self.handle_repack_expands(repacks, &mut heap, location, &pcs.extra.after.latest);
         self.handle_reborrow_expands(
             reborrow_expands.into_iter().map(|ep| ep.value).collect(),
             &mut heap,
             &path.path,
             location,
+            &pcs.extra.after.latest,
         );
         self.handle_added_reborrows(
             &added_reborrows
@@ -101,10 +102,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         repacks: &Vec<RepackOp<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
+        latest: &Latest<'tcx>,
     ) {
         for repack in repacks {
             if matches!(repack, RepackOp::Collapse(..)) {
-                self.handle_repack(repack, heap, location)
+                self.handle_repack(repack, heap, location, latest)
             }
         }
     }
@@ -115,6 +117,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         path: &AcyclicPath,
         location: Location,
+        latest: &Latest<'tcx>,
     ) {
         // TODO: Explain why owned expansions don't need to be handled
         let mut expands: Vec<BorrowDerefExpansion<'tcx>> = expands
@@ -135,6 +138,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 ep.expansion(self.fpcs_analysis.repacker()).into_iter(),
                 heap,
                 location,
+                latest,
             );
         }
     }
@@ -163,10 +167,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         repacks: &Vec<RepackOp<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
+        latest: &Latest<'tcx>,
     ) {
         for repack in repacks {
             if matches!(repack, RepackOp::Expand(..)) {
-                self.handle_repack(repack, heap, location)
+                self.handle_repack(repack, heap, location, latest)
             }
         }
     }

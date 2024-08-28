@@ -46,7 +46,10 @@ use havoc::HavocData;
 use heap::{HeapData, SymbolicHeap};
 use path::OldMapEncoder;
 use pcs::{
-    borrows::{domain::MaybeOldPlace, unblock_graph::UnblockGraph},
+    borrows::{
+        domain::{Latest, MaybeOldPlace},
+        unblock_graph::UnblockGraph,
+    },
     combined_pcs::UnblockAction,
     free_pcs::RepackOp,
     utils::PlaceRepacker,
@@ -424,6 +427,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         places: impl Iterator<Item = MaybeOldPlace<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
+        latest: &Latest<'tcx>,
     ) {
         let old_proj_len = place.place().projection.len();
         for f in places {
@@ -436,8 +440,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 value = self.arena.mk_projection(elem.clone(), value);
             }
             match f {
-                MaybeOldPlace::Current { place } => heap.insert(place, value, location),
-                MaybeOldPlace::OldPlace(snapshot) => heap.insert_maybe_old_place(f, value),
+                MaybeOldPlace::Current { place: p } => {
+                    heap.insert(p, value, location);
+                    heap.insert_maybe_old_place(
+                        MaybeOldPlace::new(p, Some(latest.get(&place.place()))),
+                        value,
+                    );
+                }
+                MaybeOldPlace::OldPlace(_) => heap.insert_maybe_old_place(f, value),
             }
         }
     }
@@ -448,6 +458,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         guide: &pcs::utils::Place<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
+        latest: &Latest<'tcx>,
     ) {
         let value = match place.ty(self.fpcs_analysis.repacker()).ty.kind() {
             ty::TyKind::Ref(_, _, Mutability::Mut) => {
@@ -460,15 +471,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         };
         let (field, rest, _) = place.expand_one_level(*guide, self.fpcs_analysis.repacker());
         self.explode_value(
-            &MaybeOldPlace::Current {
-                place: place.clone(),
-            },
+            &MaybeOldPlace::Current { place: *place },
             value,
             std::iter::once(field)
                 .chain(rest.into_iter())
                 .map(|p| p.into()),
             heap,
             location,
+            latest,
         );
     }
 
@@ -523,13 +533,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         repack: &RepackOp<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
+        latest: &Latest<'tcx>,
     ) {
         match repack {
             RepackOp::StorageDead(_) => todo!(),
             RepackOp::IgnoreStorageDead(_) => {}
             RepackOp::Weaken(_, _, _) => {}
             RepackOp::Expand(place, guide, _) => {
-                self.expand_place_with_guide(place, guide, heap, location)
+                self.expand_place_with_guide(place, guide, heap, location, latest)
             }
             RepackOp::Collapse(place, from, _) => {
                 self.collapse_place_from((*place).into(), (*from).into(), heap, location)
