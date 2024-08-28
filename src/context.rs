@@ -149,8 +149,14 @@ impl<'tcx> SymExContext<'tcx> {
     ) -> SymValue<'sym, 'tcx, T, V> {
         // TODO: Option to disable this optimization
         if let SymValueKind::Projection(mir::ProjectionElem::Deref, v) = val.kind {
-            if let SymValueKind::Ref(v, _) = v.kind {
-                return self.mk_ref(v, mutability);
+            match &v.kind {
+                SymValueKind::Var(_, ty) if ty.ref_mutability() == Some(mutability) => {
+                    return v;
+                },
+                SymValueKind::Ref(v, _) => {
+                    return self.mk_ref(v, mutability);
+                }
+                _ => {}
             }
         }
         self.mk_sym_value(SymValueKind::Ref(val, mutability))
