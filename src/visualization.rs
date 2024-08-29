@@ -76,7 +76,7 @@ pub fn export_path_json<
     'sym,
     'tcx,
     T: VisFormat + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug,
-    U
+    U,
 >(
     debug_output_dir: &str,
     path: &Path<'sym, 'tcx, T, U>,
@@ -179,13 +179,11 @@ pub fn export_assertions<'sym, 'tcx, T: VisFormat>(
 pub fn export_path_list<'sym, 'tcx, T: VisFormat, U>(
     debug_output_dir: &str,
     result_paths: &ResultPaths<'sym, 'tcx, T>,
-    debug_paths: &[Path<'sym, 'tcx, T, U>],
+    _debug_paths: &[Path<'sym, 'tcx, T, U>],
 ) {
     let result_paths_json: Vec<Vec<usize>> = result_paths
         .iter()
-        .map(|path| &path.path)
-        .chain(debug_paths.iter().map(|path| &path.path))
-        .map(|path| path_to_vec(path))
+        .map(|path| path.path().to_index_vec())
         .collect();
 
     let json_string = serde_json::to_string_pretty(&result_paths_json)
@@ -200,7 +198,7 @@ impl<'sym, 'tcx, T, V> SymValueData<'sym, 'tcx, T, V> {
     pub fn new(kind: SymValueKind<'sym, 'tcx, T, V>, arena: &'sym SymExContext) -> Self {
         SymValueData {
             kind,
-            debug_info: DEBUGINFO_NONE
+            debug_info: DEBUGINFO_NONE,
         }
     }
 }

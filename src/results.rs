@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::heap::HeapData;
+use crate::path::{LoopPath, SymExPath};
 use crate::rustc_interface::middle::ty;
 
 use crate::{path::AcyclicPath, path_conditions::PathConditions, value::SymValue, Assertion};
@@ -23,23 +24,54 @@ impl<'sym, 'tcx, T> BackwardsFacts<'sym, 'tcx, T> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ResultPath<'sym, 'tcx, T> {
-    pub path: AcyclicPath,
-    pub pcs: PathConditions<'sym, 'tcx, T>,
-    pub result: SymValue<'sym, 'tcx, T>,
-    pub backwards_facts: BackwardsFacts<'sym, 'tcx, T>,
-    pub heap: HeapData<'sym, 'tcx, T>,
+pub enum ResultPath<'sym, 'tcx, T> {
+    Loop {
+        path: LoopPath,
+        pcs: PathConditions<'sym, 'tcx, T>,
+    },
+    Return {
+        path: AcyclicPath,
+        pcs: PathConditions<'sym, 'tcx, T>,
+        result: SymValue<'sym, 'tcx, T>,
+        backwards_facts: BackwardsFacts<'sym, 'tcx, T>,
+        heap: HeapData<'sym, 'tcx, T>,
+    },
 }
 
 impl<'sym, 'tcx, T> ResultPath<'sym, 'tcx, T> {
-    pub fn new(
+    pub fn backwards_facts(&self) -> Option<&BackwardsFacts<'sym, 'tcx, T>> {
+        match self {
+            Self::Return { backwards_facts, .. } => Some(backwards_facts),
+            _ => None,
+        }
+    }
+    pub fn pcs(&self) -> &PathConditions<'sym, 'tcx, T> {
+        match self {
+            Self::Loop { pcs, .. } => pcs,
+            Self::Return { pcs, .. } => pcs,
+        }
+    }
+    pub fn result(&self) -> Option<SymValue<'sym, 'tcx, T>> {
+        match self {
+            Self::Return { result, .. } => Some(*result),
+            _ => None,
+        }
+    }
+
+    pub fn path(&self) -> SymExPath {
+        match self {
+            Self::Loop { path, .. } => SymExPath::Loop(path.clone()),
+            Self::Return { path, .. } => SymExPath::Acyclic(path.clone()),
+        }
+    }
+    pub fn return_path(
         path: AcyclicPath,
         pcs: PathConditions<'sym, 'tcx, T>,
         result: SymValue<'sym, 'tcx, T>,
         backwards_facts: BackwardsFacts<'sym, 'tcx, T>,
         heap: HeapData<'sym, 'tcx, T>,
     ) -> Self {
-        Self {
+        Self::Return {
             path,
             pcs,
             result,

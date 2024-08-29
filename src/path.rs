@@ -19,9 +19,42 @@ use crate::{
 use super::{heap::HeapData, path_conditions::PathConditions};
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum SymExPath {
+    Acyclic(AcyclicPath),
+    Loop(LoopPath),
+}
+
+impl SymExPath {
+    pub fn to_index_vec(&self) -> Vec<usize> {
+        match self {
+            SymExPath::Acyclic(path) => path.to_index_vec(),
+            SymExPath::Loop(path) => path.to_index_vec(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct LoopPath {
+    init: Vec<BasicBlock>,
+    ret: BasicBlock,
+}
+
+impl LoopPath {
+    pub fn to_index_vec(&self) -> Vec<usize> {
+        let mut result = self.init.iter().map(|b| b.index()).collect::<Vec<_>>();
+        result.push(self.ret.index());
+        result
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct AcyclicPath(Vec<BasicBlock>);
 
 impl AcyclicPath {
+    pub fn to_index_vec(&self) -> Vec<usize> {
+        self.0.iter().map(|b| b.index()).collect()
+    }
+
     pub fn contains(&self, block: BasicBlock) -> bool {
         self.0.contains(&block)
     }
@@ -146,7 +179,6 @@ impl<'mir, 'sym, 'tcx> OldMapEncoder<'mir, 'sym, 'tcx> {
 
 impl<'mir, 'sym, 'tcx: 'mir, S: SyntheticSymValue<'sym, 'tcx> + 'sym> Encoder<'mir, 'sym, 'tcx, S>
     for OldMapEncoder<'mir, 'sym, 'tcx>
-where
 {
     type V = InputPlace<'tcx>;
     type Ctxt<'ctxt> = OldMap<'sym, 'tcx, S>
@@ -244,7 +276,9 @@ pub struct Path<'sym, 'tcx, T, U> {
     pub old_map: OldMap<'sym, 'tcx, U>,
 }
 
-impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, U: SyntheticSymValue<'sym, 'tcx>> Path<'sym, 'tcx, T, U> {
+impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, U: SyntheticSymValue<'sym, 'tcx>>
+    Path<'sym, 'tcx, T, U>
+{
     pub fn new(
         path: AcyclicPath,
         pcs: PathConditions<'sym, 'tcx, T>,

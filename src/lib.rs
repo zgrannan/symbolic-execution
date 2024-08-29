@@ -373,7 +373,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
         let expr = self.encode_maybe_old_place::<LookupGet, _>(&mut heap, &return_place);
         let backwards_facts = self.compute_backwards_facts(path, pcs);
-        self.result_paths.insert(ResultPath::new(
+        self.result_paths.insert(ResultPath::return_path(
             path.path.clone(),
             path.pcs.clone(),
             expr,
