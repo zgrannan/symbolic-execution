@@ -35,13 +35,17 @@ impl SymExPath {
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct LoopPath {
-    init: Vec<BasicBlock>,
+    init: AcyclicPath,
     ret: BasicBlock,
 }
 
 impl LoopPath {
+    pub fn new(init: AcyclicPath, ret: BasicBlock) -> Self {
+        Self { init, ret }
+    }
+
     pub fn to_index_vec(&self) -> Vec<usize> {
-        let mut result = self.init.iter().map(|b| b.index()).collect::<Vec<_>>();
+        let mut result = self.init.to_index_vec();
         result.push(self.ret.index());
         result
     }

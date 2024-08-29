@@ -8,7 +8,7 @@ use crate::context::ErrorLocation;
 use crate::encoder::Encoder;
 use crate::function_call_snapshot::FunctionCallSnapshot;
 use crate::heap::{HeapData, SymbolicHeap};
-use crate::path::{InputPlace, OldMap, OldMapEncoder, Path, StructureTerm};
+use crate::path::{InputPlace, LoopPath, OldMap, OldMapEncoder, Path, StructureTerm};
 use crate::path_conditions::{PathConditionAtom, PathConditionPredicate};
 use crate::pcs_interaction::PcsLocation;
 use crate::results::{ResultAssertion, ResultPath, ResultPaths};
@@ -77,7 +77,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     }
                     paths.push(path);
                 } else {
-                    self.debug_paths.push(path.clone());
+                    self.add_loop_path(LoopPath::new(path.path.clone(), *target), path.pcs.clone());
                 }
             }
             mir::TerminatorKind::SwitchInt { discr, targets } => {
@@ -188,7 +188,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
         match terminator.kind {
             mir::TerminatorKind::Return => {
-                self.add_to_result_paths(path, location);
+                self.add_return_path(path, location);
             }
             _ => {}
         }
@@ -202,12 +202,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         old_map: &mut OldMap<'sym, 'tcx, S::OldMapSymValSynthetic>,
         args: &Vec<Operand<'tcx>>,
         location: Location,
-    ) -> FunctionCallEffects<
-        'sym,
-        'tcx,
-        S::SymValSynthetic,
-        S::OldMapSymValSynthetic,
-    >
+    ) -> FunctionCallEffects<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>
     where
         'mir: 'heap,
     {
@@ -242,11 +237,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     value,
                     old_map_value: Some(self.arena.mk_projection(
                         mir::ProjectionElem::Deref,
-                        <OldMapEncoder<'mir, 'sym, 'tcx> as Encoder<'mir, 'sym, 'tcx, S::OldMapSymValSynthetic>>::encode_operand(
-                            &old_encoder,
-                            old_map,
-                            &args[0],
-                        ),
+                        <OldMapEncoder<'mir, 'sym, 'tcx> as Encoder<
+                            'mir,
+                            'sym,
+                            'tcx,
+                            S::OldMapSymValSynthetic,
+                        >>::encode_operand(&old_encoder, old_map, &args[0]),
                     )),
                     postcondition: None,
                 }

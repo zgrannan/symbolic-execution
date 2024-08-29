@@ -64,6 +64,14 @@ impl<'sym, 'tcx, T> ResultPath<'sym, 'tcx, T> {
             Self::Return { path, .. } => SymExPath::Acyclic(path.clone()),
         }
     }
+
+    pub fn loop_path(
+        path: LoopPath,
+        pcs: PathConditions<'sym, 'tcx, T>,
+    ) -> Self {
+        Self::Loop { path, pcs }
+    }
+
     pub fn return_path(
         path: AcyclicPath,
         pcs: PathConditions<'sym, 'tcx, T>,

@@ -44,7 +44,8 @@ use context::{ErrorContext, ErrorLocation, SymExContext};
 use function_call_snapshot::FunctionCallSnapshots;
 use havoc::HavocData;
 use heap::{HeapData, SymbolicHeap};
-use path::OldMapEncoder;
+use path::{LoopPath, OldMapEncoder};
+use path_conditions::PathConditions;
 use pcs::{
     borrows::{
         domain::{Latest, MaybeOldPlace},
@@ -278,7 +279,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                         ) => place,
                                         _ => {
                                             // TODO
-                                            continue
+                                            continue;
                                         }
                                     };
                                     let value = self.arena.mk_backwards_fn(BackwardsFn {
@@ -364,7 +365,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         facts
     }
 
-    fn add_to_result_paths(
+    fn add_loop_path(
+        &mut self,
+        path: LoopPath,
+        pcs: PathConditions<'sym, 'tcx, S::SymValSynthetic>,
+    ) {
+        self.result_paths.insert(ResultPath::loop_path(path, pcs));
+    }
+
+    fn add_return_path(
         &mut self,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
