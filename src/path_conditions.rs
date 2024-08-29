@@ -44,10 +44,10 @@ impl<
         T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
     > PathConditionPredicate<'sym, 'tcx, T>
 {
-    pub fn subst(
+    pub fn subst<'substs>(
         self,
         arena: &'sym SymExContext<'tcx>,
-        substs: &'sym Substs<'sym, 'tcx, T>,
+        substs: &'substs Substs<'sym, 'tcx, T>,
     ) -> Self {
         match self {
             PathConditionPredicate::Eq(..) | PathConditionPredicate::Ne(..) => self,
@@ -186,6 +186,24 @@ impl<'sym, 'tcx, T: VisFormat> PathConditions<'sym, 'tcx, T> {
     }
 }
 
+impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditions<'sym, 'tcx, T> {
+    fn to_vis_string(
+        &self,
+        tcx: Option<TyCtxt<'_>>,
+        debug_info: &[VarDebugInfo],
+        mode: OutputMode,
+    ) -> String {
+        if self.atoms.is_empty() {
+            return "true".to_string();
+        }
+        self.atoms
+            .iter()
+            .map(|atom| atom.to_vis_string(tcx, debug_info, mode))
+            .collect::<Vec<_>>()
+            .join(" && ")
+    }
+}
+
 impl<'sym, 'tcx, T> PathConditions<'sym, 'tcx, T> {
     pub fn new() -> Self {
         PathConditions {
@@ -213,13 +231,14 @@ impl<
         T: Copy + Clone + std::fmt::Debug + Ord + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
     > PathConditions<'sym, 'tcx, T>
 {
-    pub fn subst(
+    pub fn subst<'substs>(
         self,
         arena: &'sym SymExContext<'tcx>,
-        substs: &'sym Substs<'sym, 'tcx, T>,
+        substs: &'substs Substs<'sym, 'tcx, T>,
     ) -> Self {
         let mut atoms = BTreeSet::new();
         for atom in &self.atoms {
+            println!("substs!: {:?}", substs);
             let expr = atom.expr.subst(arena, substs);
             let predicate = atom.predicate.clone().subst(arena, substs);
             atoms.insert(PathConditionAtom::new(expr, predicate));

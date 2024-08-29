@@ -154,7 +154,7 @@ impl<'mir, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>
     }
 }
 
-impl<'sym, 'tcx, T: Copy + Clone + SyntheticSymValue<'sym, 'tcx>>
+impl<'sym, 'tcx, T: Copy + Clone + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug>
     SymValueData<'sym, 'tcx, T, InputPlace<'tcx>>
 {
     pub fn to_sym_value<'mir>(

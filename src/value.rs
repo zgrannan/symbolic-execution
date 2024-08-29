@@ -120,7 +120,13 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> BackwardsFn<'sym, 'tcx, T,
     }
 }
 
-impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>, V: Copy> BackwardsFn<'sym, 'tcx, T, V> {
+impl<
+        'sym,
+        'tcx,
+        T: Copy + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug,
+        V: Copy + std::fmt::Debug,
+    > BackwardsFn<'sym, 'tcx, T, V>
+{
     pub fn apply_transformer<U: Copy, F, TT>(
         &'sym self,
         arena: &'sym SymExContext<'tcx>,
@@ -247,7 +253,13 @@ impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug> std:
     }
 }
 
-impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx>, V: Copy> SymValueData<'sym, 'tcx, T, V> {
+impl<
+        'sym,
+        'tcx,
+        T: Copy + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug,
+        V: Copy + std::fmt::Debug,
+    > SymValueData<'sym, 'tcx, T, V>
+{
     pub fn apply_transformer<U: Copy, F, TT>(
         &'sym self,
         arena: &'sym SymExContext<'tcx>,
@@ -421,8 +433,10 @@ impl<
             assert_eq!(
                 self.0.erase_regions(val.kind.ty(self.0).rust_ty()),
                 self.0.erase_regions(ty),
-                "Cannot subst {var:?}: {:?} with {val:?}: {:?} of different type",
+                "Cannot subst {:?}: {:?} with {:?}: {:?} of different type",
+                var,
                 ty,
+                val,
                 val.kind.ty(self.0),
             );
             val
@@ -440,8 +454,11 @@ impl<
     }
 }
 
-impl<'sym, 'tcx, T: Clone + Copy + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>>
-    SymValueData<'sym, 'tcx, T>
+impl<
+        'sym,
+        'tcx,
+        T: Clone + Copy + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
+    > SymValueData<'sym, 'tcx, T>
 {
     pub fn subst<'substs>(
         &'sym self,
@@ -474,7 +491,9 @@ impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx>> SymValueTransf
     }
 }
 
-impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx>> SymValueData<'sym, 'tcx, T> {
+impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug>
+    SymValueData<'sym, 'tcx, T>
+{
     pub fn optimize(
         &'sym self,
         arena: &'sym SymExContext<'tcx>,

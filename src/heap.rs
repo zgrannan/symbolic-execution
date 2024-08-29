@@ -27,15 +27,15 @@ pub struct SymbolicHeap<'heap, 'mir, 'sym, 'tcx, T>(
 impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>>
     SymbolicHeap<'heap, 'mir, 'sym, 'tcx, T>
 {
-    fn arena(&self) -> &'sym SymExContext<'tcx> {
+    pub fn arena(&self) -> &'sym SymExContext<'tcx> {
         self.3
     }
 
-    fn body(&self) -> &'mir Body<'tcx> {
+    pub fn body(&self) -> &'mir Body<'tcx> {
         self.2
     }
 
-    fn tcx(&self) -> TyCtxt<'tcx> {
+    pub fn tcx(&self) -> TyCtxt<'tcx> {
         self.1
     }
 

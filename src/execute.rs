@@ -12,7 +12,7 @@ use crate::{
     },
     semantics::VerifierSemantics,
     visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat},
-    SymbolicExecution,
+    Assertion, SymbolicExecution,
 };
 use std::collections::BTreeSet;
 
@@ -48,6 +48,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     },
                 );
             }
+            for (path_conditions, assertion) in
+                S::encode_loop_invariant(self.def_id.into(), block, &mut heap, &mut self)
+            {
+                assertions.insert((
+                    path.path.clone(),
+                    path_conditions,
+                    Assertion::Eq(assertion, true),
+                ));
+            }
             let pcs_block = self.fpcs_analysis.get_all_for_bb(block);
             let block_data = &self.body.basic_blocks[block];
             for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
@@ -66,10 +75,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 match &stmt.kind {
                     mir::StatementKind::Assign(box (place, rvalue)) => {
                         let encoded_place: StructureTerm<'sym, 'tcx, S::OldMapSymValSynthetic> =
-                            <OldMapEncoder<'mir, 'sym, 'tcx> as Encoder<'mir, 'sym, 'tcx, S::OldMapSymValSynthetic>>::encode_rvalue(
-                                &structure_encoder,
-                                &mut path.old_map,
-                                rvalue,
+                            <OldMapEncoder<'mir, 'sym, 'tcx> as Encoder<
+                                'mir,
+                                'sym,
+                                'tcx,
+                                S::OldMapSymValSynthetic,
+                            >>::encode_rvalue(
+                                &structure_encoder, &mut path.old_map, rvalue
                             );
                         path.old_map.insert((*place).into(), encoded_place);
                     }

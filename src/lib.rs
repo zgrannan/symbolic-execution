@@ -98,7 +98,7 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for Assertion<'sym, 'tcx, T> {
 }
 
 pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>> {
-    tcx: TyCtxt<'tcx>,
+    pub tcx: TyCtxt<'tcx>,
     def_id: LocalDefId,
     pub body: &'mir Body<'tcx>,
     fpcs_analysis: FpcsOutput<'mir, 'tcx>,
