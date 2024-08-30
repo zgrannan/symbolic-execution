@@ -4,10 +4,10 @@ use crate::rustc_interface::{
     ast::Mutability,
     data_structures::fx::FxHasher,
     middle::{
-        mir::{self, tcx::PlaceTy, PlaceElem, ProjectionElem, VarDebugInfo, ConstValue},
+        mir::{self, tcx::PlaceTy, ConstValue, PlaceElem, ProjectionElem, VarDebugInfo},
         ty::{self, GenericArgsRef},
     },
-    span::{def_id::DefId},
+    span::def_id::DefId,
     target::abi::VariantIdx,
 };
 use crate::transform::SymValueTransformer;
@@ -363,8 +363,8 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T
                         ty::TyKind::FnPtr(_) => todo!(),
                         ty::TyKind::Dynamic(_, _, _) => todo!(),
                         ty::TyKind::Closure(_, _) => todo!(),
-                        ty::TyKind::Generator(_, _, _) => todo!(),
-                        ty::TyKind::GeneratorWitness(..) => todo!(),
+                        ty::TyKind::Coroutine(_, _, _) => todo!(),
+                        ty::TyKind::CoroutineWitness(..) => todo!(),
                         ty::TyKind::Never => todo!(),
                         ty::TyKind::Tuple(_) => todo!(),
                         ty::TyKind::Alias(_, _) => todo!(),
@@ -382,7 +382,11 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T
                     min_length: _,
                     from_end: _,
                 } => todo!(),
-                ProjectionElem::Subslice { from: _, to: _, from_end: _ } => todo!(),
+                ProjectionElem::Subslice {
+                    from: _,
+                    to: _,
+                    from_end: _,
+                } => todo!(),
                 ProjectionElem::Downcast(_, vidx) => {
                     Ty::new(val.kind.ty(tcx).rust_ty(), Some(*vidx))
                 }
