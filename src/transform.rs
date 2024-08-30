@@ -1,16 +1,12 @@
 use crate::value::BackwardsFn;
-use crate::{context::SymExContext, value::SyntheticSymValue};
+use crate::{context::SymExContext};
 use crate::{
     rustc_interface::{
-        abi::VariantIdx,
         ast::Mutability,
-        const_eval::interpret::ConstValue,
-        data_structures::fx::FxHasher,
         middle::{
-            mir::{self, tcx::PlaceTy, ProjectionElem, VarDebugInfo},
+            mir::{self, ProjectionElem},
             ty,
         },
-        span::{def_id::DefId, DUMMY_SP},
     },
     value::{AggregateKind, CastKind, Constant, SymValue, SymVar},
 };

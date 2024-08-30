@@ -5,11 +5,10 @@ use crate::value::{
 use crate::{
     rustc_interface::{
         ast::Mutability,
-        borrowck::consumers::BodyWithBorrowckFacts,
-        hir::def_id::{DefId, LocalDefId},
+        hir::def_id::{LocalDefId},
         middle::{
-            mir::{self, BasicBlock, Body, Location, VarDebugInfo},
-            ty::{self, GenericArgsRef, TyCtxt},
+            mir::{self, BasicBlock, Location},
+            ty::{self, TyCtxt},
         },
     },
     value::{AggregateKind, Constant},

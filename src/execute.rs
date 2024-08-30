@@ -11,8 +11,7 @@ use crate::{
         ty,
     },
     semantics::VerifierSemantics,
-    visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat},
-    Assertion, SymbolicExecution,
+    visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat}, SymbolicExecution,
 };
 use std::collections::BTreeSet;
 

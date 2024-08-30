@@ -1,15 +1,13 @@
 use pcs::{borrows::domain::MaybeOldPlace, utils::PlaceRepacker};
 
 use crate::rustc_interface::{
-    data_structures::fx::FxHasher,
     middle::{
         mir::{self, tcx::PlaceTy, ProjectionElem},
         ty,
     },
 };
 use std::{
-    cmp::Ordering,
-    hash::{Hash, Hasher},
+    hash::{Hash},
 };
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]

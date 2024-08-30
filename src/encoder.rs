@@ -1,13 +1,13 @@
 use pcs::utils::PlaceRepacker;
 
 use crate::context::SymExContext;
-use crate::heap::{HeapData, SymbolicHeap};
+use crate::heap::{SymbolicHeap};
 use crate::place::Place;
-use crate::rustc_interface::{hir::Mutability, middle::mir};
+use crate::rustc_interface::{middle::mir};
 use crate::value::{AggregateKind, SymVar};
 use crate::visualization::VisFormat;
 use crate::{semantics::VerifierSemantics, value::SymValue};
-use crate::{LookupGet, LookupType, SymbolicExecution};
+use crate::{LookupGet, SymbolicExecution};
 
 pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S> {
     type V: 'sym;
@@ -93,7 +93,7 @@ pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S> {
                 let place: Place<'tcx> = (*place).into();
                 self.encode_place(ctxt, &place)
             }
-            mir::Operand::Constant(c) => self.arena().mk_constant(c.into()),
+            mir::Operand::Constant(box c) => self.arena().mk_constant(c.const_.into()),
         }
     }
 

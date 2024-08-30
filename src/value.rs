@@ -1,15 +1,14 @@
 use crate::debug_info::DebugInfo;
-use crate::place::Place;
+
 use crate::rustc_interface::{
-    abi::VariantIdx,
     ast::Mutability,
-    const_eval::interpret::ConstValue,
     data_structures::fx::FxHasher,
     middle::{
-        mir::{self, tcx::PlaceTy, PlaceElem, ProjectionElem, VarDebugInfo},
-        ty::{self, adjustment::PointerCoercion, GenericArgsRef},
+        mir::{self, tcx::PlaceTy, PlaceElem, ProjectionElem, VarDebugInfo, ConstValue},
+        ty::{self, GenericArgsRef},
     },
-    span::{def_id::DefId, DUMMY_SP},
+    span::{def_id::DefId},
+    target::abi::VariantIdx,
 };
 use crate::transform::SymValueTransformer;
 use crate::visualization::OutputMode;
@@ -18,7 +17,6 @@ use std::{
     cmp::Ordering,
     collections::BTreeMap,
     hash::{Hash, Hasher},
-    rc::Rc,
 };
 
 use super::SymExContext;
@@ -366,8 +364,7 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T
                         ty::TyKind::Dynamic(_, _, _) => todo!(),
                         ty::TyKind::Closure(_, _) => todo!(),
                         ty::TyKind::Generator(_, _, _) => todo!(),
-                        ty::TyKind::GeneratorWitness(_) => todo!(),
-                        ty::TyKind::GeneratorWitnessMIR(_, _) => todo!(),
+                        ty::TyKind::GeneratorWitness(..) => todo!(),
                         ty::TyKind::Never => todo!(),
                         ty::TyKind::Tuple(_) => todo!(),
                         ty::TyKind::Alias(_, _) => todo!(),
@@ -381,21 +378,22 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T
                 ProjectionElem::Field(_, ty) => Ty::new(*ty, None),
                 ProjectionElem::Index(_) => todo!(),
                 ProjectionElem::ConstantIndex {
-                    offset,
-                    min_length,
-                    from_end,
+                    offset: _,
+                    min_length: _,
+                    from_end: _,
                 } => todo!(),
-                ProjectionElem::Subslice { from, to, from_end } => todo!(),
+                ProjectionElem::Subslice { from: _, to: _, from_end: _ } => todo!(),
                 ProjectionElem::Downcast(_, vidx) => {
                     Ty::new(val.kind.ty(tcx).rust_ty(), Some(*vidx))
                 }
                 ProjectionElem::OpaqueCast(_) => todo!(),
+                ProjectionElem::Subtype(_) => todo!(),
             },
             SymValueKind::Aggregate(kind, _) => kind.ty(),
             SymValueKind::Discriminant(sym_val) => {
                 Ty::new(sym_val.kind.ty(tcx).rust_ty().discriminant_ty(tcx), None)
             }
-            SymValueKind::UnaryOp(ty, op, val) => Ty::new(*ty, None),
+            SymValueKind::UnaryOp(ty, _op, _val) => Ty::new(*ty, None),
             SymValueKind::Synthetic(sym_val) => sym_val.ty(tcx),
             SymValueKind::Cast(_, _, ty) => Ty::new(*ty, None),
             SymValueKind::InternalError(_, ty) => Ty::new(*ty, None),
@@ -503,51 +501,43 @@ impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx> + std::fmt::Deb
     }
 }
 
-impl<'tcx> From<&Box<mir::Constant<'tcx>>> for Constant<'tcx> {
-    fn from(c: &Box<mir::Constant<'tcx>>) -> Self {
+impl<'tcx> From<&Box<mir::Const<'tcx>>> for Constant<'tcx> {
+    fn from(c: &Box<mir::Const<'tcx>>) -> Self {
         Constant(**c)
     }
 }
 
-impl<'tcx> From<mir::Constant<'tcx>> for Constant<'tcx> {
-    fn from(c: mir::Constant<'tcx>) -> Self {
+impl<'tcx> From<mir::Const<'tcx>> for Constant<'tcx> {
+    fn from(c: mir::Const<'tcx>) -> Self {
         Constant(c)
     }
 }
 
 #[derive(Clone, Debug, Hash)]
-pub struct Constant<'tcx>(pub mir::Constant<'tcx>);
+pub struct Constant<'tcx>(pub mir::Const<'tcx>);
 
 impl<'tcx> Constant<'tcx> {
     pub fn as_bool(&self, tcx: ty::TyCtxt<'tcx>) -> Option<bool> {
-        if self.0.ty() == tcx.types.bool {
-            self.0.literal.try_to_bool()
+        if self.ty() == tcx.types.bool {
+            self.0.try_to_bool()
         } else {
             None
         }
     }
 
-    pub fn literal(&self) -> mir::ConstantKind<'tcx> {
-        self.0.literal
+    pub fn literal(&self) -> mir::Const<'tcx> {
+        self.0
     }
 
     pub fn ty(&self) -> ty::Ty<'tcx> {
-        self.0.literal.ty()
+        self.literal().ty()
     }
 
     pub fn from_bool(tcx: ty::TyCtxt<'tcx>, b: bool) -> Self {
-        Constant(mir::Constant {
-            span: DUMMY_SP,
-            user_ty: None,
-            literal: mir::ConstantKind::from_bool(tcx, b),
-        })
+        Constant(mir::Const::from_bool(tcx, b))
     }
     pub fn from_u32(u32: u32, ty: ty::Ty<'tcx>) -> Self {
-        Constant(mir::Constant {
-            span: DUMMY_SP,
-            user_ty: None,
-            literal: mir::ConstantKind::from_value(ConstValue::from_u64(u32 as u64), ty),
-        })
+        Constant(mir::Const::from_value(ConstValue::from_u64(u32 as u64), ty))
     }
 }
 

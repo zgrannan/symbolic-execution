@@ -1,20 +1,20 @@
 use std::collections::BTreeSet;
 
 use pcs::borrows::engine::BorrowsDomain;
-use pcs::free_pcs::{FreePcsLocation, FreePcsTerminator};
+use pcs::free_pcs::{FreePcsTerminator};
 use pcs::ReborrowBridge;
 
 use crate::context::ErrorLocation;
 use crate::encoder::Encoder;
 use crate::function_call_snapshot::FunctionCallSnapshot;
-use crate::heap::{HeapData, SymbolicHeap};
-use crate::path::{InputPlace, LoopPath, OldMap, OldMapEncoder, Path, StructureTerm};
+use crate::heap::{SymbolicHeap};
+use crate::path::{InputPlace, LoopPath, OldMap, OldMapEncoder, Path};
 use crate::path_conditions::{PathConditionAtom, PathConditionPredicate};
 use crate::pcs_interaction::PcsLocation;
-use crate::results::{ResultAssertion, ResultPath, ResultPaths};
-use crate::value::{SymValue, SymVar};
+use crate::results::{ResultAssertion};
+use crate::value::{SymValue};
 use crate::visualization::{export_path_json, StepType};
-use crate::{add_debug_note, Assertion};
+use crate::{Assertion};
 use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExecution};
 
 use crate::rustc_interface::hir::def_id::DefId;
@@ -82,7 +82,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             }
             mir::TerminatorKind::SwitchInt { discr, targets } => {
                 let ty = discr.ty(&self.body.local_decls, self.tcx);
-                for ((value, target), loc) in targets.iter().zip(fpcs_terminator.succs.iter()) {
+                for ((value, target), _loc) in targets.iter().zip(fpcs_terminator.succs.iter()) {
                     let pred = PathConditionPredicate::Eq(value, ty);
                     if let Some(mut path) = path.push_if_acyclic(target) {
                         let mut heap: SymbolicHeap<'_, 'mir, 'sym, 'tcx, S::SymValSynthetic> =

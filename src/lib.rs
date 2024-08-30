@@ -32,13 +32,11 @@ use crate::{
         ast::Mutability,
         hir::def_id::{DefId, LocalDefId},
         middle::{
-            mir::{self, Body, Local, Location, PlaceElem, ProjectionElem, Rvalue, VarDebugInfo},
-            ty::{self, GenericArgsRef, TyCtxt, TyKind},
+            mir::{self, Body, Local, Location, PlaceElem, ProjectionElem, VarDebugInfo},
+            ty::{self, GenericArgsRef, TyCtxt},
         },
-        span::ErrorGuaranteed,
     },
     value::BackwardsFn,
-    visualization::StepType,
 };
 use context::{ErrorContext, ErrorLocation, SymExContext};
 use function_call_snapshot::FunctionCallSnapshots;
@@ -86,7 +84,7 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for Assertion<'sym, 'tcx, T> {
             Assertion::False => "false".to_string(),
             Assertion::Eq(val, true) => val.to_vis_string(tcx, debug_info, mode),
             Assertion::Eq(val, false) => format!("!{}", val.to_vis_string(tcx, debug_info, mode)),
-            Assertion::Precondition(def_id, substs, args) => {
+            Assertion::Precondition(def_id, _substs, args) => {
                 format!(
                     "{:?}({})",
                     def_id,
@@ -404,7 +402,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         match operand {
             mir::Operand::Move(place) => {
                 let place: Place<'tcx> = (*place).into();
-                if let ty::TyKind::Ref(_, ty, Mutability::Mut) =
+                if let ty::TyKind::Ref(_, _ty, Mutability::Mut) =
                     place.ty(self.body, self.tcx).ty.kind()
                 {
                     let sym_var = self.mk_fresh_symvar(place.ty(self.body, self.tcx).ty);

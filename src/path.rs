@@ -8,10 +8,9 @@ use crate::{
     function_call_snapshot::FunctionCallSnapshots,
     place::Place,
     rustc_interface::middle::mir::{
-        self, BasicBlock, Body, Local, Location, ProjectionElem, START_BLOCK,
+        self, BasicBlock, Body, Location, ProjectionElem, START_BLOCK,
     },
     rustc_interface::middle::ty,
-    semantics::VerifierSemantics,
     transform::SymValueTransformer,
     value::{self, SymValue, SymValueData, SymValueKind, SyntheticSymValue},
 };
@@ -133,7 +132,7 @@ impl<'mir, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>
         &mut self,
         arena: &'sym SymExContext<'tcx>,
         var: InputPlace<'tcx>,
-        ty: ty::Ty<'tcx>,
+        _ty: ty::Ty<'tcx>,
     ) -> SymValue<'sym, 'tcx, T> {
         let sym_var = arena.mk_var(
             value::SymVar::Normal(var.0.local().as_usize() - 1),
@@ -147,8 +146,8 @@ impl<'mir, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>
 
     fn transform_synthetic(
         &mut self,
-        arena: &'sym SymExContext<'tcx>,
-        s: T,
+        _arena: &'sym SymExContext<'tcx>,
+        _s: T,
     ) -> SymValue<'sym, 'tcx, T> {
         todo!()
     }

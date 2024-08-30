@@ -1,23 +1,23 @@
 use std::collections::BTreeSet;
 
-use pcs::{borrows::engine::BorrowsDomain, free_pcs::FreePcsLocation, utils::PlaceRepacker};
+use pcs::{utils::PlaceRepacker};
 use serde_json::json;
 
 use crate::{
     context::SymExContext,
-    debug_info::{DebugInfo, DEBUGINFO_NONE},
+    debug_info::{DEBUGINFO_NONE},
     path::{AcyclicPath, Path},
     pcs_interaction::PcsLocation,
-    results::{ResultAssertion, ResultPath, ResultPaths},
+    results::{ResultAssertion, ResultPaths},
     rustc_interface::{
         ast::Mutability,
         hir::{def_id::DefId, ItemKind, Node},
         middle::{
-            mir::{self, BasicBlock, Body, ProjectionElem, VarDebugInfo},
-            ty::{self, GenericArgsRef, TyCtxt},
+            mir::{self, ProjectionElem, VarDebugInfo},
+            ty::{self, TyCtxt},
         },
     },
-    value::{SymValue, SymValueData, SymValueKind, SymVar, SyntheticSymValue, Ty},
+    value::{SymValue, SymValueData, SymValueKind, SyntheticSymValue, Ty},
 };
 
 #[derive(Copy, Clone)]
@@ -195,7 +195,7 @@ pub fn export_path_list<'sym, 'tcx, T: VisFormat, U>(
 }
 
 impl<'sym, 'tcx, T, V> SymValueData<'sym, 'tcx, T, V> {
-    pub fn new(kind: SymValueKind<'sym, 'tcx, T, V>, arena: &'sym SymExContext) -> Self {
+    pub fn new(kind: SymValueKind<'sym, 'tcx, T, V>, _arena: &'sym SymExContext) -> Self {
         SymValueData {
             kind,
             debug_info: DEBUGINFO_NONE,
@@ -290,13 +290,14 @@ impl<'sym, 'tcx, T> SymValueKind<'sym, 'tcx, T> {
                 ProjectionElem::Field(..) => PrecCategory::Field,
                 ProjectionElem::Index(_) => todo!(),
                 ProjectionElem::ConstantIndex {
-                    offset,
-                    min_length,
-                    from_end,
+                    offset: _,
+                    min_length: _,
+                    from_end: _,
                 } => todo!(),
-                ProjectionElem::Subslice { from, to, from_end } => todo!(),
+                ProjectionElem::Subslice { from: _, to: _, from_end: _ } => todo!(),
                 ProjectionElem::Downcast(_, _) => PrecCategory::Prefix, // TODO
                 ProjectionElem::OpaqueCast(_) => todo!(),
+                ProjectionElem::Subtype(_) => todo!(),
             },
             SymValueKind::Aggregate(_, _) | SymValueKind::Discriminant(_) => PrecCategory::Atom,
             SymValueKind::Cast(_, _, _) => PrecCategory::Prefix,
@@ -386,11 +387,11 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                 ),
                 ProjectionElem::Index(_) => todo!(),
                 ProjectionElem::ConstantIndex {
-                    offset,
-                    min_length,
-                    from_end,
+                    offset: _,
+                    min_length: _,
+                    from_end: _,
                 } => todo!(),
-                ProjectionElem::Subslice { from, to, from_end } => todo!(),
+                ProjectionElem::Subslice { from: _, to: _, from_end: _ } => todo!(),
                 ProjectionElem::Downcast(Some(sym), _) => format!(
                     "{}@{}",
                     value.to_vis_string_prec(tcx, debug_info, self_category, mode),
@@ -402,14 +403,15 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                     idx
                 ),
                 ProjectionElem::OpaqueCast(_) => todo!(),
+                ProjectionElem::Subtype(_) => todo!(),
             },
             SymValueKind::Aggregate(kind, values) => {
                 let pack_ty = match kind {
                     crate::value::AggregateKind::Rust(_, _) => "R",
                     crate::value::AggregateKind::PCS(_, _) => "P",
                 };
-                let lt = mode.lt();
-                let gt = mode.gt();
+                let _lt = mode.lt();
+                let _gt = mode.gt();
                 format!(
                     "pack[{pack_ty}]{}({})",
                     mode.in_lt_gt(kind.ty()),

@@ -4,12 +4,10 @@ use crate::value::SymVar;
 use crate::visualization::OutputMode;
 use crate::{place::Place, VisFormat};
 use crate::{
-    rustc_interface::hir::Mutability,
     rustc_interface::middle::{
-        mir::{self, Body, Location, PlaceElem, ProjectionElem, VarDebugInfo},
+        mir::{self, Body, Location, PlaceElem, VarDebugInfo},
         ty::{self, TyCtxt},
     },
-    util::assert_tys_match,
 };
 use pcs::borrows::domain::MaybeOldPlace;
 use pcs::utils::{PlaceRepacker, PlaceSnapshot, SnapshotLocation};
@@ -84,8 +82,8 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
         value: SymValue<'sym, 'tcx, T>,
     ) {
         let place: MaybeOldPlace<'tcx> = place.into();
-        let place_ty = place.ty(PlaceRepacker::new(self.2, self.1));
-        let value_ty = value.kind.ty(self.1);
+        let _place_ty = place.ty(PlaceRepacker::new(self.2, self.1));
+        let _value_ty = value.kind.ty(self.1);
         // assert_tys_match(self.1, place_ty.ty, value_ty.rust_ty());
         if let Some(PlaceElem::Deref) = place.place().projection.last() {
             if let Some(base_place) = place.place().prefix_place(self.repacker()) {

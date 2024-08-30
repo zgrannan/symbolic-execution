@@ -1,7 +1,4 @@
-use pcs::{
-    borrows::engine::{BorrowsDomain, ReborrowAction},
-    free_pcs::FreePcsLocation,
-};
+
 
 use crate::{
     encoder::Encoder,
@@ -9,11 +6,9 @@ use crate::{
     pcs_interaction::PcsLocation,
     place::Place,
     rustc_interface::{
-        hir::Mutability,
-        middle::mir::{self, ProjectionElem},
+        middle::mir::{self},
     },
-    value::{AggregateKind, SymValue},
-    LookupGet, LookupTake,
+    value::{SymValue},
 };
 use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExecution};
 
@@ -24,13 +19,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         stmt: &mir::Statement<'tcx>,
         heap: &'heap mut SymbolicHeap<'heap, 'mir, 'sym, 'tcx, S::SymValSynthetic>,
-        pcs: &PcsLocation<'_, 'tcx>,
+        _pcs: &PcsLocation<'_, 'tcx>,
     ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>>
     where
         'mir: 'heap,
     {
         match &stmt.kind {
-            mir::StatementKind::Assign(box (place, rvalue)) => {
+            mir::StatementKind::Assign(box (_place, rvalue)) => {
                 let sym_value = self.encode_rvalue(heap, rvalue);
                 Some(sym_value)
             }

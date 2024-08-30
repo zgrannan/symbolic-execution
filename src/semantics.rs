@@ -1,18 +1,18 @@
 use std::collections::BTreeSet;
 
-use crate::context::SymExContext;
+
 use crate::heap::{HeapData, SymbolicHeap};
-use crate::path::{InputPlace, OldMap};
+use crate::path::{OldMap};
 use crate::path_conditions::PathConditions;
 use crate::rustc_interface::{
     hir::def_id::DefId,
     middle::{
-        mir::{self, Body, Operand},
-        ty::{self, GenericArgsRef},
+        mir::{self, Operand},
+        ty::{GenericArgsRef},
     },
 };
 use crate::terminator::FunctionCallEffects;
-use crate::value::{SymValue, SymVar, SyntheticSymValue};
+use crate::value::{SymValue, SyntheticSymValue};
 use crate::SymbolicExecution;
 
 pub trait VerifierSemantics<'sym, 'tcx>: std::marker::Sized {

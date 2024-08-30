@@ -45,7 +45,7 @@ impl<'de> serde::Deserialize<'de> for DebugInfo<'_> {
     }
 }
 impl std::hash::Hash for DebugInfo<'_> {
-    fn hash<H>(&self, state: &mut H)
+    fn hash<H>(&self, _state: &mut H)
     where
         H: std::hash::Hasher,
     {

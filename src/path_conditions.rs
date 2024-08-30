@@ -1,11 +1,11 @@
 use std::collections::{btree_set::Iter, BTreeSet};
 
-use serde_json::{json, Value};
+use serde_json::{Value};
 
 use crate::{value::CanSubst, visualization::OutputMode, VisFormat};
 
 use super::{
-    value::{Substs, SymValue, SymValueData, SyntheticSymValue},
+    value::{Substs, SymValue, SyntheticSymValue},
     SymExContext,
 };
 use crate::rustc_interface::{
