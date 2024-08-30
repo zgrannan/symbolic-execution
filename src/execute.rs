@@ -3,7 +3,7 @@ use crate::{
     encoder::Encoder,
     heap::{HeapData, SymbolicHeap},
     path::{AcyclicPath, OldMapEncoder, Path, StructureTerm},
-    path_conditions::PathConditions,
+    path_conditions::{PathConditionAtom, PathConditionPredicate, PathConditions},
     place::Place,
     results::{ResultAssertion, SymbolicExecutionResult},
     rustc_interface::middle::{
@@ -31,31 +31,40 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             AcyclicPath::from_start_block(),
             PathConditions::new(),
             heap_data,
-            self.body.arg_count,
         )];
         while let Some(mut path) = paths.pop() {
             let block = path.last_block();
             let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
             heap.snapshot_values(block);
-            for local in self.havoc.get(block).iter() {
-                let place = Place::new(*local, &[]);
-                heap.insert(
-                    place,
-                    self.mk_fresh_symvar(self.body.local_decls[*local].ty),
-                    Location {
-                        block,
-                        statement_index: 0,
-                    },
-                );
-            }
-            for (path_conditions, assertion) in
-                S::encode_loop_invariant(self.def_id.into(), block, &mut heap, &mut self)
-            {
-                assertions.insert((
-                    path.path.clone(),
-                    path_conditions,
-                    Assertion::Eq(assertion, true),
-                ));
+            if self.havoc.is_loop_head(block) {
+
+                // We split execution into two paths:
+                // 1. First time down the loop: don't havoc any locals, ensure the invariant holds at the beginning and at the end
+                // 2. Subsequent iteration: havoc locals, assume invariant, ensure it holds at the end
+
+                if path.re_enter_blocks.contains(&block) {
+                    for local in self.havoc.get(block).iter() {
+                        let place = Place::new(*local, &[]);
+                        heap.insert(
+                            place,
+                            self.mk_fresh_symvar(self.body.local_decls[*local].ty),
+                            Location {
+                                block,
+                                statement_index: 0,
+                            },
+                        );
+                    }
+                    for (path_conditions, assertion) in
+                        S::encode_loop_invariant_assumption(self.def_id.into(), block, &mut heap, &mut self)
+                    {
+                        path.pcs.insert(PathConditionAtom {
+                            expr: assertion,
+                            predicate: PathConditionPredicate::ImpliedBy(Box::new(path_conditions)),
+                        });
+                    }
+                } else {
+                    paths.push(path.clone().re_enter_block(block));
+                }
             }
             let pcs_block = self.fpcs_analysis.get_all_for_bb(block);
             let block_data = &self.body.basic_blocks[block];

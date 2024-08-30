@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use pcs::utils::PlaceRepacker;
 
@@ -278,16 +278,21 @@ pub struct Path<'sym, 'tcx, T, U> {
     pub heap: HeapData<'sym, 'tcx, T>,
     pub function_call_snapshots: FunctionCallSnapshots<'sym, 'tcx, T>,
     pub old_map: OldMap<'sym, 'tcx, U>,
+    pub re_enter_blocks: BTreeSet<BasicBlock>,
 }
 
 impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, U: SyntheticSymValue<'sym, 'tcx>>
     Path<'sym, 'tcx, T, U>
 {
+    pub fn re_enter_block(mut self, block: BasicBlock) -> Self {
+        self.re_enter_blocks.insert(block);
+        self
+    }
+
     pub fn new(
         path: AcyclicPath,
         pcs: PathConditions<'sym, 'tcx, T>,
         heap: HeapData<'sym, 'tcx, T>,
-        num_args: usize,
     ) -> Self {
         Path {
             path,
@@ -295,6 +300,7 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, U: SyntheticSymValue<'sym, 't
             heap,
             function_call_snapshots: FunctionCallSnapshots::new(),
             old_map: OldMap::new(),
+            re_enter_blocks: BTreeSet::new(),
         }
     }
 

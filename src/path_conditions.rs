@@ -36,12 +36,13 @@ pub enum PathConditionPredicate<'sym, 'tcx, T> {
         /// holds w.r.t these values
         post_values: &'sym [SymValue<'sym, 'tcx, T>],
     },
+    ImpliedBy(Box<PathConditions<'sym, 'tcx, T>>),
 }
 
 impl<
         'sym,
         'tcx,
-        T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
+        T: Ord + Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
     > PathConditionPredicate<'sym, 'tcx, T>
 {
     pub fn subst<'substs>(
@@ -72,6 +73,9 @@ impl<
                         .collect::<Vec<_>>(),
                 ),
             },
+            PathConditionPredicate::ImpliedBy(pc) => {
+                PathConditionPredicate::ImpliedBy(Box::new(pc.subst(arena, substs)))
+            }
         }
     }
 }
@@ -142,6 +146,13 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditionAtom<'sym, 'tcx, T> {
                     post_values.to_vis_string(tcx, debug_info, mode)
                 )
             }
+            PathConditionPredicate::ImpliedBy(pc) => {
+                format!(
+                    "({} ==> {})",
+                    pc.to_vis_string(tcx, debug_info, mode),
+                    self.expr.to_vis_string(tcx, debug_info, mode)
+                )
+            }
         }
     }
 }
@@ -158,7 +169,7 @@ impl<'sym, 'tcx, T> PathConditionAtom<'sym, 'tcx, T> {
 impl<
         'sym,
         'tcx,
-        T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
+        T: Ord + Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
     > PathConditionAtom<'sym, 'tcx, T>
 {
     pub fn subst(

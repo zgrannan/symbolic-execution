@@ -11,6 +11,9 @@ pub struct HavocData {
 }
 
 impl HavocData {
+    pub fn is_loop_head(&self, block: BasicBlock) -> bool {
+        !self.get(block).is_empty()
+    }
     pub fn get(&self, block: BasicBlock) -> BTreeSet<Local> {
         self.havoced_locals
             .get(&block)

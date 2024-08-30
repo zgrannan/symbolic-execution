@@ -18,15 +18,15 @@ use crate::SymbolicExecution;
 pub trait VerifierSemantics<'sym, 'tcx>: std::marker::Sized {
     type SymValSynthetic: Clone + Ord + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>;
     type OldMapSymValSynthetic: Clone + Ord + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>;
-    fn encode_loop_invariant<'heap, 'mir: 'heap>(
+    fn encode_loop_invariant_assumption<'heap, 'mir: 'heap>(
         def_id: DefId,
         block: mir::BasicBlock,
         heap: &mut SymbolicHeap<'heap, 'mir, 'sym, 'tcx, Self::SymValSynthetic>,
         sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, Self>,
-    ) -> BTreeSet<
-        (PathConditions<'sym, 'tcx, Self::SymValSynthetic>,
-        SymValue<'sym, 'tcx, Self::SymValSynthetic>),
-    >;
+    ) -> BTreeSet<(
+        PathConditions<'sym, 'tcx, Self::SymValSynthetic>,
+        SymValue<'sym, 'tcx, Self::SymValSynthetic>,
+    )>;
     fn encode_fn_call<'mir>(
         location: mir::Location,
         sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, Self>,
