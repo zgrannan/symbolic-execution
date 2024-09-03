@@ -34,6 +34,6 @@ pub trait VerifierSemantics<'sym, 'tcx>: std::marker::Sized {
         substs: GenericArgsRef<'tcx>,
         heap: &mut HeapData<'sym, 'tcx, Self::SymValSynthetic>,
         old_map: &mut OldMap<'sym, 'tcx, Self::OldMapSymValSynthetic>,
-        args: &Vec<Operand<'tcx>>,
+        args: &Vec<&Operand<'tcx>>,
     ) -> Option<FunctionCallEffects<'sym, 'tcx, Self::SymValSynthetic, Self::OldMapSymValSynthetic>>;
 }

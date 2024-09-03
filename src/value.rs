@@ -373,6 +373,7 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T
                         ty::TyKind::Placeholder(_) => todo!(),
                         ty::TyKind::Infer(_) => todo!(),
                         ty::TyKind::Error(_) => ty,
+                        ty::TyKind::CoroutineClosure(..) => todo!(),
                     }
                 }
                 ProjectionElem::Field(_, ty) => Ty::new(*ty, None),

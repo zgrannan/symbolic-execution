@@ -1,20 +1,20 @@
 use std::collections::BTreeSet;
 
 use pcs::borrows::engine::BorrowsDomain;
-use pcs::free_pcs::{FreePcsTerminator};
+use pcs::free_pcs::FreePcsTerminator;
 use pcs::ReborrowBridge;
 
 use crate::context::ErrorLocation;
 use crate::encoder::Encoder;
 use crate::function_call_snapshot::FunctionCallSnapshot;
-use crate::heap::{SymbolicHeap};
+use crate::heap::SymbolicHeap;
 use crate::path::{InputPlace, LoopPath, OldMap, OldMapEncoder, Path};
 use crate::path_conditions::{PathConditionAtom, PathConditionPredicate};
 use crate::pcs_interaction::PcsLocation;
-use crate::results::{ResultAssertion};
-use crate::value::{SymValue};
+use crate::results::ResultAssertion;
+use crate::value::SymValue;
 use crate::visualization::{export_path_json, StepType};
-use crate::{Assertion};
+use crate::Assertion;
 use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExecution};
 
 use crate::rustc_interface::hir::def_id::DefId;
@@ -136,7 +136,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         substs,
                         &mut heap,
                         &mut path.old_map,
-                        args,
+                        &args.iter().map(|arg| &arg.node).collect(),
                         location.location,
                     );
 
@@ -200,7 +200,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         substs: GenericArgsRef<'tcx>,
         heap: &mut SymbolicHeap<'heap, 'mir, 'sym, 'tcx, S::SymValSynthetic>,
         old_map: &mut OldMap<'sym, 'tcx, S::OldMapSymValSynthetic>,
-        args: &Vec<Operand<'tcx>>,
+        args: &Vec<&Operand<'tcx>>,
         location: Location,
     ) -> FunctionCallEffects<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>
     where
