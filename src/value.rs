@@ -363,7 +363,7 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T
                         ty::TyKind::FnPtr(_) => todo!(),
                         ty::TyKind::Dynamic(_, _, _) => todo!(),
                         ty::TyKind::Closure(_, _) => todo!(),
-                        ty::TyKind::Coroutine(_, _, _) => todo!(),
+                        ty::TyKind::Coroutine(..) => todo!(),
                         ty::TyKind::CoroutineWitness(..) => todo!(),
                         ty::TyKind::Never => todo!(),
                         ty::TyKind::Tuple(_) => todo!(),
