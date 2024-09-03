@@ -1,16 +1,12 @@
 use pcs::{borrows::domain::MaybeOldPlace, utils::PlaceRepacker};
 
-use crate::rustc_interface::{
-    middle::{
-        mir::{self, tcx::PlaceTy, ProjectionElem},
-        ty,
-    },
+use crate::rustc_interface::middle::{
+    mir::{self, tcx::PlaceTy, ProjectionElem},
+    ty,
 };
-use std::{
-    hash::{Hash},
-};
+use std::hash::Hash;
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Place<'tcx>(pub pcs::utils::Place<'tcx>);
 
 impl<'tcx> From<Place<'tcx>> for MaybeOldPlace<'tcx> {

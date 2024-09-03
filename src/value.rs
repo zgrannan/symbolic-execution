@@ -68,7 +68,7 @@ pub trait SyntheticSymValue<'sym, 'tcx>: Sized {
 
 pub type SymValue<'sym, 'tcx, T, V = SymVar> = &'sym SymValueData<'sym, 'tcx, T, V>;
 
-#[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct SymValueData<'sym, 'tcx, T, V = SymVar> {
     pub kind: SymValueKind<'sym, 'tcx, T, V>,
     pub debug_info: DebugInfo<'sym>,
@@ -90,7 +90,7 @@ impl From<mir::CastKind> for CastKind {
     }
 }
 
-#[derive(Copy, Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct BackwardsFn<'sym, 'tcx, T, V = SymVar> {
     /// The DefId of the Rust (forwards) function
     pub def_id: DefId,
@@ -182,7 +182,7 @@ impl SymVar {
     }
 }
 
-#[derive(Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub enum SymValueKind<'sym, 'tcx, T, V = SymVar> {
     Var(V, ty::Ty<'tcx>),
     Constant(Constant<'tcx>),
@@ -357,7 +357,7 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T
                         ty::TyKind::Str => todo!(),
                         ty::TyKind::Array(_, _) => todo!(),
                         ty::TyKind::Slice(_) => todo!(),
-                        ty::TyKind::RawPtr(_) => todo!(),
+                        ty::TyKind::RawPtr(..) => todo!(),
                         ty::TyKind::Ref(_, target_ty, _) => Ty::new(*target_ty, ty.variant_index()),
                         ty::TyKind::FnDef(_, _) => todo!(),
                         ty::TyKind::FnPtr(_) => todo!(),
@@ -374,6 +374,7 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T
                         ty::TyKind::Infer(_) => todo!(),
                         ty::TyKind::Error(_) => ty,
                         ty::TyKind::CoroutineClosure(..) => todo!(),
+                        ty::TyKind::Pat(..) => todo!(),
                     }
                 }
                 ProjectionElem::Field(_, ty) => Ty::new(*ty, None),

@@ -6,6 +6,7 @@ use pcs::ReborrowBridge;
 
 use crate::context::ErrorLocation;
 use crate::encoder::Encoder;
+use crate::execute::ResultAssertions;
 use crate::function_call_snapshot::FunctionCallSnapshot;
 use crate::heap::SymbolicHeap;
 use crate::path::{InputPlace, LoopPath, OldMap, OldMapEncoder, Path};
@@ -30,11 +31,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         terminator: &mir::Terminator<'tcx>,
         paths: &mut Vec<Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>>,
-        assertions: &mut BTreeSet<ResultAssertion<'sym, 'tcx, S::SymValSynthetic>>,
+        assertions: &mut ResultAssertions<'sym, 'tcx, S::SymValSynthetic>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
         fpcs_terminator: FreePcsTerminator<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
         location: &PcsLocation<'mir, 'tcx>,
-    ) {
+    ) where
+        S::SymValSynthetic: Eq,
+    {
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
         match &terminator.kind {
             mir::TerminatorKind::Drop { target, .. }

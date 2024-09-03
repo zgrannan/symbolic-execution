@@ -1,14 +1,13 @@
 use std::collections::BTreeSet;
 
-
 use crate::heap::{HeapData, SymbolicHeap};
-use crate::path::{OldMap};
+use crate::path::OldMap;
 use crate::path_conditions::PathConditions;
 use crate::rustc_interface::{
     hir::def_id::DefId,
     middle::{
         mir::{self, Operand},
-        ty::{GenericArgsRef},
+        ty::GenericArgsRef,
     },
 };
 use crate::terminator::FunctionCallEffects;
@@ -16,14 +15,14 @@ use crate::value::{SymValue, SyntheticSymValue};
 use crate::SymbolicExecution;
 
 pub trait VerifierSemantics<'sym, 'tcx>: std::marker::Sized {
-    type SymValSynthetic: Clone + Ord + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>;
-    type OldMapSymValSynthetic: Clone + Ord + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>;
+    type SymValSynthetic: Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>;
+    type OldMapSymValSynthetic: Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>;
     fn encode_loop_invariant_assumption<'heap, 'mir: 'heap>(
         def_id: DefId,
         block: mir::BasicBlock,
         heap: &mut SymbolicHeap<'heap, 'mir, 'sym, 'tcx, Self::SymValSynthetic>,
         sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, Self>,
-    ) -> BTreeSet<(
+    ) -> Vec<(
         PathConditions<'sym, 'tcx, Self::SymValSynthetic>,
         SymValue<'sym, 'tcx, Self::SymValSynthetic>,
     )>;

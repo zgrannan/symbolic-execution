@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use pcs::utils::PlaceRepacker;
 
@@ -7,9 +7,7 @@ use crate::{
     encoder::Encoder,
     function_call_snapshot::FunctionCallSnapshots,
     place::Place,
-    rustc_interface::middle::mir::{
-        self, BasicBlock, Body, Location, ProjectionElem, START_BLOCK,
-    },
+    rustc_interface::middle::mir::{self, BasicBlock, Body, Location, ProjectionElem, START_BLOCK},
     rustc_interface::middle::ty,
     transform::SymValueTransformer,
     value::{self, SymValue, SymValueData, SymValueKind, SyntheticSymValue},
@@ -108,7 +106,7 @@ impl AcyclicPath {
     }
 }
 
-#[derive(Ord, PartialOrd, Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct InputPlace<'tcx>(Place<'tcx>);
 
 impl<'tcx> InputPlace<'tcx> {
@@ -167,7 +165,7 @@ impl<'sym, 'tcx, T: Copy + Clone + SyntheticSymValue<'sym, 'tcx> + std::fmt::Deb
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OldMap<'sym, 'tcx, T>(BTreeMap<Place<'tcx>, StructureTerm<'sym, 'tcx, T>>);
+pub struct OldMap<'sym, 'tcx, T>(HashMap<Place<'tcx>, StructureTerm<'sym, 'tcx, T>>);
 
 pub struct OldMapEncoder<'mir, 'sym, 'tcx> {
     pub repacker: PlaceRepacker<'mir, 'tcx>,
@@ -235,7 +233,7 @@ impl<'mir, 'sym, 'tcx: 'mir, S: SyntheticSymValue<'sym, 'tcx> + 'sym> Encoder<'m
 
 impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> OldMap<'sym, 'tcx, T> {
     pub fn new() -> Self {
-        Self(BTreeMap::new())
+        Self(HashMap::new())
     }
 
     pub fn insert(&mut self, place: Place<'tcx>, term: StructureTerm<'sym, 'tcx, T>) {
@@ -257,12 +255,11 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> OldMap<'sym, 'tcx, T> {
                                 .fold(v, |p, elem| arena.mk_projection(*elem, p)),
                         );
                     }
-                    None => {}
-                    // None => todo!(
-                    //     "Projection {:?} does not match prefix {:?}",
-                    //     place,
-                    //     k,
-                    // ),
+                    None => {} // None => todo!(
+                               //     "Projection {:?} does not match prefix {:?}",
+                               //     place,
+                               //     k,
+                               // ),
                 }
             }
         }

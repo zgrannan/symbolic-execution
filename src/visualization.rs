@@ -1,23 +1,17 @@
 use std::collections::BTreeSet;
 
-use pcs::{utils::PlaceRepacker};
+use pcs::utils::PlaceRepacker;
 use serde_json::json;
 
 use crate::{
-    context::SymExContext,
-    debug_info::{DEBUGINFO_NONE},
-    path::{AcyclicPath, Path},
-    pcs_interaction::PcsLocation,
-    results::{ResultAssertion, ResultPaths},
-    rustc_interface::{
+    context::SymExContext, debug_info::DEBUGINFO_NONE, execute::ResultAssertions, path::{AcyclicPath, Path}, pcs_interaction::PcsLocation, results::{ResultAssertion, ResultPaths}, rustc_interface::{
         ast::Mutability,
         hir::{def_id::DefId, ItemKind, Node},
         middle::{
             mir::{self, ProjectionElem, VarDebugInfo},
             ty::{self, TyCtxt},
         },
-    },
-    value::{SymValue, SymValueData, SymValueKind, SyntheticSymValue, Ty},
+    }, value::{SymValue, SymValueData, SymValueKind, SyntheticSymValue, Ty}
 };
 
 #[derive(Copy, Clone)]
@@ -153,7 +147,7 @@ fn path_to_vec(path: &AcyclicPath) -> Vec<usize> {
 
 pub fn export_assertions<'sym, 'tcx, T: VisFormat>(
     debug_output_dir: &str,
-    assertions: &BTreeSet<ResultAssertion<'sym, 'tcx, T>>,
+    assertions: &ResultAssertions<'sym, 'tcx, T>,
     debug_info: &[VarDebugInfo],
     tcx: TyCtxt<'_>,
 ) {
@@ -294,7 +288,11 @@ impl<'sym, 'tcx, T> SymValueKind<'sym, 'tcx, T> {
                     min_length: _,
                     from_end: _,
                 } => todo!(),
-                ProjectionElem::Subslice { from: _, to: _, from_end: _ } => todo!(),
+                ProjectionElem::Subslice {
+                    from: _,
+                    to: _,
+                    from_end: _,
+                } => todo!(),
                 ProjectionElem::Downcast(_, _) => PrecCategory::Prefix, // TODO
                 ProjectionElem::OpaqueCast(_) => todo!(),
                 ProjectionElem::Subtype(_) => todo!(),
@@ -391,7 +389,11 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                     min_length: _,
                     from_end: _,
                 } => todo!(),
-                ProjectionElem::Subslice { from: _, to: _, from_end: _ } => todo!(),
+                ProjectionElem::Subslice {
+                    from: _,
+                    to: _,
+                    from_end: _,
+                } => todo!(),
                 ProjectionElem::Downcast(Some(sym), _) => format!(
                     "{}@{}",
                     value.to_vis_string_prec(tcx, debug_info, self_category, mode),

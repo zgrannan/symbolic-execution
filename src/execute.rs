@@ -11,9 +11,30 @@ use crate::{
         ty,
     },
     semantics::VerifierSemantics,
-    visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat}, SymbolicExecution,
+    visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat},
+    SymbolicExecution,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
+
+#[derive(Clone, Debug)]
+pub struct ResultAssertions<'sym, 'tcx, T>(Vec<ResultAssertion<'sym, 'tcx, T>>);
+
+impl<'sym, 'tcx, T> ResultAssertions<'sym, 'tcx, T> {
+    pub fn new() -> Self {
+        ResultAssertions(Vec::new())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &ResultAssertion<'sym, 'tcx, T>> {
+        self.0.iter()
+    }
+}
+impl<'sym, 'tcx, T: Eq> ResultAssertions<'sym, 'tcx, T> {
+    pub fn insert(&mut self, assertion: ResultAssertion<'sym, 'tcx, T>) {
+        if !self.0.contains(&assertion) {
+            self.0.push(assertion);
+        }
+    }
+}
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
@@ -22,10 +43,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         mut self,
         heap_data: HeapData<'sym, 'tcx, S::SymValSynthetic>,
         symvars: Vec<ty::Ty<'tcx>>,
-    ) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {
+    ) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic>
+    where
+        S::SymValSynthetic: Eq,
+    {
         self.symvars = symvars;
-        let mut assertions: BTreeSet<ResultAssertion<'sym, 'tcx, S::SymValSynthetic>> =
-            BTreeSet::new();
+        let mut assertions: ResultAssertions<'sym, 'tcx, S::SymValSynthetic> =
+            ResultAssertions::new();
         let mut paths = vec![Path::new(
             AcyclicPath::from_start_block(),
             PathConditions::new(),
@@ -36,7 +60,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
             heap.snapshot_values(block);
             if self.havoc.is_loop_head(block) {
-
                 // We split execution into two paths:
                 // 1. First time down the loop: don't havoc any locals, ensure the invariant holds at the beginning and at the end
                 // 2. Subsequent iteration: havoc locals, assume invariant, ensure it holds at the end
@@ -53,9 +76,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             },
                         );
                     }
-                    for (path_conditions, assertion) in
-                        S::encode_loop_invariant_assumption(self.def_id.into(), block, &mut heap, &mut self)
-                    {
+                    for (path_conditions, assertion) in S::encode_loop_invariant_assumption(
+                        self.def_id.into(),
+                        block,
+                        &mut heap,
+                        &mut self,
+                    ) {
                         path.pcs.insert(PathConditionAtom {
                             expr: assertion,
                             predicate: PathConditionPredicate::ImpliedBy(Box::new(path_conditions)),

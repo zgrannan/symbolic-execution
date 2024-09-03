@@ -66,7 +66,7 @@ use self::{
     value::{AggregateKind, SymValue},
 };
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Assertion<'sym, 'tcx, T> {
     False,
     Eq(SymValue<'sym, 'tcx, T>, bool),
@@ -363,11 +363,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         facts
     }
 
-    fn add_loop_path(
-        &mut self,
-        path: LoopPath,
-        pcs: PathConditions<'sym, 'tcx, S::SymValSynthetic>,
-    ) {
+    fn add_loop_path(&mut self, path: LoopPath, pcs: PathConditions<'sym, 'tcx, S::SymValSynthetic>)
+    where
+        S::SymValSynthetic: Eq,
+    {
         self.result_paths.insert(ResultPath::loop_path(path, pcs));
     }
 
@@ -375,7 +374,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
-    ) {
+    ) where
+        S::SymValSynthetic: Eq,
+    {
         let return_place: Place<'tcx> = mir::RETURN_PLACE.into();
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
         let expr = self.encode_maybe_old_place::<LookupGet, _>(&mut heap, &return_place);
@@ -578,7 +579,10 @@ pub fn run_symbolic_execution<
     S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat> + 'sym,
 >(
     params: SymExParams<'mir, 'sym, 'tcx, S>,
-) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic> {
+) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic>
+where
+    S::SymValSynthetic: Eq,
+{
     let (heap_data, symvars) = HeapData::init_for_body(params.arena, params.tcx, params.body);
     SymbolicExecution::new(params).execute(heap_data, symvars)
 }

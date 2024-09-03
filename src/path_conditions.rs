@@ -1,6 +1,6 @@
-use std::collections::{btree_set::Iter, BTreeSet};
+use std::collections::{btree_set::Iter, BTreeSet, HashSet};
 
-use serde_json::{Value};
+use serde_json::Value;
 
 use crate::{value::CanSubst, visualization::OutputMode, VisFormat};
 
@@ -16,7 +16,7 @@ use crate::rustc_interface::{
     },
 };
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PathConditionPredicate<'sym, 'tcx, T> {
     /// The compared-to expr is equal to the scalar interpreted as a
     /// value of the given type
@@ -42,7 +42,7 @@ pub enum PathConditionPredicate<'sym, 'tcx, T> {
 impl<
         'sym,
         'tcx,
-        T: Ord + Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
+        T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
     > PathConditionPredicate<'sym, 'tcx, T>
 {
     pub fn subst<'substs>(
@@ -80,7 +80,7 @@ impl<
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PathConditionAtom<'sym, 'tcx, T> {
     pub expr: SymValue<'sym, 'tcx, T>,
     pub predicate: PathConditionPredicate<'sym, 'tcx, T>,
@@ -183,9 +183,9 @@ impl<
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PathConditions<'sym, 'tcx, T> {
-    pub atoms: BTreeSet<PathConditionAtom<'sym, 'tcx, T>>,
+    pub atoms: Vec<PathConditionAtom<'sym, 'tcx, T>>,
 }
 
 impl<'sym, 'tcx, T: VisFormat> PathConditions<'sym, 'tcx, T> {
@@ -217,29 +217,29 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditions<'sym, 'tcx, T> {
 
 impl<'sym, 'tcx, T> PathConditions<'sym, 'tcx, T> {
     pub fn new() -> Self {
-        PathConditions {
-            atoms: BTreeSet::new(),
-        }
+        PathConditions { atoms: vec![] }
     }
     pub fn is_empty(&self) -> bool {
         self.atoms.is_empty()
     }
 
-    pub fn iter(&self) -> Iter<'_, PathConditionAtom<'sym, 'tcx, T>> {
+    pub fn iter(&self) -> impl Iterator<Item = &PathConditionAtom<'sym, 'tcx, T>> {
         self.atoms.iter()
     }
 }
 
-impl<'sym, 'tcx, T: Ord> PathConditions<'sym, 'tcx, T> {
+impl<'sym, 'tcx, T: Eq> PathConditions<'sym, 'tcx, T> {
     pub fn insert(&mut self, atom: PathConditionAtom<'sym, 'tcx, T>) {
-        self.atoms.insert(atom);
+        if !self.atoms.contains(&atom) {
+            self.atoms.push(atom);
+        }
     }
 }
 
 impl<
         'sym,
         'tcx,
-        T: Copy + Clone + std::fmt::Debug + Ord + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
+        T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
     > PathConditions<'sym, 'tcx, T>
 {
     pub fn subst<'substs>(
@@ -247,13 +247,15 @@ impl<
         arena: &'sym SymExContext<'tcx>,
         substs: &'substs Substs<'sym, 'tcx, T>,
     ) -> Self {
-        let mut atoms = BTreeSet::new();
-        for atom in &self.atoms {
-            println!("substs!: {:?}", substs);
-            let expr = atom.expr.subst(arena, substs);
-            let predicate = atom.predicate.clone().subst(arena, substs);
-            atoms.insert(PathConditionAtom::new(expr, predicate));
-        }
+        let atoms = self
+            .atoms
+            .into_iter()
+            .map(|atom| {
+                let expr = atom.expr.subst(arena, substs);
+                let predicate = atom.predicate.clone().subst(arena, substs);
+                PathConditionAtom::new(expr, predicate)
+            })
+            .collect();
         PathConditions { atoms }
     }
 }
