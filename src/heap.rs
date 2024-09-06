@@ -37,6 +37,10 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
         self.1
     }
 
+    pub fn data(&self) -> &HeapData<'sym, 'tcx, T> {
+        self.0
+    }
+
     fn repacker(&self) -> PlaceRepacker<'_, 'tcx> {
         PlaceRepacker::new(self.2, self.1)
     }

@@ -32,7 +32,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         terminator: &mir::Terminator<'tcx>,
         paths: &mut Vec<Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>>,
         assertions: &mut ResultAssertions<'sym, 'tcx, S::SymValSynthetic>,
-        path: &mut Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
+        mut path: Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
         fpcs_terminator: FreePcsTerminator<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
         location: &PcsLocation<'mir, 'tcx>,
     ) where
@@ -50,64 +50,59 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 ..
             }
             | mir::TerminatorKind::Goto { target } => {
-                let old_path = path.path.clone();
-                if let Some(mut path) = path.push_if_acyclic(*target) {
-                    self.set_error_context(
-                        old_path.clone(),
-                        ErrorLocation::TerminatorStart(*target),
-                    );
-                    self.handle_pcs(
-                        &mut path,
-                        &fpcs_terminator.succs[0],
-                        true,
-                        location.location,
-                    );
-                    self.set_error_context(old_path, ErrorLocation::TerminatorMid(*target));
-                    self.handle_pcs(
-                        &mut path,
-                        &fpcs_terminator.succs[0],
-                        false,
-                        location.location,
-                    );
-                    if let Some(debug_output_dir) = &self.debug_output_dir {
-                        export_path_json(
-                            &debug_output_dir,
-                            &path,
-                            &fpcs_terminator.succs[0],
-                            StepType::Transition,
-                            self.fpcs_analysis.repacker(),
-                        );
-                    }
-                    paths.push(path);
-                } else {
-                    self.add_loop_path(LoopPath::new(path.path.clone(), *target), path.pcs.clone());
+                if !path.path.can_push(*target) {
+                    // Don't go down a loop a 2nd time; invariant after 1st
+                    // execution presumably has already been asserted
+                    return;
                 }
+                let old_path = path.path.clone();
+                let mut path = path.push(*target);
+                self.set_error_context(old_path.clone(), ErrorLocation::TerminatorStart(*target));
+                self.handle_pcs(
+                    &mut path,
+                    &fpcs_terminator.succs[0],
+                    true,
+                    location.location,
+                );
+                self.set_error_context(old_path, ErrorLocation::TerminatorMid(*target));
+                self.handle_pcs(
+                    &mut path,
+                    &fpcs_terminator.succs[0],
+                    false,
+                    location.location,
+                );
+                if let Some(debug_output_dir) = &self.debug_output_dir {
+                    export_path_json(
+                        &debug_output_dir,
+                        &path,
+                        &fpcs_terminator.succs[0],
+                        StepType::Transition,
+                        self.fpcs_analysis.repacker(),
+                    );
+                }
+                paths.push(path);
             }
             mir::TerminatorKind::SwitchInt { discr, targets } => {
                 let ty = discr.ty(&self.body.local_decls, self.tcx);
                 for ((value, target), _loc) in targets.iter().zip(fpcs_terminator.succs.iter()) {
+                    let mut path = path.push(target);
                     let pred = PathConditionPredicate::Eq(value, ty);
-                    if let Some(mut path) = path.push_if_acyclic(target) {
-                        let mut heap: SymbolicHeap<'_, 'mir, 'sym, 'tcx, S::SymValSynthetic> =
-                            SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
-                        let operand: SymValue<'sym, 'tcx, S::SymValSynthetic> =
-                            self.encode_operand(&mut heap, discr);
-                        path.pcs
-                            .insert(PathConditionAtom::new(operand, pred.clone()));
-                        paths.push(path);
-                    }
-                }
-                if let Some(mut path) = path.push_if_acyclic(targets.otherwise()) {
-                    let pred =
-                        PathConditionPredicate::Ne(targets.iter().map(|t| t.0).collect(), ty);
-                    let mut heap =
-                        SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
-                    path.pcs.insert(PathConditionAtom::new(
-                        self.encode_operand(&mut heap, discr),
-                        pred.clone(),
-                    ));
+                    let mut heap: SymbolicHeap<'_, 'mir, 'sym, 'tcx, S::SymValSynthetic> =
+                        SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
+                    let operand: SymValue<'sym, 'tcx, S::SymValSynthetic> =
+                        self.encode_operand(&mut heap, discr);
+                    path.pcs
+                        .insert(PathConditionAtom::new(operand, pred.clone()));
                     paths.push(path);
                 }
+                let mut path = path.push(targets.otherwise());
+                let pred = PathConditionPredicate::Ne(targets.iter().map(|t| t.0).collect(), ty);
+                let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
+                path.pcs.insert(PathConditionAtom::new(
+                    self.encode_operand(&mut heap, discr),
+                    pred.clone(),
+                ));
+                paths.push(path);
             }
             mir::TerminatorKind::Assert {
                 cond,
@@ -117,14 +112,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             } => {
                 let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
                 let cond = self.encode_operand(&mut heap, cond);
-                assertions.insert((
-                    path.path.clone(),
-                    path.pcs.clone(),
-                    Assertion::Eq(cond, *expected),
-                ));
-                if let Some(path) = path.push_if_acyclic(*target) {
-                    paths.push(path);
-                }
+                assertions.insert(ResultAssertion {
+                    path: path.path.clone(),
+                    pcs: path.pcs.clone(),
+                    assertion: Assertion::Eq(cond, *expected),
+                });
+                paths.push(path.push(*target));
             }
             mir::TerminatorKind::Call {
                 func,
@@ -144,7 +137,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     );
 
                     if let Some(assertion) = effects.precondition_assertion {
-                        assertions.insert((path.path.clone(), path.pcs.clone(), assertion));
+                        assertions.insert(ResultAssertion {
+                            path: path.path.clone(),
+                            pcs: path.pcs.clone(),
+                            assertion,
+                        });
                     }
 
                     match effects.result {
@@ -177,9 +174,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         FunctionCallResult::Never => {}
                     };
                     if let Some(target) = target {
-                        if let Some(path) = path.push_if_acyclic(*target) {
-                            paths.push(path);
-                        }
+                        paths.push(path.push(*target));
                     }
                 }
                 _ => panic!(),
@@ -191,7 +186,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
         match terminator.kind {
             mir::TerminatorKind::Return => {
-                self.add_return_path(path, location);
+                self.complete_path(path, location);
             }
             _ => {}
         }

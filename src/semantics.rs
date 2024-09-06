@@ -17,10 +17,12 @@ use crate::SymbolicExecution;
 pub trait VerifierSemantics<'sym, 'tcx>: std::marker::Sized {
     type SymValSynthetic: Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>;
     type OldMapSymValSynthetic: Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>;
-    fn encode_loop_invariant_assumption<'heap, 'mir: 'heap>(
+
+    /// Symbolic execution calls this function at the condition_valid_block
+    fn encode_loop_invariant<'heap, 'mir: 'heap>(
         def_id: DefId,
-        block: mir::BasicBlock,
-        heap: &mut SymbolicHeap<'heap, 'mir, 'sym, 'tcx, Self::SymValSynthetic>,
+        loop_head: mir::BasicBlock,
+        heap: HeapData<'sym, 'tcx, Self::SymValSynthetic>,
         sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, Self>,
     ) -> Vec<(
         PathConditions<'sym, 'tcx, Self::SymValSynthetic>,

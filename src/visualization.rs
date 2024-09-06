@@ -4,7 +4,7 @@ use pcs::utils::PlaceRepacker;
 use serde_json::json;
 
 use crate::{
-    context::SymExContext, debug_info::DEBUGINFO_NONE, execute::ResultAssertions, path::{AcyclicPath, Path}, pcs_interaction::PcsLocation, results::{ResultAssertion, ResultPaths}, rustc_interface::{
+    context::SymExContext, debug_info::DEBUGINFO_NONE, execute::ResultAssertions, path::{AcyclicPath, Path, SymExPath}, pcs_interaction::PcsLocation, results::{ResultAssertion, ResultPaths}, rustc_interface::{
         ast::Mutability,
         hir::{def_id::DefId, ItemKind, Node},
         middle::{
@@ -141,10 +141,6 @@ pub fn export_path_json<
         .expect("Unable to write file");
 }
 
-fn path_to_vec(path: &AcyclicPath) -> Vec<usize> {
-    path.blocks().iter().map(|&bb| bb.index()).collect()
-}
-
 pub fn export_assertions<'sym, 'tcx, T: VisFormat>(
     debug_output_dir: &str,
     assertions: &ResultAssertions<'sym, 'tcx, T>,
@@ -153,9 +149,9 @@ pub fn export_assertions<'sym, 'tcx, T: VisFormat>(
 ) {
     let assertions_json: Vec<serde_json::Value> = assertions
         .iter()
-        .map(|(path, pcs, assertion)| {
+        .map(|ResultAssertion {path, pcs, assertion }| {
             json!({
-                "path": path_to_vec(path),
+                "path": path.to_index_vec(),
                 "pcs": pcs.to_json(Some(tcx), debug_info),
                 "assertion": assertion.to_vis_string(Some(tcx), debug_info, OutputMode::HTML)
             })

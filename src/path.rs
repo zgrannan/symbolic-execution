@@ -22,6 +22,56 @@ pub enum SymExPath {
 }
 
 impl SymExPath {
+    pub fn contains(&self, block: BasicBlock) -> bool {
+        match self {
+            SymExPath::Acyclic(path) => path.contains(block),
+            SymExPath::Loop(path) => path.contains(block),
+        }
+    }
+
+    pub fn last(&self) -> BasicBlock {
+        match self {
+            SymExPath::Acyclic(path) => path.last(),
+            SymExPath::Loop(path) => path.last(),
+        }
+    }
+
+    pub fn can_push(&self, block: BasicBlock) -> bool {
+        match self {
+            SymExPath::Acyclic(path) => true,
+            SymExPath::Loop(path) => path.can_push(block),
+        }
+    }
+
+    pub fn push(&mut self, block: BasicBlock) {
+        match self {
+            SymExPath::Acyclic(path) => {
+                if path.contains(block) {
+                    *self = SymExPath::Loop(LoopPath::new(path.clone(), block));
+                } else {
+                    path.push(block);
+                }
+            }
+            SymExPath::Loop(path) => {
+                path.push(block);
+            }
+        }
+    }
+
+    pub fn blocks(&self) -> Vec<BasicBlock> {
+        match self {
+            SymExPath::Acyclic(path) => path.to_vec(),
+            SymExPath::Loop(path) => path.blocks(),
+        }
+    }
+
+    pub fn expect_acyclic(&self) -> &AcyclicPath {
+        match self {
+            SymExPath::Acyclic(path) => path,
+            SymExPath::Loop(path) => panic!("Expected acyclic path, got loop {:?}", path),
+        }
+    }
+
     pub fn to_index_vec(&self) -> Vec<usize> {
         match self {
             SymExPath::Acyclic(path) => path.to_index_vec(),
@@ -33,17 +83,43 @@ impl SymExPath {
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct LoopPath {
     init: AcyclicPath,
-    ret: BasicBlock,
+    ret: AcyclicPath,
 }
 
 impl LoopPath {
+
+    pub fn can_push(&self, block: BasicBlock) -> bool {
+        !self.ret.contains(block)
+    }
+
+    pub fn contains(&self, block: BasicBlock) -> bool {
+        self.init.contains(block) || self.ret.contains(block)
+    }
+
+    pub fn last(&self) -> BasicBlock {
+        self.ret.last()
+    }
+
     pub fn new(init: AcyclicPath, ret: BasicBlock) -> Self {
-        Self { init, ret }
+        Self {
+            init,
+            ret: AcyclicPath::new(ret),
+        }
+    }
+
+    pub fn blocks(&self) -> Vec<BasicBlock> {
+        let mut result = self.init.to_vec();
+        result.extend(self.ret.to_vec());
+        result
+    }
+
+    pub fn push(&mut self, block: BasicBlock) {
+        self.ret.push(block);
     }
 
     pub fn to_index_vec(&self) -> Vec<usize> {
         let mut result = self.init.to_index_vec();
-        result.push(self.ret.index());
+        result.extend(self.ret.to_index_vec());
         result
     }
 }
@@ -52,6 +128,10 @@ impl LoopPath {
 pub struct AcyclicPath(Vec<BasicBlock>);
 
 impl AcyclicPath {
+    pub fn to_vec(&self) -> Vec<BasicBlock> {
+        self.0.clone()
+    }
+
     pub fn to_index_vec(&self) -> Vec<usize> {
         self.0.iter().map(|b| b.index()).collect()
     }
@@ -66,6 +146,10 @@ impl AcyclicPath {
 
     pub fn blocks(&self) -> &[BasicBlock] {
         &self.0
+    }
+
+    pub fn new(block: BasicBlock) -> Self {
+        AcyclicPath(vec![block])
     }
 
     pub fn from_start_block() -> Self {
@@ -269,7 +353,7 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> OldMap<'sym, 'tcx, T> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Path<'sym, 'tcx, T, U> {
-    pub path: AcyclicPath,
+    pub path: SymExPath,
     pub pcs: PathConditions<'sym, 'tcx, T>,
     pub heap: HeapData<'sym, 'tcx, T>,
     pub function_call_snapshots: FunctionCallSnapshots<'sym, 'tcx, T>,
@@ -291,7 +375,7 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, U: SyntheticSymValue<'sym, 't
         heap: HeapData<'sym, 'tcx, T>,
     ) -> Self {
         Path {
-            path,
+            path: SymExPath::Acyclic(path),
             pcs,
             heap,
             function_call_snapshots: FunctionCallSnapshots::new(),
@@ -318,12 +402,9 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, U: SyntheticSymValue<'sym, 't
 }
 
 impl<'sym, 'tcx, T: Clone, U: Clone> Path<'sym, 'tcx, T, U> {
-    pub fn push_if_acyclic(&self, block: BasicBlock) -> Option<Path<'sym, 'tcx, T, U>> {
+    pub fn push(&self, block: BasicBlock) -> Path<'sym, 'tcx, T, U> {
         let mut result = self.clone();
-        if result.path.push_if_acyclic(block) {
-            Some(result)
-        } else {
-            None
-        }
+        result.path.push(block);
+        result
     }
 }

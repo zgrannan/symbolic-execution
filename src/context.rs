@@ -1,11 +1,11 @@
-use crate::path::AcyclicPath;
+use crate::path::{AcyclicPath, SymExPath};
 use crate::value::{
     BackwardsFn, CastKind, SymValue, SymValueData, SymValueKind, SymVar, SyntheticSymValue,
 };
 use crate::{
     rustc_interface::{
         ast::Mutability,
-        hir::def_id::{LocalDefId},
+        hir::def_id::LocalDefId,
         middle::{
             mir::{self, BasicBlock, Location},
             ty::{self, TyCtxt},
@@ -25,7 +25,7 @@ pub enum ErrorLocation {
 pub struct ErrorContext {
     pub def_id: LocalDefId,
     pub location: ErrorLocation,
-    pub path: AcyclicPath,
+    pub path: SymExPath,
 }
 
 impl std::fmt::Debug for SymExContext<'_> {
@@ -55,12 +55,12 @@ impl<'tcx> SymExContext<'tcx> {
         self.bump.alloc_slice_copy(t)
     }
 
-    pub fn mk_internal_error<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_internal_error<'sym, T, V>(
         &'sym self,
         err: String,
         ty: ty::Ty<'tcx>,
         ctx: Option<&ErrorContext>,
-    ) -> SymValue<'sym, 'tcx, T> {
+    ) -> SymValue<'sym, 'tcx, T, V> {
         let err = if let Some(ctx) = ctx {
             format!(
                 "{} {:?} {:?} Internal error: {}",
@@ -135,8 +135,10 @@ impl<'tcx> SymExContext<'tcx> {
         val: SymValue<'sym, 'tcx, T, V>,
     ) -> SymValue<'sym, 'tcx, T, V> {
         // TODO: Option to disable this optimization
-        if let SymValueKind::Ref(v, _) = val.kind && kind == mir::ProjectionElem::Deref {
-            return v
+        if let SymValueKind::Ref(v, _) = val.kind
+            && kind == mir::ProjectionElem::Deref
+        {
+            return v;
         }
         self.mk_sym_value(SymValueKind::Projection(kind, val))
     }
@@ -151,7 +153,7 @@ impl<'tcx> SymExContext<'tcx> {
             match &v.kind {
                 SymValueKind::Var(_, ty) if ty.ref_mutability() == Some(mutability) => {
                     return v;
-                },
+                }
                 SymValueKind::Ref(v, _) => {
                     return self.mk_ref(v, mutability);
                 }
@@ -183,6 +185,22 @@ impl<'tcx> SymExContext<'tcx> {
         lhs: SymValue<'sym, 'tcx, T, V>,
         rhs: SymValue<'sym, 'tcx, T, V>,
     ) -> SymValue<'sym, 'tcx, T, V> {
+        match (&lhs.kind, &rhs.kind) {
+            (SymValueKind::Constant(lhs), SymValueKind::Constant(rhs)) => {
+                if lhs.ty() == self.tcx.types.u32 && rhs.ty() == self.tcx.types.u32 {
+                    let lhs_u32 = lhs.as_u32(self.tcx).unwrap();
+                    let rhs_u32 = rhs.as_u32(self.tcx).unwrap();
+                    match bin_op {
+                        mir::BinOp::Lt => {
+                            return self
+                                .mk_constant(Constant::from_bool(self.tcx, lhs_u32 < rhs_u32));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
         self.mk_sym_value(SymValueKind::BinaryOp(ty, bin_op, lhs, rhs))
     }
 

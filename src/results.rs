@@ -89,11 +89,12 @@ impl<'sym, 'tcx, T> ResultPath<'sym, 'tcx, T> {
     }
 }
 
-pub type ResultAssertion<'sym, 'tcx, T> = (
-    AcyclicPath,
-    PathConditions<'sym, 'tcx, T>,
-    Assertion<'sym, 'tcx, T>,
-);
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResultAssertion<'sym, 'tcx, T> {
+    pub path: SymExPath,
+    pub pcs: PathConditions<'sym, 'tcx, T>,
+    pub assertion: Assertion<'sym, 'tcx, T>,
+}
 
 #[derive(Clone, Debug)]
 pub struct SymbolicExecutionResult<'sym, 'tcx, T> {

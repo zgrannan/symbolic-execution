@@ -313,7 +313,7 @@ impl<
                 let transformed_val = val.apply_transformer(arena, transformer);
                 transformer.transform_cast(arena, *kind, transformed_val, *ty)
             }
-            SymValueKind::InternalError(_, _) => todo!(),
+            SymValueKind::InternalError(err, ty) => arena.mk_internal_error(err.clone(), *ty, None),
             SymValueKind::Ref(val, mutability) => {
                 let transformed_val = val.apply_transformer(arena, transformer);
                 transformer.transform_ref(arena, transformed_val, *mutability)
@@ -327,6 +327,12 @@ impl<
 }
 
 impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T, V> {
+    pub fn is_true(&self, tcx: ty::TyCtxt<'tcx>) -> bool {
+        match self {
+            SymValueKind::Constant(c) => c.as_bool(tcx).unwrap_or(false),
+            _ => false,
+        }
+    }
     pub fn ty(&self, tcx: ty::TyCtxt<'tcx>) -> Ty<'tcx> {
         match self {
             SymValueKind::Var(_, ty, ..) => Ty::new(*ty, None),
@@ -526,6 +532,15 @@ impl<'tcx> Constant<'tcx> {
     pub fn as_bool(&self, tcx: ty::TyCtxt<'tcx>) -> Option<bool> {
         if self.ty() == tcx.types.bool {
             self.0.try_to_bool()
+        } else {
+            None
+        }
+    }
+
+    pub fn as_u32(&self, tcx: ty::TyCtxt<'tcx>) -> Option<u32> {
+        if self.ty() == tcx.types.u32 {
+            let scalar_int = self.0.try_to_scalar_int()?;
+            scalar_int.try_to_u32().ok()
         } else {
             None
         }

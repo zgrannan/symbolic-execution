@@ -24,6 +24,7 @@ pub mod transform;
 mod util;
 pub mod value;
 pub mod visualization;
+mod r#loop;
 
 use std::marker::PhantomData;
 
@@ -40,9 +41,9 @@ use crate::{
 };
 use context::{ErrorContext, ErrorLocation, SymExContext};
 use function_call_snapshot::FunctionCallSnapshots;
-use havoc::HavocData;
+use havoc::LoopData;
 use heap::{HeapData, SymbolicHeap};
-use path::{LoopPath, OldMapEncoder};
+use path::{LoopPath, OldMapEncoder, SymExPath};
 use path_conditions::PathConditions;
 use pcs::{
     borrows::{
@@ -100,7 +101,7 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     def_id: LocalDefId,
     pub body: &'mir Body<'tcx>,
     fpcs_analysis: FpcsOutput<'mir, 'tcx>,
-    havoc: HavocData,
+    havoc: LoopData,
     symvars: Vec<ty::Ty<'tcx>>,
     pub arena: &'sym SymExContext<'tcx>,
     debug_output_dir: Option<String>,
@@ -164,7 +165,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             def_id: params.def_id,
             body: params.body,
             fpcs_analysis: params.fpcs_analysis,
-            havoc: HavocData::new(&params.body),
+            havoc: LoopData::new(&params.body),
             verifier_semantics: PhantomData,
             arena: params.arena,
             debug_output_dir: params.debug_output_dir,
@@ -175,7 +176,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
     }
 
-    fn set_error_context(&mut self, path: AcyclicPath, location: ErrorLocation) {
+    fn set_error_context(&mut self, path: SymExPath, location: ErrorLocation) {
         self.err_ctx = Some(ErrorContext {
             def_id: self.def_id,
             location,
@@ -316,7 +317,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn compute_backwards_facts(
         &mut self,
-        path: &Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
+        path: &AcyclicPath,
+        heap_data: &HeapData<'sym, 'tcx, S::SymValSynthetic>,
+        function_call_snapshots: FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
     ) -> BackwardsFacts<'sym, 'tcx, S::SymValSynthetic> {
         let return_place: mir::Place<'tcx> = mir::RETURN_PLACE.into();
@@ -324,14 +327,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let mut facts = BackwardsFacts::new();
         if return_place.is_mut_ref(self.body, self.tcx) {
             let mut borrow_state = pcs.extra.after.clone();
-            borrow_state.filter_for_path(&path.path.to_slice());
+            borrow_state.filter_for_path(path.blocks());
             for arg in 1..=self.body.arg_count {
                 let local = Local::from_usize(arg);
                 let arg_place: mir::Place<'tcx> = local.into();
                 let arg_place: Place<'tcx> = arg_place.into();
                 if arg_place.is_mut_ref(self.body, self.tcx) {
                     let blocked_place = arg_place.project_deref(self.repacker());
-                    let mut heap = path.heap.clone();
+                    let mut heap = heap_data.clone();
                     let mut heap = SymbolicHeap::new(&mut heap, self.tcx, self.body, &self.arena);
                     heap.insert(
                         return_place.project_deref(self.repacker()),
@@ -350,7 +353,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     self.apply_unblock_actions(
                         actions,
                         &mut heap,
-                        &path.function_call_snapshots,
+                        &function_call_snapshots,
                         pcs.location,
                     );
                     facts.insert(
@@ -370,23 +373,50 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         self.result_paths.insert(ResultPath::loop_path(path, pcs));
     }
 
+    fn complete_path(
+        &mut self,
+        path: Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
+        pcs_loc: &PcsLocation<'mir, 'tcx>,
+    ) where
+        S::SymValSynthetic: Eq,
+    {
+        match path.path {
+            SymExPath::Loop(loop_path) => {
+                self.add_loop_path(loop_path, path.pcs);
+            }
+            SymExPath::Acyclic(acyclic_path) => {
+                self.add_return_path(
+                    acyclic_path,
+                    path.heap,
+                    path.pcs,
+                    path.function_call_snapshots,
+                    pcs_loc,
+                );
+            }
+        }
+    }
+
     fn add_return_path(
         &mut self,
-        path: &mut Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
-        pcs: &PcsLocation<'mir, 'tcx>,
+        path: AcyclicPath,
+        mut heap_data: HeapData<'sym, 'tcx, S::SymValSynthetic>,
+        path_conditions: PathConditions<'sym, 'tcx, S::SymValSynthetic>,
+        function_call_snapshots: FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
+        pcs_loc: &PcsLocation<'mir, 'tcx>,
     ) where
         S::SymValSynthetic: Eq,
     {
         let return_place: Place<'tcx> = mir::RETURN_PLACE.into();
-        let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
+        let mut heap = SymbolicHeap::new(&mut heap_data, self.tcx, self.body, &self.arena);
         let expr = self.encode_maybe_old_place::<LookupGet, _>(&mut heap, &return_place);
-        let backwards_facts = self.compute_backwards_facts(path, pcs);
+        let backwards_facts =
+            self.compute_backwards_facts(&path, &heap_data, function_call_snapshots, pcs_loc);
         self.result_paths.insert(ResultPath::return_path(
-            path.path.clone(),
-            path.pcs.clone(),
+            path,
+            path_conditions,
             expr,
             backwards_facts,
-            path.heap.clone(),
+            heap_data,
         ));
     }
 

@@ -1,4 +1,7 @@
-use crate::{path::Path, rustc_interface::middle::mir::Location};
+use crate::{
+    path::{Path, SymExPath},
+    rustc_interface::middle::mir::Location,
+};
 
 use pcs::{
     borrows::{
@@ -34,7 +37,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             pcs.extra_middle.clone()
         };
         let (ug_actions, added_reborrows, reborrow_expands) = if let Some(mut bridge) = bridge {
-            bridge.ug.filter_for_path(path.path.to_slice());
+            bridge.ug.filter_for_path(&path.path.blocks());
             (
                 bridge.ug.actions(self.repacker()),
                 bridge.added_reborrows,
@@ -115,7 +118,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &self,
         expands: Vec<DerefExpansion<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        path: &AcyclicPath,
+        path: &SymExPath,
         location: Location,
         latest: &Latest<'tcx>,
     ) {
@@ -147,7 +150,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &self,
         reborrows: &[Reborrow<'tcx>],
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        path: &AcyclicPath,
+        path: &SymExPath,
     ) {
         for reborrow in reborrows {
             if !path.contains(reborrow.reserve_location().block) {

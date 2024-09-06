@@ -226,6 +226,14 @@ impl<'sym, 'tcx, T> PathConditions<'sym, 'tcx, T> {
     pub fn iter(&self) -> impl Iterator<Item = &PathConditionAtom<'sym, 'tcx, T>> {
         self.atoms.iter()
     }
+
+    pub fn singleton(atom: PathConditionAtom<'sym, 'tcx, T>) -> Self {
+        PathConditions { atoms: vec![atom] }
+    }
+
+    pub fn extend(&mut self, other: Self) {
+        self.atoms.extend(other.atoms);
+    }
 }
 
 impl<'sym, 'tcx, T: Eq> PathConditions<'sym, 'tcx, T> {
