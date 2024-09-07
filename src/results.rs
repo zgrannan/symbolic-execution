@@ -100,7 +100,7 @@ pub struct ResultAssertion<'sym, 'tcx, T> {
 pub struct SymbolicExecutionResult<'sym, 'tcx, T> {
     pub paths: ResultPaths<'sym, 'tcx, T>,
     pub assertions: ResultAssertions<'sym, 'tcx, T>,
-    pub symvars: Vec<ty::Ty<'tcx>>,
+    pub fresh_symvars: Vec<ty::Ty<'tcx>>,
 }
 
 #[derive(Clone, Debug)]

@@ -155,7 +155,8 @@ impl<
 
 #[derive(Copy, Clone, Debug, Hash, Ord, PartialOrd, Eq, PartialEq)]
 pub enum SymVar {
-    Normal(usize),
+    Input(mir::Local),
+    Fresh(usize),
 
     /// The final `result` value that is applied to a backwards function
     /// For a function that returns an `&mut T`, this should be of type `T`
@@ -167,19 +168,25 @@ fn format_as_sym(value: impl std::fmt::Display, output_mode: OutputMode) -> Stri
 }
 
 impl SymVar {
+
+    pub fn nth_input(n: usize) -> Self {
+        SymVar::Input(mir::Local::from_usize(n + 1))
+    }
+
     pub fn to_string(&self, debug_info: &[VarDebugInfo], output_mode: OutputMode) -> String {
         match self {
-            SymVar::Normal(idx) => {
+            SymVar::Input(local) => {
                 let info = debug_info.iter().find(|d| {
                     d.argument_index
-                        .map_or(false, |arg_idx| arg_idx == (*idx + 1) as u16)
+                        .map_or(false, |arg_idx| arg_idx == local.as_usize() as u16)
                 });
                 if let Some(info) = info {
                     format_as_sym(info.name, output_mode)
                 } else {
-                    format_as_sym(idx, output_mode)
+                    format_as_sym(format!("{:?}", local), output_mode)
                 }
             }
+            SymVar::Fresh(idx) => format_as_sym(idx, output_mode),
             SymVar::ReservedBackwardsFnResult => format_as_sym("result", output_mode),
         }
     }
@@ -212,34 +219,18 @@ pub enum SymValueKind<'sym, 'tcx, T, V = SymVar> {
     BackwardsFn(BackwardsFn<'sym, 'tcx, T, V>),
 }
 
-pub trait ToSymVar {
-    fn to_symvar(self) -> SymVar;
-}
-
-impl ToSymVar for SymVar {
-    fn to_symvar(self) -> SymVar {
-        self
-    }
-}
-
-impl ToSymVar for usize {
-    fn to_symvar(self) -> SymVar {
-        SymVar::Normal(self)
-    }
-}
-
 #[derive(Debug)]
 pub struct Substs<'sym, 'tcx, T>(BTreeMap<SymVar, SymValue<'sym, 'tcx, T>>);
 
 impl<'sym, 'tcx, T> Substs<'sym, 'tcx, T> {
-    pub fn from_iter(iter: impl Iterator<Item = (impl ToSymVar, SymValue<'sym, 'tcx, T>)>) -> Self {
-        Substs(iter.map(|(k, v)| (k.to_symvar(), v)).collect())
+    pub fn from_iter(iter: impl Iterator<Item = (SymVar, SymValue<'sym, 'tcx, T>)>) -> Self {
+        Substs(iter.collect())
     }
     pub fn get(&self, idx: &SymVar) -> Option<SymValue<'sym, 'tcx, T>> {
         self.0.get(idx).copied()
     }
-    pub fn singleton(idx: impl ToSymVar, val: SymValue<'sym, 'tcx, T>) -> Self {
-        Substs(std::iter::once((idx.to_symvar(), val)).collect())
+    pub fn singleton(idx: SymVar, val: SymValue<'sym, 'tcx, T>) -> Self {
+        Substs(std::iter::once((idx, val)).collect())
     }
 }
 

@@ -173,13 +173,13 @@ impl<'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>> HeapData<'s
         arena: &'sym SymExContext<'tcx>,
         tcx: TyCtxt<'tcx>,
         body: &mir::Body<'tcx>,
-    ) -> (HeapData<'sym, 'tcx, T>, Vec<ty::Ty<'tcx>>) {
+    ) -> HeapData<'sym, 'tcx, T> {
         let mut heap_data = HeapData::new();
         let mut heap = SymbolicHeap::new(&mut heap_data, tcx, body, arena);
         let mut sym_vars = Vec::new();
-        for (idx, arg) in body.args_iter().enumerate() {
+        for arg in body.args_iter() {
             let local = &body.local_decls[arg];
-            let sym_var = arena.mk_var(SymVar::Normal(idx), local.ty);
+            let sym_var = arena.mk_var(SymVar::Input(arg), local.ty);
             sym_vars.push(local.ty);
             let place = Place::new(arg, &[]);
             add_debug_note!(
@@ -190,7 +190,7 @@ impl<'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>> HeapData<'s
             );
             heap.insert(place, sym_var, Location::START);
         }
-        (heap_data, sym_vars)
+        heap_data
     }
 }
 

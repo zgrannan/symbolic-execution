@@ -11,6 +11,7 @@ mod execute;
 mod function_call_snapshot;
 pub mod havoc;
 pub mod heap;
+mod r#loop;
 pub mod path;
 pub mod path_conditions;
 mod pcs_interaction;
@@ -24,7 +25,6 @@ pub mod transform;
 mod util;
 pub mod value;
 pub mod visualization;
-mod r#loop;
 
 use std::marker::PhantomData;
 
@@ -102,7 +102,7 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     pub body: &'mir Body<'tcx>,
     fpcs_analysis: FpcsOutput<'mir, 'tcx>,
     havoc: LoopData,
-    symvars: Vec<ty::Ty<'tcx>>,
+    fresh_symvars: Vec<ty::Ty<'tcx>>,
     pub arena: &'sym SymExContext<'tcx>,
     debug_output_dir: Option<String>,
     err_ctx: Option<ErrorContext>,
@@ -170,7 +170,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             arena: params.arena,
             debug_output_dir: params.debug_output_dir,
             err_ctx: None,
-            symvars: vec![],
+            fresh_symvars: vec![],
             result_paths: ResultPaths::new(),
             debug_paths: vec![],
         }
@@ -452,8 +452,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn mk_fresh_symvar(&mut self, ty: ty::Ty<'tcx>) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
         assert!(self.new_symvars_allowed);
-        let var = SymVar::Normal(self.symvars.len());
-        self.symvars.push(ty);
+        let var = SymVar::Fresh(self.fresh_symvars.len());
+        self.fresh_symvars.push(ty);
         self.arena.mk_var(var, ty)
     }
 
@@ -613,6 +613,6 @@ pub fn run_symbolic_execution<
 where
     S::SymValSynthetic: Eq,
 {
-    let (heap_data, symvars) = HeapData::init_for_body(params.arena, params.tcx, params.body);
-    SymbolicExecution::new(params).execute(heap_data, symvars)
+    let heap_data = HeapData::init_for_body(params.arena, params.tcx, params.body);
+    SymbolicExecution::new(params).execute(heap_data)
 }

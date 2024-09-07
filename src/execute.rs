@@ -42,12 +42,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     pub fn execute(
         mut self,
         heap_data: HeapData<'sym, 'tcx, S::SymValSynthetic>,
-        symvars: Vec<ty::Ty<'tcx>>,
     ) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic>
     where
         S::SymValSynthetic: Eq,
     {
-        self.symvars = symvars;
         let mut assertions: ResultAssertions<'sym, 'tcx, S::SymValSynthetic> =
             ResultAssertions::new();
         let mut paths = vec![Path::new(
@@ -106,7 +104,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         SymbolicExecutionResult {
             paths: self.result_paths,
             assertions,
-            symvars: self.symvars.clone(),
+            fresh_symvars: self.fresh_symvars.clone(),
         }
     }
 }
