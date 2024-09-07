@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::heap::{HeapData, SymbolicHeap};
-use crate::path::OldMap;
+use crate::path::{OldMap, Path};
 use crate::path_conditions::PathConditions;
 use crate::rustc_interface::{
     hir::def_id::DefId,
@@ -20,9 +20,8 @@ pub trait VerifierSemantics<'sym, 'tcx>: std::marker::Sized {
 
     /// Symbolic execution calls this function at the condition_valid_block
     fn encode_loop_invariant<'heap, 'mir: 'heap>(
-        def_id: DefId,
         loop_head: mir::BasicBlock,
-        heap: HeapData<'sym, 'tcx, Self::SymValSynthetic>,
+        path: Path<'sym, 'tcx, Self::SymValSynthetic, Self::OldMapSymValSynthetic>,
         sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, Self>,
     ) -> Vec<(
         PathConditions<'sym, 'tcx, Self::SymValSynthetic>,

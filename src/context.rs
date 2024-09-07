@@ -106,11 +106,11 @@ impl<'tcx> SymExContext<'tcx> {
         self.mk_sym_value(SymValueKind::Cast(kind, val, ty))
     }
 
-    pub fn mk_var<'sym, T: SyntheticSymValue<'sym, 'tcx>>(
+    pub fn mk_var<'sym, T, V>(
         &'sym self,
-        var: SymVar,
+        var: V,
         ty: ty::Ty<'tcx>,
-    ) -> SymValue<'sym, 'tcx, T> {
+    ) -> SymValue<'sym, 'tcx, T, V> {
         self.mk_sym_value(SymValueKind::Var(var, ty))
     }
 
@@ -129,11 +129,15 @@ impl<'tcx> SymExContext<'tcx> {
         self.mk_sym_value(SymValueKind::BackwardsFn(backwards_fn))
     }
 
-    pub fn mk_projection<'sym, T, V>(
+    pub fn mk_projection<'sym, T: SyntheticSymValue<'sym, 'tcx>, V>(
         &'sym self,
         kind: mir::ProjectionElem<mir::Local, ty::Ty<'tcx>>,
         val: SymValue<'sym, 'tcx, T, V>,
     ) -> SymValue<'sym, 'tcx, T, V> {
+        // if kind == mir::ProjectionElem::Deref {
+        //     let ty = val.kind.ty(self.tcx).rust_ty();
+        //     assert!(ty.is_box() || ty.is_ref(), "Deref on non-pointer: {:?}", ty);
+        // }
         // TODO: Option to disable this optimization
         if let SymValueKind::Ref(v, _) = val.kind
             && kind == mir::ProjectionElem::Deref

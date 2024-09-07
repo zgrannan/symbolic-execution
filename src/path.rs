@@ -87,7 +87,6 @@ pub struct LoopPath {
 }
 
 impl LoopPath {
-
     pub fn can_push(&self, block: BasicBlock) -> bool {
         !self.ret.contains(block)
     }
@@ -194,6 +193,10 @@ impl AcyclicPath {
 pub struct InputPlace<'tcx>(Place<'tcx>);
 
 impl<'tcx> InputPlace<'tcx> {
+    pub fn new(place: Place<'tcx>) -> Self {
+        Self(place)
+    }
+
     pub fn local(&self) -> mir::Local {
         self.0.local()
     }
@@ -204,49 +207,6 @@ impl<'tcx> InputPlace<'tcx> {
 }
 
 pub type StructureTerm<'sym, 'tcx, T> = SymValue<'sym, 'tcx, T, InputPlace<'tcx>>;
-
-struct Transformer<'mir, 'tcx>(&'mir Body<'tcx>);
-impl<'mir, 'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>>
-    SymValueTransformer<'sym, 'tcx, T, InputPlace<'tcx>, value::SymVar>
-    for Transformer<'mir, 'tcx>
-{
-    fn transform_var(
-        &mut self,
-        arena: &'sym SymExContext<'tcx>,
-        var: InputPlace<'tcx>,
-        _ty: ty::Ty<'tcx>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        let sym_var = arena.mk_var(
-            value::SymVar::Normal(var.0.local().as_usize() - 1),
-            self.0.local_decls[var.0.local()].ty,
-        );
-        var.0
-            .projection()
-            .iter()
-            .fold(sym_var, |p, elem| arena.mk_projection(*elem, p))
-    }
-
-    fn transform_synthetic(
-        &mut self,
-        _arena: &'sym SymExContext<'tcx>,
-        _s: T,
-    ) -> SymValue<'sym, 'tcx, T> {
-        todo!()
-    }
-}
-
-impl<'sym, 'tcx, T: Copy + Clone + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug>
-    SymValueData<'sym, 'tcx, T, InputPlace<'tcx>>
-{
-    pub fn to_sym_value<'mir>(
-        &'sym self,
-        body: &'mir Body<'tcx>,
-        arena: &'sym SymExContext<'tcx>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        let mut transformer = Transformer(body);
-        self.apply_transformer(arena, &mut transformer)
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OldMap<'sym, 'tcx, T>(HashMap<Place<'tcx>, StructureTerm<'sym, 'tcx, T>>);

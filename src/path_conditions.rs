@@ -2,7 +2,9 @@ use std::collections::{btree_set::Iter, BTreeSet, HashSet};
 
 use serde_json::Value;
 
-use crate::{value::CanSubst, visualization::OutputMode, VisFormat};
+use crate::{
+    transform::SymValueTransformer, value::CanSubst, visualization::OutputMode, VisFormat,
+};
 
 use super::{
     value::{Substs, SymValue, SyntheticSymValue},
@@ -45,6 +47,39 @@ impl<
         T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
     > PathConditionPredicate<'sym, 'tcx, T>
 {
+    pub fn apply_transformer(
+        self,
+        arena: &'sym SymExContext<'tcx>,
+        transformer: &mut impl SymValueTransformer<'sym, 'tcx, T>,
+    ) -> Self {
+        match self {
+            PathConditionPredicate::Eq(..) | PathConditionPredicate::Ne(..) => self,
+            PathConditionPredicate::Postcondition {
+                def_id,
+                substs: s,
+                pre_values,
+                post_values,
+            } => PathConditionPredicate::Postcondition {
+                def_id,
+                substs: s,
+                pre_values: arena.alloc_slice(
+                    &pre_values
+                        .iter()
+                        .map(|value| value.apply_transformer(arena, transformer))
+                        .collect::<Vec<_>>(),
+                ),
+                post_values: arena.alloc_slice(
+                    &post_values
+                        .iter()
+                        .map(|value| value.apply_transformer(arena, transformer))
+                        .collect::<Vec<_>>(),
+                ),
+            },
+            PathConditionPredicate::ImpliedBy(pc) => PathConditionPredicate::ImpliedBy(Box::new(
+                pc.apply_transformer(arena, transformer),
+            )),
+        }
+    }
     pub fn subst<'substs>(
         self,
         arena: &'sym SymExContext<'tcx>,
@@ -250,6 +285,22 @@ impl<
         T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
     > PathConditions<'sym, 'tcx, T>
 {
+    pub fn apply_transformer(
+        self,
+        arena: &'sym SymExContext<'tcx>,
+        transformer: &mut impl SymValueTransformer<'sym, 'tcx, T>,
+    ) -> Self {
+        let atoms = self
+            .atoms
+            .into_iter()
+            .map(|atom| {
+                let expr = atom.expr.apply_transformer(arena, transformer);
+                let predicate = atom.predicate.apply_transformer(arena, transformer);
+                PathConditionAtom::new(expr, predicate)
+            })
+            .collect();
+        PathConditions { atoms }
+    }
     pub fn subst<'substs>(
         self,
         arena: &'sym SymExContext<'tcx>,
@@ -260,7 +311,7 @@ impl<
             .into_iter()
             .map(|atom| {
                 let expr = atom.expr.subst(arena, substs);
-                let predicate = atom.predicate.clone().subst(arena, substs);
+                let predicate = atom.predicate.subst(arena, substs);
                 PathConditionAtom::new(expr, predicate)
             })
             .collect();

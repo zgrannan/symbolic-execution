@@ -101,14 +101,16 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {
             let fpcs_loc = &pcs_block.statements[stmt_idx];
             self.handle_stmt(&pcs_block, path, stmt, stmt_idx);
-            if let Some(debug_output_dir) = &self.debug_output_dir {
-                export_path_json(
-                    &debug_output_dir,
-                    &path,
-                    fpcs_loc,
-                    StepType::Instruction(stmt_idx),
-                    self.fpcs_analysis.repacker(),
-                );
+            if output_debug_json {
+                if let Some(debug_output_dir) = &self.debug_output_dir {
+                    export_path_json(
+                        &debug_output_dir,
+                        &path,
+                        fpcs_loc,
+                        StepType::Instruction(stmt_idx),
+                        self.fpcs_analysis.repacker(),
+                    );
+                }
             }
         }
     }

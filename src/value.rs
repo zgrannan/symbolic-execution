@@ -10,7 +10,9 @@ use crate::rustc_interface::{
     span::def_id::DefId,
     target::abi::VariantIdx,
 };
-use crate::transform::SymValueTransformer;
+use crate::transform::{
+    BaseSymValueTransformer, SymValueTransformer, SyntheticSymValueTransformer,
+};
 use crate::visualization::OutputMode;
 
 use std::{
@@ -132,6 +134,7 @@ impl<
     ) -> BackwardsFn<'sym, 'tcx, TT, U>
     where
         F: SymValueTransformer<'sym, 'tcx, T, V, U, TT>,
+        TT: SyntheticSymValue<'sym, 'tcx>,
     {
         BackwardsFn {
             def_id: self.def_id,
@@ -265,6 +268,7 @@ impl<
     ) -> SymValue<'sym, 'tcx, TT, U>
     where
         F: SymValueTransformer<'sym, 'tcx, T, V, U, TT>,
+        TT: SyntheticSymValue<'sym, 'tcx>,
     {
         match &self.kind {
             SymValueKind::Var(var, ty) => transformer.transform_var(arena, *var, *ty),
@@ -432,6 +436,30 @@ impl<
         T: SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx> + std::fmt::Debug,
     > SymValueTransformer<'sym, 'tcx, T> for SubstsTransformer<'substs, 'sym, 'tcx, T>
 {
+}
+
+impl<
+        'substs,
+        'sym,
+        'tcx,
+        T: SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx> + std::fmt::Debug,
+    > SyntheticSymValueTransformer<'sym, 'tcx, T> for SubstsTransformer<'substs, 'sym, 'tcx, T>
+{
+    fn transform_synthetic(
+        &mut self,
+        arena: &'sym SymExContext<'tcx>,
+        s: T,
+    ) -> SymValue<'sym, 'tcx, T> {
+        arena.mk_synthetic(s.subst(arena, self.0, self.1))
+    }
+}
+impl<
+        'substs,
+        'sym,
+        'tcx,
+        T: SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx> + std::fmt::Debug,
+    > BaseSymValueTransformer<'sym, 'tcx, T> for SubstsTransformer<'substs, 'sym, 'tcx, T>
+{
     fn transform_var(
         &mut self,
         arena: &'sym SymExContext<'tcx>,
@@ -454,14 +482,6 @@ impl<
             arena.mk_var(var, ty)
         }
     }
-
-    fn transform_synthetic(
-        &mut self,
-        arena: &'sym SymExContext<'tcx>,
-        s: T,
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_synthetic(s.subst(arena, self.0, self.1))
-    }
 }
 
 impl<
@@ -479,39 +499,39 @@ impl<
     }
 }
 
-struct OptimizingTransformer<'tcx>(ty::TyCtxt<'tcx>);
+// struct OptimizingTransformer<'tcx>(ty::TyCtxt<'tcx>);
 
-impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx>> SymValueTransformer<'sym, 'tcx, T>
-    for OptimizingTransformer<'tcx>
-{
-    fn transform_var(
-        &mut self,
-        arena: &'sym SymExContext<'tcx>,
-        var: SymVar,
-        ty: ty::Ty<'tcx>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_var(var, ty)
-    }
-    fn transform_synthetic(
-        &mut self,
-        arena: &'sym SymExContext<'tcx>,
-        s: T,
-    ) -> SymValue<'sym, 'tcx, T> {
-        arena.mk_synthetic(s.optimize(arena, self.0))
-    }
-}
+// impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx>> SymValueTransformer<'sym, 'tcx, T>
+//     for OptimizingTransformer<'tcx>
+// {
+//     fn transform_var(
+//         &mut self,
+//         arena: &'sym SymExContext<'tcx>,
+//         var: SymVar,
+//         ty: ty::Ty<'tcx>,
+//     ) -> SymValue<'sym, 'tcx, T> {
+//         arena.mk_var(var, ty)
+//     }
+//     fn transform_synthetic(
+//         &mut self,
+//         arena: &'sym SymExContext<'tcx>,
+//         s: T,
+//     ) -> SymValue<'sym, 'tcx, T> {
+//         arena.mk_synthetic(s.optimize(arena, self.0))
+//     }
+// }
 
-impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug>
-    SymValueData<'sym, 'tcx, T>
-{
-    pub fn optimize(
-        &'sym self,
-        arena: &'sym SymExContext<'tcx>,
-        tcx: ty::TyCtxt<'tcx>,
-    ) -> SymValue<'sym, 'tcx, T> {
-        self.apply_transformer(arena, &mut OptimizingTransformer(tcx))
-    }
-}
+// impl<'sym, 'tcx, T: Clone + Copy + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug>
+//     SymValueData<'sym, 'tcx, T>
+// {
+//     pub fn optimize(
+//         &'sym self,
+//         arena: &'sym SymExContext<'tcx>,
+//         tcx: ty::TyCtxt<'tcx>,
+//     ) -> SymValue<'sym, 'tcx, T> {
+//         self.apply_transformer(arena, &mut OptimizingTransformer(tcx))
+//     }
+// }
 
 impl<'tcx> From<&Box<mir::Const<'tcx>>> for Constant<'tcx> {
     fn from(c: &Box<mir::Const<'tcx>>) -> Self {

@@ -33,9 +33,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         S::SymValSynthetic: Eq,
     {
         for (path_conditions, assertion) in S::encode_loop_invariant(
-            self.def_id.into(),
             invariant_info.loop_head,
-            path.heap.clone(),
+            path.clone(),
             self,
         ) {
             let mut pcs = path.pcs.clone();
@@ -91,9 +90,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
 
         for (path_conditions, assertion) in S::encode_loop_invariant(
-            self.def_id.into(),
             invariant_info.loop_head,
-            path.heap.clone(),
+            path.clone(),
             self,
         ) {
             path.pcs.insert(PathConditionAtom {

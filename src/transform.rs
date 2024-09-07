@@ -1,5 +1,5 @@
-use crate::value::BackwardsFn;
-use crate::{context::SymExContext};
+use crate::context::SymExContext;
+use crate::value::{BackwardsFn, SyntheticSymValue};
 use crate::{
     rustc_interface::{
         ast::Mutability,
@@ -11,7 +11,21 @@ use crate::{
     value::{AggregateKind, CastKind, Constant, SymValue, SymVar},
 };
 
-pub trait SymValueTransformer<'sym, 'tcx, T, V = SymVar, U = SymVar, TT = T> {
+pub trait SymValueTransformer<'sym, 'tcx, T, V = SymVar, U = SymVar, TT = T>:
+    BaseSymValueTransformer<'sym, 'tcx, T, V, U, TT>
+    + SyntheticSymValueTransformer<'sym, 'tcx, T, U, TT>
+{
+}
+
+pub trait SyntheticSymValueTransformer<'sym, 'tcx, T, U = SymVar, TT = T> {
+    fn transform_synthetic(
+        &mut self,
+        arena: &'sym SymExContext<'tcx>,
+        s: T,
+    ) -> SymValue<'sym, 'tcx, TT, U>;
+}
+
+pub trait BaseSymValueTransformer<'sym, 'tcx, T, V = SymVar, U = SymVar, TT = T> {
     fn transform_var(
         &mut self,
         arena: &'sym SymExContext<'tcx>,
@@ -60,7 +74,10 @@ pub trait SymValueTransformer<'sym, 'tcx, T, V = SymVar, U = SymVar, TT = T> {
         arena: &'sym SymExContext<'tcx>,
         elem: ProjectionElem<mir::Local, ty::Ty<'tcx>>,
         val: SymValue<'sym, 'tcx, TT, U>,
-    ) -> SymValue<'sym, 'tcx, TT, U> {
+    ) -> SymValue<'sym, 'tcx, TT, U>
+    where
+        TT: SyntheticSymValue<'sym, 'tcx>,
+    {
         arena.mk_projection(elem, val)
     }
     fn transform_aggregate(
@@ -95,12 +112,6 @@ pub trait SymValueTransformer<'sym, 'tcx, T, V = SymVar, U = SymVar, TT = T> {
     ) -> SymValue<'sym, 'tcx, TT, U> {
         arena.mk_ref(val, mutability)
     }
-
-    fn transform_synthetic(
-        &mut self,
-        arena: &'sym SymExContext<'tcx>,
-        s: T,
-    ) -> SymValue<'sym, 'tcx, TT, U>;
 
     fn transform_backwards_fn(
         &mut self,
