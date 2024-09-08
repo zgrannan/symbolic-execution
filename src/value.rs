@@ -10,9 +10,7 @@ use crate::rustc_interface::{
     span::def_id::DefId,
     target::abi::VariantIdx,
 };
-use crate::transform::{
-    BaseSymValueTransformer, SymValueTransformer, SyntheticSymValueTransformer,
-};
+use crate::transform::{BaseSymValueTransformer, SymValueTransformer};
 use crate::visualization::OutputMode;
 
 use std::{
@@ -168,7 +166,6 @@ fn format_as_sym(value: impl std::fmt::Display, output_mode: OutputMode) -> Stri
 }
 
 impl SymVar {
-
     pub fn nth_input(n: usize) -> Self {
         SymVar::Input(mir::Local::from_usize(n + 1))
     }
@@ -427,15 +424,6 @@ impl<
         T: SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx> + std::fmt::Debug,
     > SymValueTransformer<'sym, 'tcx, T> for SubstsTransformer<'substs, 'sym, 'tcx, T>
 {
-}
-
-impl<
-        'substs,
-        'sym,
-        'tcx,
-        T: SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx> + std::fmt::Debug,
-    > SyntheticSymValueTransformer<'sym, 'tcx, T> for SubstsTransformer<'substs, 'sym, 'tcx, T>
-{
     fn transform_synthetic(
         &mut self,
         arena: &'sym SymExContext<'tcx>,
@@ -444,6 +432,7 @@ impl<
         arena.mk_synthetic(s.subst(arena, self.0, self.1))
     }
 }
+
 impl<
         'substs,
         'sym,

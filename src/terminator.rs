@@ -23,6 +23,7 @@ use crate::rustc_interface::middle::{
     mir::{self, Location, Operand},
     ty::{self, GenericArgsRef},
 };
+use crate::rustc_interface::span::Span;
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
@@ -134,6 +135,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         &mut path.old_map,
                         &args.iter().map(|arg| &arg.node).collect(),
                         location.location,
+                        terminator.source_info.span,
                     );
 
                     if let Some(assertion) = effects.precondition_assertion {
@@ -200,13 +202,20 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         old_map: &mut OldMap<'sym, 'tcx, S::OldMapSymValSynthetic>,
         args: &Vec<&Operand<'tcx>>,
         location: Location,
+        span: Span,
     ) -> FunctionCallEffects<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>
     where
         'mir: 'heap,
     {
-        if let Some(result) =
-            S::encode_fn_call(location, self, def_id, substs, heap.0, old_map, args)
-        {
+        if let Some(result) = S::encode_fn_call(
+            span,
+            self,
+            def_id,
+            substs,
+            heap.0,
+            old_map,
+            args,
+        ) {
             return result;
         }
         let function_type = FunctionType::new(self.tcx, def_id);

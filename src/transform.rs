@@ -13,18 +13,13 @@ use crate::{
 
 pub trait SymValueTransformer<'sym, 'tcx, T, V = SymVar, U = SymVar, TT = T>:
     BaseSymValueTransformer<'sym, 'tcx, T, V, U, TT>
-    + SyntheticSymValueTransformer<'sym, 'tcx, T, U, TT>
 {
-}
-
-pub trait SyntheticSymValueTransformer<'sym, 'tcx, T, U = SymVar, TT = T> {
     fn transform_synthetic(
         &mut self,
         arena: &'sym SymExContext<'tcx>,
         s: T,
     ) -> SymValue<'sym, 'tcx, TT, U>;
 }
-
 pub trait BaseSymValueTransformer<'sym, 'tcx, T, V = SymVar, U = SymVar, TT = T> {
     fn transform_var(
         &mut self,

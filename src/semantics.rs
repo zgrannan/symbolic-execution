@@ -4,11 +4,12 @@ use crate::heap::{HeapData, SymbolicHeap};
 use crate::path::{OldMap, Path};
 use crate::path_conditions::PathConditions;
 use crate::rustc_interface::{
-    hir::def_id::DefId,
+    hir::def_id::{DefId, LocalDefId},
     middle::{
         mir::{self, Operand},
         ty::GenericArgsRef,
     },
+    span::Span,
 };
 use crate::terminator::FunctionCallEffects;
 use crate::value::{SymValue, SyntheticSymValue};
@@ -28,7 +29,7 @@ pub trait VerifierSemantics<'sym, 'tcx>: std::marker::Sized {
         SymValue<'sym, 'tcx, Self::SymValSynthetic>,
     )>;
     fn encode_fn_call<'mir>(
-        location: mir::Location,
+        span: Span,
         sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, Self>,
         def_id: DefId,
         substs: GenericArgsRef<'tcx>,
