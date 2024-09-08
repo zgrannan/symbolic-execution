@@ -33,6 +33,7 @@ fn get_successor<'tcx>(terminator: &Terminator<'tcx>) -> Option<BasicBlock> {
             unwind,
         } => Some(real_target),
         TerminatorKind::InlineAsm { .. } => todo!(),
+        _ => todo!(),
     }
 }
 
