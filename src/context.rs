@@ -208,16 +208,6 @@ impl<'tcx> SymExContext<'tcx> {
         self.mk_sym_value(SymValueKind::BinaryOp(ty, bin_op, lhs, rhs))
     }
 
-    pub fn mk_checked_bin_op<'sym, T, V>(
-        &'sym self,
-        ty: ty::Ty<'tcx>,
-        bin_op: mir::BinOp,
-        lhs: SymValue<'sym, 'tcx, T, V>,
-        rhs: SymValue<'sym, 'tcx, T, V>,
-    ) -> SymValue<'sym, 'tcx, T, V> {
-        self.mk_sym_value(SymValueKind::CheckedBinaryOp(ty, bin_op, lhs, rhs))
-    }
-
     pub fn mk_unary_op<'sym, T, V>(
         &'sym self,
         ty: ty::Ty<'tcx>,
