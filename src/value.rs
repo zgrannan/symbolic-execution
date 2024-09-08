@@ -340,7 +340,7 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T
                         ty::TyKind::RawPtr(..) => todo!(),
                         ty::TyKind::Ref(_, target_ty, _) => Ty::new(*target_ty, ty.variant_index()),
                         ty::TyKind::FnDef(_, _) => todo!(),
-                        ty::TyKind::FnPtr(_) => todo!(),
+                        ty::TyKind::FnPtr(..) => todo!(),
                         ty::TyKind::Dynamic(_, _, _) => todo!(),
                         ty::TyKind::Closure(_, _) => todo!(),
                         ty::TyKind::Coroutine(..) => todo!(),
