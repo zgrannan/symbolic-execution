@@ -196,12 +196,6 @@ impl SymVar {
 pub enum SymValueKind<'sym, 'tcx, T, V = SymVar> {
     Var(V, ty::Ty<'tcx>),
     Constant(Constant<'tcx>),
-    CheckedBinaryOp(
-        ty::Ty<'tcx>,
-        mir::BinOp,
-        SymValue<'sym, 'tcx, T, V>,
-        SymValue<'sym, 'tcx, T, V>,
-    ),
     BinaryOp(
         ty::Ty<'tcx>,
         mir::BinOp,
@@ -264,17 +258,6 @@ impl<
         match &self.kind {
             SymValueKind::Var(var, ty) => transformer.transform_var(arena, *var, *ty),
             SymValueKind::Constant(c) => transformer.transform_constant(arena, c),
-            SymValueKind::CheckedBinaryOp(ty, op, lhs, rhs) => {
-                let transformed_lhs = lhs.apply_transformer(arena, transformer);
-                let transformed_rhs = rhs.apply_transformer(arena, transformer);
-                transformer.transform_checked_binary_op(
-                    arena,
-                    *ty,
-                    *op,
-                    transformed_lhs,
-                    transformed_rhs,
-                )
-            }
             SymValueKind::BinaryOp(ty, op, lhs, rhs) => {
                 let transformed_lhs = lhs.apply_transformer(arena, transformer);
                 let transformed_rhs = rhs.apply_transformer(arena, transformer);
@@ -332,7 +315,6 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T
         match self {
             SymValueKind::Var(_, ty, ..) => Ty::new(*ty, None),
             SymValueKind::Constant(c) => Ty::new(c.ty(), None),
-            SymValueKind::CheckedBinaryOp(ty, _, _, _) => Ty::new(*ty, None),
             SymValueKind::BinaryOp(ty, _, _, _) => Ty::new(*ty, None),
             SymValueKind::Projection(elem, val) => match elem {
                 ProjectionElem::Deref => {
@@ -551,7 +533,7 @@ impl<'tcx> Constant<'tcx> {
     pub fn as_u32(&self, tcx: ty::TyCtxt<'tcx>) -> Option<u32> {
         if self.ty() == tcx.types.u32 {
             let scalar_int = self.0.try_to_scalar_int()?;
-            scalar_int.try_to_u32().ok()
+            Some(scalar_int.to_u32())
         } else {
             None
         }

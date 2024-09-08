@@ -40,16 +40,6 @@ pub trait BaseSymValueTransformer<'sym, 'tcx, T, V = SymVar, U = SymVar, TT = T>
     ) -> SymValue<'sym, 'tcx, TT, U> {
         arena.mk_constant(c.clone())
     }
-    fn transform_checked_binary_op(
-        &mut self,
-        arena: &'sym SymExContext<'tcx>,
-        ty: ty::Ty<'tcx>,
-        op: mir::BinOp,
-        lhs: SymValue<'sym, 'tcx, TT, U>,
-        rhs: SymValue<'sym, 'tcx, TT, U>,
-    ) -> SymValue<'sym, 'tcx, TT, U> {
-        arena.mk_checked_bin_op(ty, op, lhs, rhs)
-    }
     fn transform_binary_op(
         &mut self,
         arena: &'sym SymExContext<'tcx>,

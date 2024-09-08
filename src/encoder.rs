@@ -40,11 +40,6 @@ pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S> {
         let arena = self.arena();
         match rvalue {
             mir::Rvalue::Use(operand) => self.encode_operand(ctxt, &operand),
-            mir::Rvalue::CheckedBinaryOp(op, box (lhs, rhs)) => {
-                let lhs = self.encode_operand(ctxt, &lhs);
-                let rhs = self.encode_operand(ctxt, &rhs);
-                arena.mk_checked_bin_op(rvalue_ty, *op, lhs, rhs)
-            }
             mir::Rvalue::BinaryOp(op, box (lhs, rhs)) => {
                 let lhs = self.encode_operand(ctxt, &lhs);
                 let rhs = self.encode_operand(ctxt, &rhs);

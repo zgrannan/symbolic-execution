@@ -4,14 +4,21 @@ use pcs::utils::PlaceRepacker;
 use serde_json::json;
 
 use crate::{
-    context::SymExContext, debug_info::DEBUGINFO_NONE, execute::ResultAssertions, path::{AcyclicPath, Path, SymExPath}, pcs_interaction::PcsLocation, results::{ResultAssertion, ResultPaths}, rustc_interface::{
+    context::SymExContext,
+    debug_info::DEBUGINFO_NONE,
+    execute::ResultAssertions,
+    path::{AcyclicPath, Path, SymExPath},
+    pcs_interaction::PcsLocation,
+    results::{ResultAssertion, ResultPaths},
+    rustc_interface::{
         ast::Mutability,
         hir::{def_id::DefId, ItemKind, Node},
         middle::{
             mir::{self, ProjectionElem, VarDebugInfo},
             ty::{self, TyCtxt},
         },
-    }, value::{SymValue, SymValueData, SymValueKind, SyntheticSymValue, Ty}
+    },
+    value::{SymValue, SymValueData, SymValueKind, SyntheticSymValue, Ty},
 };
 
 #[derive(Copy, Clone)]
@@ -149,13 +156,19 @@ pub fn export_assertions<'sym, 'tcx, T: VisFormat>(
 ) {
     let assertions_json: Vec<serde_json::Value> = assertions
         .iter()
-        .map(|ResultAssertion {path, pcs, assertion }| {
-            json!({
-                "path": path.to_index_vec(),
-                "pcs": pcs.to_json(Some(tcx), debug_info),
-                "assertion": assertion.to_vis_string(Some(tcx), debug_info, OutputMode::HTML)
-            })
-        })
+        .map(
+            |ResultAssertion {
+                 path,
+                 pcs,
+                 assertion,
+             }| {
+                json!({
+                    "path": path.to_index_vec(),
+                    "pcs": pcs.to_json(Some(tcx), debug_info),
+                    "assertion": assertion.to_vis_string(Some(tcx), debug_info, OutputMode::HTML)
+                })
+            },
+        )
         .collect();
 
     let json_string = serde_json::to_string_pretty(&assertions_json)
@@ -255,7 +268,7 @@ impl<'sym, 'tcx, T> SymValueKind<'sym, 'tcx, T> {
             SymValueKind::Var(_, _) | SymValueKind::Constant(_) | SymValueKind::Synthetic(_) => {
                 PrecCategory::Atom
             }
-            SymValueKind::CheckedBinaryOp(_, op, _, _) | SymValueKind::BinaryOp(_, op, _, _) => {
+            SymValueKind::BinaryOp(_, op, _, _) => {
                 match op {
                     mir::BinOp::Mul | mir::BinOp::Div | mir::BinOp::Rem => {
                         PrecCategory::Multiplicative
@@ -328,8 +341,7 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
         let result = match &self.kind {
             SymValueKind::Var(var, _) => var.to_string(debug_info, mode),
             SymValueKind::Constant(c) => format!("{}", c.literal()),
-            SymValueKind::CheckedBinaryOp(_, op, lhs, rhs)
-            | SymValueKind::BinaryOp(_, op, lhs, rhs) => {
+            SymValueKind::BinaryOp(_, op, lhs, rhs) => {
                 let op_str = match op {
                     mir::BinOp::Add => "+",
                     mir::BinOp::Sub => "-",
@@ -360,6 +372,7 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                 let op_str = match op {
                     mir::UnOp::Not => "!",
                     mir::UnOp::Neg => "-",
+                    _ => todo!(),
                 };
                 format!(
                     "{}{}",
