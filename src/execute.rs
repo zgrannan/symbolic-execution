@@ -3,7 +3,7 @@ use crate::{
     encoder::Encoder,
     heap::{HeapData, SymbolicHeap},
     path::{AcyclicPath, Path, SymExPath},
-    path_conditions::{PathConditionAtom, PathConditionPredicate, PathConditions},
+    path_conditions::{PathConditionPredicateAtom, PathConditionPredicate, PathConditions},
     place::Place,
     results::{ResultAssertion, SymbolicExecutionResult},
     rustc_interface::middle::{

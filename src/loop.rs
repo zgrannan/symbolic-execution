@@ -5,7 +5,9 @@ use crate::{
     havoc::InvariantInfo,
     heap::{HeapData, SymbolicHeap},
     path::{AcyclicPath, Path, SymExPath},
-    path_conditions::{PathConditionAtom, PathConditionPredicate, PathConditions},
+    path_conditions::{
+        PathConditionAtom, PathConditionPredicate, PathConditionPredicateAtom, PathConditions,
+    },
     place::Place,
     results::{ResultAssertion, SymbolicExecutionResult},
     rustc_interface::middle::{
@@ -81,19 +83,22 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
                     let operand = self.encode_operand(&mut heap, discr);
                     path.pcs
-                        .insert(PathConditionAtom::new(operand, pred.clone()));
+                        .insert(PathConditionAtom::predicate(operand, pred.clone()));
                 }
                 _ => unreachable!(),
             }
         }
 
+        // Assume invariant
+
         for (path_conditions, assertion) in
             S::encode_loop_invariant(invariant_info.loop_head, path.clone(), self)
         {
-            path.pcs.insert(PathConditionAtom {
-                expr: assertion,
-                predicate: PathConditionPredicate::ImpliedBy(Box::new(path_conditions)),
-            });
+            if let Some(implication) =
+                PathConditionAtom::implies(path_conditions, assertion, self.tcx)
+            {
+                path.pcs.insert(implication);
+            }
         }
         true
     }

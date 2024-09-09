@@ -116,9 +116,15 @@ impl<
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PathConditionAtom<'sym, 'tcx, T> {
+pub struct PathConditionPredicateAtom<'sym, 'tcx, T> {
     pub expr: SymValue<'sym, 'tcx, T>,
     pub predicate: PathConditionPredicate<'sym, 'tcx, T>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PathConditionAtom<'sym, 'tcx, T> {
+    Predicate(PathConditionPredicateAtom<'sym, 'tcx, T>),
+    Not(Box<PathConditions<'sym, 'tcx, T>>),
 }
 
 impl<'sym, 'tcx, T: VisFormat> PathConditionAtom<'sym, 'tcx, T> {
@@ -128,7 +134,53 @@ impl<'sym, 'tcx, T: VisFormat> PathConditionAtom<'sym, 'tcx, T> {
     }
 }
 
+impl<
+        'sym,
+        'tcx,
+        T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
+    > PathConditionAtom<'sym, 'tcx, T>
+{
+    pub fn apply_transformer(
+        self,
+        arena: &'sym SymExContext<'tcx>,
+        transformer: &mut impl SymValueTransformer<'sym, 'tcx, T>,
+    ) -> Self {
+        match self {
+            PathConditionAtom::Predicate(p) => {
+                PathConditionAtom::Predicate(p.apply_transformer(arena, transformer))
+            }
+            PathConditionAtom::Not(pc) => {
+                PathConditionAtom::Not(Box::new(pc.apply_transformer(arena, transformer)))
+            }
+        }
+    }
+
+    fn subst<'substs>(
+        self,
+        arena: &'sym SymExContext<'tcx>,
+        substs: &'substs Substs<'sym, 'tcx, T>,
+    ) -> Self {
+        match self {
+            PathConditionAtom::Predicate(p) => PathConditionAtom::Predicate(p.subst(arena, substs)),
+            PathConditionAtom::Not(pc) => PathConditionAtom::Not(Box::new(pc.subst(arena, substs))),
+        }
+    }
+}
 impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditionAtom<'sym, 'tcx, T> {
+    fn to_vis_string(
+        &self,
+        tcx: Option<TyCtxt<'_>>,
+        debug_info: &[VarDebugInfo],
+        mode: OutputMode,
+    ) -> String {
+        match self {
+            PathConditionAtom::Predicate(p) => p.to_vis_string(tcx, debug_info, mode),
+            PathConditionAtom::Not(pc) => format!("!({})", pc.to_vis_string(tcx, debug_info, mode)),
+        }
+    }
+}
+
+impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditionPredicateAtom<'sym, 'tcx, T> {
     fn to_vis_string(
         &self,
         tcx: Option<TyCtxt<'_>>,
@@ -192,29 +244,64 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditionAtom<'sym, 'tcx, T> {
     }
 }
 
-impl<'sym, 'tcx, T> PathConditionAtom<'sym, 'tcx, T> {
-    pub fn new(
+impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> PathConditionAtom<'sym, 'tcx, T> {
+    pub fn implies(
+        path_conditions: PathConditions<'sym, 'tcx, T>,
+        assertion: SymValue<'sym, 'tcx, T>,
+        tcx: TyCtxt<'tcx>,
+    ) -> Option<Self> {
+        if let Some(bool_val) = assertion.kind.as_bool(tcx) {
+            if bool_val {
+                // TODO: Perhaps well-definedness isn't checked?
+                None
+            } else {
+                Some(PathConditionAtom::Not(Box::new(path_conditions)))
+            }
+        } else {
+            Some(PathConditionAtom::predicate(
+                assertion,
+                PathConditionPredicate::ImpliedBy(Box::new(path_conditions)),
+            ))
+        }
+    }
+    pub fn predicate(
         expr: SymValue<'sym, 'tcx, T>,
         predicate: PathConditionPredicate<'sym, 'tcx, T>,
     ) -> Self {
-        PathConditionAtom { expr, predicate }
+        PathConditionAtom::Predicate(PathConditionPredicateAtom { expr, predicate })
     }
 }
 
 impl<
         'sym,
         'tcx,
-        T: Ord + Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
-    > PathConditionAtom<'sym, 'tcx, T>
+        T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
+    > PathConditionPredicateAtom<'sym, 'tcx, T>
 {
-    pub fn subst(
+    pub fn new(
+        expr: SymValue<'sym, 'tcx, T>,
+        predicate: PathConditionPredicate<'sym, 'tcx, T>,
+    ) -> Self {
+        PathConditionPredicateAtom { expr, predicate }
+    }
+
+    pub fn subst<'substs>(
         self,
         arena: &'sym SymExContext<'tcx>,
-        substs: &'sym Substs<'sym, 'tcx, T>,
+        substs: &'substs Substs<'sym, 'tcx, T>,
     ) -> Self {
         let expr = self.expr.subst(arena, substs);
         let predicate = self.predicate.clone().subst(arena, substs);
-        PathConditionAtom::new(expr, predicate)
+        PathConditionPredicateAtom::new(expr, predicate)
+    }
+    pub fn apply_transformer(
+        self,
+        arena: &'sym SymExContext<'tcx>,
+        transformer: &mut impl SymValueTransformer<'sym, 'tcx, T>,
+    ) -> Self {
+        let expr = self.expr.apply_transformer(arena, transformer);
+        let predicate = self.predicate.apply_transformer(arena, transformer);
+        PathConditionPredicateAtom::new(expr, predicate)
     }
 }
 
@@ -293,11 +380,7 @@ impl<
         let atoms = self
             .atoms
             .into_iter()
-            .map(|atom| {
-                let expr = atom.expr.apply_transformer(arena, transformer);
-                let predicate = atom.predicate.apply_transformer(arena, transformer);
-                PathConditionAtom::new(expr, predicate)
-            })
+            .map(|atom| atom.apply_transformer(arena, transformer))
             .collect();
         PathConditions { atoms }
     }
@@ -309,11 +392,7 @@ impl<
         let atoms = self
             .atoms
             .into_iter()
-            .map(|atom| {
-                let expr = atom.expr.subst(arena, substs);
-                let predicate = atom.predicate.subst(arena, substs);
-                PathConditionAtom::new(expr, predicate)
-            })
+            .map(|atom| atom.subst(arena, substs))
             .collect();
         PathConditions { atoms }
     }

@@ -10,7 +10,7 @@ use crate::execute::ResultAssertions;
 use crate::function_call_snapshot::FunctionCallSnapshot;
 use crate::heap::SymbolicHeap;
 use crate::path::{LoopPath, Path};
-use crate::path_conditions::{PathConditionAtom, PathConditionPredicate};
+use crate::path_conditions::{PathConditionAtom, PathConditionPredicate, PathConditionPredicateAtom};
 use crate::pcs_interaction::PcsLocation;
 use crate::results::ResultAssertion;
 use crate::value::SymValue;
@@ -93,13 +93,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let operand: SymValue<'sym, 'tcx, S::SymValSynthetic> =
                         self.encode_operand(&mut heap, discr);
                     path.pcs
-                        .insert(PathConditionAtom::new(operand, pred.clone()));
+                        .insert(PathConditionAtom::predicate(operand, pred.clone()));
                     paths.push(path);
                 }
                 let mut path = path.push(targets.otherwise());
                 let pred = PathConditionPredicate::Ne(targets.iter().map(|t| t.0).collect(), ty);
                 let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
-                path.pcs.insert(PathConditionAtom::new(
+                path.pcs.insert(PathConditionAtom::predicate(
                     self.encode_operand(&mut heap, discr),
                     pred.clone(),
                 ));
@@ -153,7 +153,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             heap.insert(*destination, value, location.location);
                             if let Some(postcondition) = postcondition {
                                 path.pcs
-                                    .insert(PathConditionAtom::new(value, postcondition));
+                                    .insert(PathConditionAtom::predicate(value, postcondition));
                             }
                         }
                         FunctionCallResult::Unknown { postcondition } => {
@@ -166,7 +166,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             );
                             heap.insert(*destination, sym_var, location.location);
                             path.pcs
-                                .insert(PathConditionAtom::new(sym_var, postcondition));
+                                .insert(PathConditionAtom::predicate(sym_var, postcondition));
                         }
                         FunctionCallResult::Never => {}
                     };

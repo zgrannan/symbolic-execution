@@ -233,6 +233,13 @@ impl<'tcx> SymExContext<'tcx> {
         unary_op: mir::UnOp,
         operand: SymValue<'sym, 'tcx, T, V>,
     ) -> SymValue<'sym, 'tcx, T, V> {
+        match (&operand.kind, unary_op) {
+            (SymValueKind::Constant(c), mir::UnOp::Not) => {
+                return self
+                    .mk_constant(Constant::from_bool(self.tcx, !c.as_bool(self.tcx).unwrap()));
+            }
+            _ => {}
+        }
         self.mk_sym_value(SymValueKind::UnaryOp(ty, unary_op, operand))
     }
 }

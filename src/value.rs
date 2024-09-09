@@ -302,12 +302,17 @@ impl<
 }
 
 impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T, V> {
-    pub fn is_true(&self, tcx: ty::TyCtxt<'tcx>) -> bool {
+    pub fn as_bool(&self, tcx: ty::TyCtxt<'tcx>) -> Option<bool> {
         match self {
-            SymValueKind::Constant(c) => c.as_bool(tcx).unwrap_or(false),
-            _ => false,
+            SymValueKind::Constant(c) => c.as_bool(tcx),
+            _ => None,
         }
     }
+
+    pub fn is_true(&self, tcx: ty::TyCtxt<'tcx>) -> bool {
+        self.as_bool(tcx).unwrap_or(false)
+    }
+
     pub fn ty(&self, tcx: ty::TyCtxt<'tcx>) -> Ty<'tcx> {
         match self {
             SymValueKind::Var(_, ty, ..) => Ty::new(*ty, None),
