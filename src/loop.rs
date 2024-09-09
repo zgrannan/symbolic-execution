@@ -39,7 +39,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             pcs.extend(path_conditions);
             assertions.insert(ResultAssertion {
                 path: path.path.clone(),
-                pcs: path.pcs.clone(),
+                pcs,
                 assertion: Assertion::Eq(assertion, true),
             });
         }

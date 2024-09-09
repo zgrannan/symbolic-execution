@@ -106,11 +106,7 @@ impl<'tcx> SymExContext<'tcx> {
         self.mk_sym_value(SymValueKind::Cast(kind, val, ty))
     }
 
-    pub fn mk_var<'sym, T, V>(
-        &'sym self,
-        var: V,
-        ty: ty::Ty<'tcx>,
-    ) -> SymValue<'sym, 'tcx, T, V> {
+    pub fn mk_var<'sym, T, V>(&'sym self, var: V, ty: ty::Ty<'tcx>) -> SymValue<'sym, 'tcx, T, V> {
         self.mk_sym_value(SymValueKind::Var(var, ty))
     }
 
@@ -134,6 +130,13 @@ impl<'tcx> SymExContext<'tcx> {
         kind: mir::ProjectionElem<mir::Local, ty::Ty<'tcx>>,
         val: SymValue<'sym, 'tcx, T, V>,
     ) -> SymValue<'sym, 'tcx, T, V> {
+        if let mir::ProjectionElem::Field(idx, _) = kind {
+            if let SymValueKind::Aggregate(kind, vals) = &val.kind {
+                if let Some(val) = vals.get(idx.as_usize()) {
+                    return val;
+                }
+            }
+        }
         // if kind == mir::ProjectionElem::Deref {
         //     let ty = val.kind.ty(self.tcx).rust_ty();
         //     assert!(ty.is_box() || ty.is_ref(), "Deref on non-pointer: {:?}", ty);
@@ -182,13 +185,29 @@ impl<'tcx> SymExContext<'tcx> {
         self.mk_sym_value(SymValueKind::Aggregate(kind, vals))
     }
 
-    pub fn mk_bin_op<'sym, T, V>(
+    pub fn mk_bin_op<'sym, T: SyntheticSymValue<'sym, 'tcx>, V>(
         &'sym self,
         ty: ty::Ty<'tcx>,
         bin_op: mir::BinOp,
         lhs: SymValue<'sym, 'tcx, T, V>,
         rhs: SymValue<'sym, 'tcx, T, V>,
     ) -> SymValue<'sym, 'tcx, T, V> {
+        match bin_op {
+            mir::BinOp::Add
+            | mir::BinOp::AddUnchecked
+            | mir::BinOp::AddWithOverflow
+            | mir::BinOp::Sub
+            | mir::BinOp::SubUnchecked
+            | mir::BinOp::SubWithOverflow
+            | mir::BinOp::Mul
+            | mir::BinOp::MulUnchecked
+            | mir::BinOp::MulWithOverflow => {
+                assert!(!lhs.ty(self.tcx).rust_ty().is_ref());
+                assert!(!rhs.ty(self.tcx).rust_ty().is_ref());
+            }
+            _ => {}
+        }
+
         match (&lhs.kind, &rhs.kind) {
             (SymValueKind::Constant(lhs), SymValueKind::Constant(rhs)) => {
                 if lhs.ty() == self.tcx.types.u32 && rhs.ty() == self.tcx.types.u32 {

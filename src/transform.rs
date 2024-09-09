@@ -42,7 +42,10 @@ pub trait BaseSymValueTransformer<'sym, 'tcx, T, V = SymVar, U = SymVar, TT = T>
         op: mir::BinOp,
         lhs: SymValue<'sym, 'tcx, TT, U>,
         rhs: SymValue<'sym, 'tcx, TT, U>,
-    ) -> SymValue<'sym, 'tcx, TT, U> {
+    ) -> SymValue<'sym, 'tcx, TT, U>
+    where
+        TT: SyntheticSymValue<'sym, 'tcx>,
+    {
         arena.mk_bin_op(ty, op, lhs, rhs)
     }
     fn transform_unary_op(

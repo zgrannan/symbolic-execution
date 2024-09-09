@@ -342,9 +342,9 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
             SymValueKind::Constant(c) => format!("{}", c.literal()),
             SymValueKind::BinaryOp(_, op, lhs, rhs) => {
                 let op_str = match op {
-                    mir::BinOp::Add => "+",
-                    mir::BinOp::Sub => "-",
-                    mir::BinOp::Mul => "*",
+                    mir::BinOp::Add | mir::BinOp::AddWithOverflow => "+",
+                    mir::BinOp::Sub | mir::BinOp::SubWithOverflow => "-",
+                    mir::BinOp::Mul | mir::BinOp::MulWithOverflow => "*",
                     mir::BinOp::Div => "/",
                     mir::BinOp::Rem => "%",
                     mir::BinOp::BitXor => "^",

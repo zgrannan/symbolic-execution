@@ -4,7 +4,7 @@ use crate::context::SymExContext;
 use crate::heap::{SymbolicHeap};
 use crate::place::Place;
 use crate::rustc_interface::{middle::mir};
-use crate::value::{AggregateKind, SymVar};
+use crate::value::{AggregateKind, SymVar, SyntheticSymValue};
 use crate::visualization::VisFormat;
 use crate::{semantics::VerifierSemantics, value::SymValue};
 use crate::{LookupGet, SymbolicExecution};
@@ -33,6 +33,7 @@ pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S> {
     where
         'tcx: 'ctxt,
         'sym: 'ctxt,
+        S: SyntheticSymValue<'sym, 'tcx>,
     {
         let body = self.repacker().body();
         let tcx = self.repacker().tcx();
