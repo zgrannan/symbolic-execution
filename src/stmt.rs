@@ -6,7 +6,7 @@ use crate::{
     context::ErrorLocation,
     encoder::Encoder,
     heap::SymbolicHeap,
-    path::{OldMapEncoder, Path, StructureTerm},
+    path::{Path},
     pcs_interaction::PcsLocation,
     place::Place,
     rustc_interface::middle::mir::{self},
@@ -58,7 +58,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     pub fn handle_stmt(
         &mut self,
         pcs_block: &FreePcsBasicBlock<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
-        path: &mut Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
+        path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         stmt: &mir::Statement<'tcx>,
         stmt_idx: usize,
     ) {
@@ -73,29 +73,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         self.handle_pcs(path, &fpcs_loc, false, fpcs_loc.location);
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         self.handle_stmt_lhs(stmt, &mut heap, fpcs_loc.location, rhs);
-        let structure_encoder = self.old_map_encoder();
-        match &stmt.kind {
-            mir::StatementKind::Assign(box (place, rvalue)) => {
-                let encoded_place: StructureTerm<'sym, 'tcx, S::OldMapSymValSynthetic> =
-                    <OldMapEncoder<'mir, 'sym, 'tcx> as Encoder<
-                        'mir,
-                        'sym,
-                        'tcx,
-                        S::OldMapSymValSynthetic,
-                    >>::encode_rvalue(
-                        &structure_encoder, &mut path.old_map, rvalue
-                    );
-                path.old_map.insert((*place).into(), encoded_place);
-            }
-            _ => {}
-        }
     }
 
     pub fn execute_stmts_in_block(
         &mut self,
         pcs_block: &FreePcsBasicBlock<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
         block_data: &mir::BasicBlockData<'tcx>,
-        path: &mut Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
+        path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         output_debug_json: bool,
     ) {
         for (stmt_idx, stmt) in block_data.statements.iter().enumerate() {

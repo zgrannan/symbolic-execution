@@ -43,7 +43,7 @@ use context::{ErrorContext, ErrorLocation, SymExContext};
 use function_call_snapshot::FunctionCallSnapshots;
 use havoc::LoopData;
 use heap::{HeapData, SymbolicHeap};
-use path::{LoopPath, OldMapEncoder, SymExPath};
+use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
 use pcs::{
     borrows::{
@@ -109,7 +109,7 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     verifier_semantics: PhantomData<S>,
     new_symvars_allowed: bool,
     result_paths: ResultPaths<'sym, 'tcx, S::SymValSynthetic>,
-    debug_paths: Vec<Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>>,
+    debug_paths: Vec<Path<'sym, 'tcx, S::SymValSynthetic>>,
 }
 
 trait LookupType {
@@ -152,12 +152,6 @@ impl LookupType for LookupTake {
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
-    pub fn old_map_encoder(&self) -> OldMapEncoder<'mir, 'sym, 'tcx> {
-        let repacker: PlaceRepacker<'mir, 'tcx> = self.repacker();
-        let arena: &'sym SymExContext<'tcx> = self.arena;
-        OldMapEncoder { repacker, arena }
-    }
-
     pub fn new(params: SymExParams<'mir, 'sym, 'tcx, S>) -> Self {
         SymbolicExecution {
             new_symvars_allowed: params.new_symvars_allowed,
@@ -375,7 +369,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn complete_path(
         &mut self,
-        path: Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
+        path: Path<'sym, 'tcx, S::SymValSynthetic>,
         pcs_loc: &PcsLocation<'mir, 'tcx>,
     ) where
         S::SymValSynthetic: Eq,

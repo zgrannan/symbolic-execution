@@ -4,7 +4,7 @@ use crate::{
     execute::ResultAssertions,
     havoc::InvariantInfo,
     heap::{HeapData, SymbolicHeap},
-    path::{AcyclicPath, OldMapEncoder, Path, StructureTerm, SymExPath},
+    path::{AcyclicPath, Path, SymExPath},
     path_conditions::{PathConditionAtom, PathConditionPredicate, PathConditions},
     place::Place,
     results::{ResultAssertion, SymbolicExecutionResult},
@@ -26,17 +26,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         condition_valid_block: BasicBlock,
         invariant_info: InvariantInfo,
-        path: &mut Path<'sym, 'tcx, S::SymValSynthetic, S::OldMapSymValSynthetic>,
+        path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         assertions: &mut ResultAssertions<'sym, 'tcx, S::SymValSynthetic>,
     ) -> bool
     where
         S::SymValSynthetic: Eq,
     {
-        for (path_conditions, assertion) in S::encode_loop_invariant(
-            invariant_info.loop_head,
-            path.clone(),
-            self,
-        ) {
+        for (path_conditions, assertion) in
+            S::encode_loop_invariant(invariant_info.loop_head, path.clone(), self)
+        {
             let mut pcs = path.pcs.clone();
             pcs.extend(path_conditions);
             assertions.insert(ResultAssertion {
@@ -89,11 +87,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             }
         }
 
-        for (path_conditions, assertion) in S::encode_loop_invariant(
-            invariant_info.loop_head,
-            path.clone(),
-            self,
-        ) {
+        for (path_conditions, assertion) in
+            S::encode_loop_invariant(invariant_info.loop_head, path.clone(), self)
+        {
             path.pcs.insert(PathConditionAtom {
                 expr: assertion,
                 predicate: PathConditionPredicate::ImpliedBy(Box::new(path_conditions)),

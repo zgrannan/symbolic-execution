@@ -2,7 +2,7 @@ use crate::{
     context::ErrorLocation,
     encoder::Encoder,
     heap::{HeapData, SymbolicHeap},
-    path::{AcyclicPath, OldMapEncoder, Path, StructureTerm, SymExPath},
+    path::{AcyclicPath, Path, SymExPath},
     path_conditions::{PathConditionAtom, PathConditionPredicate, PathConditions},
     place::Place,
     results::{ResultAssertion, SymbolicExecutionResult},

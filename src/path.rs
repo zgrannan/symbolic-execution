@@ -189,146 +189,15 @@ impl AcyclicPath {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct InputPlace<'tcx>(Place<'tcx>);
-
-impl<'tcx> InputPlace<'tcx> {
-    pub fn new(place: Place<'tcx>) -> Self {
-        Self(place)
-    }
-
-    pub fn local(&self) -> mir::Local {
-        self.0.local()
-    }
-
-    pub fn projection(&self) -> &'tcx [ProjectionElem<mir::Local, ty::Ty<'tcx>>] {
-        self.0.projection()
-    }
-}
-
-pub type StructureTerm<'sym, 'tcx, T> = SymValue<'sym, 'tcx, T, InputPlace<'tcx>>;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OldMap<'sym, 'tcx, T>(HashMap<Place<'tcx>, StructureTerm<'sym, 'tcx, T>>);
-
-pub struct OldMapEncoder<'mir, 'sym, 'tcx> {
-    pub repacker: PlaceRepacker<'mir, 'tcx>,
-    pub arena: &'sym SymExContext<'tcx>,
-}
-
-impl<'mir, 'sym, 'tcx> OldMapEncoder<'mir, 'sym, 'tcx> {
-    fn num_args(&self) -> usize {
-        self.repacker.num_args()
-    }
-}
-
-impl<'mir, 'sym, 'tcx: 'mir, S: SyntheticSymValue<'sym, 'tcx> + 'sym> Encoder<'mir, 'sym, 'tcx, S>
-    for OldMapEncoder<'mir, 'sym, 'tcx>
-{
-    type V = InputPlace<'tcx>;
-    type Ctxt<'ctxt> = OldMap<'sym, 'tcx, S>
-    where
-        'mir: 'ctxt,
-        'tcx: 'ctxt,
-        'sym: 'ctxt;
-
-    fn arena(&self) -> &'sym SymExContext<'tcx> {
-        self.arena
-    }
-
-    fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
-        self.repacker
-    }
-
-    fn encode_place<'ctxt>(
-        &self,
-        ctxt: &mut OldMap<'sym, 'tcx, S>,
-        place: &Place<'tcx>,
-    ) -> StructureTerm<'sym, 'tcx, S>
-    where
-        'tcx: 'ctxt,
-        'sym: 'ctxt,
-    {
-        if place.local().as_usize() <= self.num_args() {
-            self.arena.alloc(SymValueData::new(
-                SymValueKind::Var(
-                    InputPlace(*place),
-                    place.ty(self.repacker.body(), self.repacker.tcx()).ty,
-                ),
-                self.arena,
-            ))
-        } else {
-            ctxt.get(place, self.arena).unwrap_or_else(|| {
-                // panic!(
-                //     "Place {:?} not found in old map {:?}",
-                //     place, ctxt
-                // )
-                self.arena.alloc(SymValueData::new(
-                    SymValueKind::Var(
-                        InputPlace(*place),
-                        place.ty(self.repacker.body(), self.repacker.tcx()).ty,
-                    ),
-                    self.arena,
-                ))
-            })
-        }
-    }
-}
-
-impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> OldMap<'sym, 'tcx, T> {
-    pub fn new() -> Self {
-        Self(HashMap::new())
-    }
-
-    pub fn insert(&mut self, place: Place<'tcx>, term: StructureTerm<'sym, 'tcx, T>) {
-        self.0.insert(place, term);
-    }
-
-    pub fn get(
-        &self,
-        place: &Place<'tcx>,
-        arena: &'sym SymExContext<'tcx>,
-    ) -> Option<StructureTerm<'sym, 'tcx, T>> {
-        for (k, v) in self.0.iter() {
-            if k.local() == place.local() {
-                match place.projection().strip_prefix(k.projection()) {
-                    Some(remaining) => {
-                        return Some(
-                            remaining
-                                .iter()
-                                .fold(v, |p, elem| arena.mk_projection(*elem, p)),
-                        );
-                    }
-                    None => {} // None => todo!(
-                               //     "Projection {:?} does not match prefix {:?}",
-                               //     place,
-                               //     k,
-                               // ),
-                }
-            }
-        }
-        None
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Path<'sym, 'tcx, T, U> {
+pub struct Path<'sym, 'tcx, T> {
     pub path: SymExPath,
     pub pcs: PathConditions<'sym, 'tcx, T>,
     pub heap: HeapData<'sym, 'tcx, T>,
     pub function_call_snapshots: FunctionCallSnapshots<'sym, 'tcx, T>,
-    pub old_map: OldMap<'sym, 'tcx, U>,
-    pub re_enter_blocks: BTreeSet<BasicBlock>,
 }
 
-impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, U: SyntheticSymValue<'sym, 'tcx>>
-    Path<'sym, 'tcx, T, U>
-{
-    pub fn re_enter_block(mut self, block: BasicBlock) -> Self {
-        self.re_enter_blocks.insert(block);
-        self
-    }
-
+impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> Path<'sym, 'tcx, T> {
     pub fn new(
         path: AcyclicPath,
         pcs: PathConditions<'sym, 'tcx, T>,
@@ -339,8 +208,6 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, U: SyntheticSymValue<'sym, 't
             pcs,
             heap,
             function_call_snapshots: FunctionCallSnapshots::new(),
-            old_map: OldMap::new(),
-            re_enter_blocks: BTreeSet::new(),
         }
     }
 
@@ -361,8 +228,8 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, U: SyntheticSymValue<'sym, 't
     }
 }
 
-impl<'sym, 'tcx, T: Clone, U: Clone> Path<'sym, 'tcx, T, U> {
-    pub fn push(&self, block: BasicBlock) -> Path<'sym, 'tcx, T, U> {
+impl<'sym, 'tcx, T: Clone> Path<'sym, 'tcx, T> {
+    pub fn push(&self, block: BasicBlock) -> Path<'sym, 'tcx, T> {
         let mut result = self.clone();
         result.path.push(block);
         result
