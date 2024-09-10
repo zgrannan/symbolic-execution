@@ -1,6 +1,6 @@
-use crate::path::{AcyclicPath, SymExPath};
+use crate::path::SymExPath;
 use crate::value::{
-    BackwardsFn, CastKind, SymValue, SymValueData, SymValueKind, SymVar, SyntheticSymValue,
+    BackwardsFn, CastKind, SymValue, SymValueData, SymValueKind, SyntheticSymValue,
 };
 use crate::{
     rustc_interface::{
@@ -241,5 +241,12 @@ impl<'tcx> SymExContext<'tcx> {
             _ => {}
         }
         self.mk_sym_value(SymValueKind::UnaryOp(ty, unary_op, operand))
+    }
+
+    pub fn mk_not<'sym, T: SyntheticSymValue<'sym, 'tcx>, V>(
+        &'sym self,
+        operand: SymValue<'sym, 'tcx, T, V>,
+    ) -> SymValue<'sym, 'tcx, T, V> {
+        self.mk_unary_op(operand.ty(self.tcx).rust_ty(), mir::UnOp::Not, operand)
     }
 }

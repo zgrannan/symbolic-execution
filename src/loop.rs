@@ -1,25 +1,17 @@
 use crate::{
-    context::ErrorLocation,
     encoder::Encoder,
-    execute::ResultAssertions,
     havoc::InvariantInfo,
-    heap::{HeapData, SymbolicHeap},
-    path::{AcyclicPath, Path, SymExPath},
-    path_conditions::{
-        PathConditionAtom, PathConditionPredicate, PathConditionPredicateAtom, PathConditions,
-    },
+    heap::SymbolicHeap,
+    path::{Path, SymExPath},
+    path_conditions::{PathConditionAtom, PathConditionPredicate},
     place::Place,
-    results::{ResultAssertion, SymbolicExecutionResult},
-    rustc_interface::middle::{
-        mir::{self, BasicBlock, Location},
-        ty,
-    },
+    results::ResultAssertion,
+    results::ResultAssertions,
+    rustc_interface::middle::mir::{self, BasicBlock, Location},
     semantics::VerifierSemantics,
-    value::SymValue,
-    visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat},
+    visualization::VisFormat,
     Assertion, SymbolicExecution,
 };
-use std::collections::{BTreeSet, HashSet};
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
@@ -34,15 +26,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     where
         S::SymValSynthetic: Eq,
     {
-        for (path_conditions, assertion) in
-            S::encode_loop_invariant(invariant_info.loop_head, path.clone(), self)
-        {
-            let mut pcs = path.pcs.clone();
-            pcs.extend(path_conditions);
+        for assertion in S::encode_loop_invariant(invariant_info.loop_head, path.clone(), self) {
             assertions.insert(ResultAssertion {
                 path: path.path.clone(),
-                pcs,
-                assertion: Assertion::Eq(assertion, true),
+                pcs: path.pcs.clone(),
+                assertion,
             });
         }
         if let SymExPath::Loop(loop_path) = &path.path {
@@ -91,14 +79,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
         // Assume invariant
 
-        for (path_conditions, assertion) in
-            S::encode_loop_invariant(invariant_info.loop_head, path.clone(), self)
-        {
-            if let Some(implication) =
-                PathConditionAtom::implies(path_conditions, assertion, self.tcx)
-            {
-                path.pcs.insert(implication);
-            }
+        for assertion in S::encode_loop_invariant(invariant_info.loop_head, path.clone(), self) {
+            path.pcs.insert(PathConditionAtom::Assertion(assertion));
         }
         true
     }

@@ -1,6 +1,5 @@
 #![feature(rustc_private)]
 #![feature(box_patterns)]
-#![feature(associated_type_bounds)]
 #![feature(let_chains)]
 #![feature(anonymous_lifetime_in_impl_trait)]
 
@@ -58,7 +57,8 @@ use pcs::{
 use pcs_interaction::PcsLocation;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
 use semantics::VerifierSemantics;
-use value::SymVar;
+use transform::SymValueTransformer;
+use value::{CanSubst, Constant, Substs, SymVar, SyntheticSymValue};
 use visualization::{OutputMode, VisFormat};
 
 use self::{
@@ -69,9 +69,86 @@ use self::{
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Assertion<'sym, 'tcx, T> {
-    False,
-    Eq(SymValue<'sym, 'tcx, T>, bool),
+    Value(SymValue<'sym, 'tcx, T>),
     Precondition(DefId, GenericArgsRef<'tcx>, &'sym [SymValue<'sym, 'tcx, T>]),
+    Implication(Box<Assertion<'sym, 'tcx, T>>, Box<Assertion<'sym, 'tcx, T>>),
+    PathConditions(PathConditions<'sym, 'tcx, T>),
+}
+
+impl<'sym, 'tcx, T> Assertion<'sym, 'tcx, T> {
+    pub fn implication(lhs: Assertion<'sym, 'tcx, T>, rhs: Assertion<'sym, 'tcx, T>) -> Self {
+        Assertion::Implication(Box::new(lhs), Box::new(rhs))
+    }
+    pub fn false_(arena: &'sym SymExContext<'tcx>) -> Self {
+        Assertion::Value(arena.mk_constant(Constant::from_bool(arena.tcx, false)))
+    }
+    pub fn from_value(value: SymValue<'sym, 'tcx, T>) -> Self {
+        Assertion::Value(value)
+    }
+    pub fn from_path_conditions(pcs: PathConditions<'sym, 'tcx, T>) -> Self {
+        Assertion::PathConditions(pcs)
+    }
+}
+
+impl<
+        'sym,
+        'tcx,
+        T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
+    > Assertion<'sym, 'tcx, T>
+{
+    pub fn apply_transformer(
+        self,
+        arena: &'sym SymExContext<'tcx>,
+        transformer: &mut impl SymValueTransformer<'sym, 'tcx, T>,
+    ) -> Self {
+        match self {
+            Assertion::Value(value) => {
+                Assertion::Value(value.apply_transformer(arena, transformer))
+            }
+            Assertion::Precondition(def_id, generics, args) => Assertion::Precondition(
+                def_id,
+                generics,
+                arena.alloc_slice(
+                    &args
+                        .into_iter()
+                        .map(|arg| arg.apply_transformer(arena, transformer))
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+            Assertion::PathConditions(pcs) => {
+                Assertion::PathConditions(pcs.apply_transformer(arena, transformer))
+            }
+            Assertion::Implication(lhs, rhs) => Assertion::Implication(
+                Box::new(lhs.apply_transformer(arena, transformer)),
+                Box::new(rhs.apply_transformer(arena, transformer)),
+            ),
+        }
+    }
+
+    pub fn subst<'substs>(
+        self,
+        arena: &'sym SymExContext<'tcx>,
+        substs: &'substs Substs<'sym, 'tcx, T>,
+    ) -> Assertion<'sym, 'tcx, T> {
+        match self {
+            Assertion::Precondition(def_id, generics, args) => Assertion::Precondition(
+                def_id,
+                generics,
+                arena.alloc_slice(
+                    &args
+                        .into_iter()
+                        .map(|arg| arg.subst(arena, substs))
+                        .collect::<Vec<_>>(),
+                ),
+            ),
+            Assertion::Value(val) => Assertion::Value(val.subst(arena, substs)),
+            Assertion::Implication(lhs, rhs) => Assertion::Implication(
+                Box::new(lhs.subst(arena, substs)),
+                Box::new(rhs.subst(arena, substs)),
+            ),
+            Assertion::PathConditions(pcs) => Assertion::PathConditions(pcs.subst(arena, substs)),
+        }
+    }
 }
 
 impl<'sym, 'tcx, T: VisFormat> VisFormat for Assertion<'sym, 'tcx, T> {
@@ -82,9 +159,7 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for Assertion<'sym, 'tcx, T> {
         mode: OutputMode,
     ) -> String {
         match self {
-            Assertion::False => "false".to_string(),
-            Assertion::Eq(val, true) => val.to_vis_string(tcx, debug_info, mode),
-            Assertion::Eq(val, false) => format!("!{}", val.to_vis_string(tcx, debug_info, mode)),
+            Assertion::Value(val) => val.to_vis_string(tcx, debug_info, mode),
             Assertion::Precondition(def_id, _substs, args) => {
                 format!(
                     "{:?}({})",
@@ -92,6 +167,14 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for Assertion<'sym, 'tcx, T> {
                     args.to_vis_string(tcx, debug_info, mode)
                 )
             }
+            Assertion::Implication(lhs, rhs) => {
+                format!(
+                    "({} => {})",
+                    lhs.to_vis_string(tcx, debug_info, mode),
+                    rhs.to_vis_string(tcx, debug_info, mode)
+                )
+            }
+            Assertion::PathConditions(pcs) => pcs.to_vis_string(tcx, debug_info, mode),
         }
     }
 }

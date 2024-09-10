@@ -1,18 +1,16 @@
-use std::collections::BTreeSet;
-
 use pcs::borrows::engine::BorrowsDomain;
 use pcs::free_pcs::FreePcsTerminator;
 use pcs::ReborrowBridge;
 
 use crate::context::ErrorLocation;
 use crate::encoder::Encoder;
-use crate::execute::ResultAssertions;
 use crate::function_call_snapshot::FunctionCallSnapshot;
 use crate::heap::SymbolicHeap;
-use crate::path::{LoopPath, Path};
-use crate::path_conditions::{PathConditionAtom, PathConditionPredicate, PathConditionPredicateAtom};
+use crate::path::Path;
+use crate::path_conditions::{PathConditionAtom, PathConditionPredicate};
 use crate::pcs_interaction::PcsLocation;
 use crate::results::ResultAssertion;
+use crate::results::ResultAssertions;
 use crate::value::SymValue;
 use crate::visualization::{export_path_json, StepType};
 use crate::Assertion;
@@ -113,10 +111,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             } => {
                 let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
                 let cond = self.encode_operand(&mut heap, cond);
+                let cond = if *expected {
+                    cond
+                } else {
+                    self.arena.mk_not(cond)
+                };
                 assertions.insert(ResultAssertion {
                     path: path.path.clone(),
                     pcs: path.pcs.clone(),
-                    assertion: Assertion::Eq(cond, *expected),
+                    assertion: Assertion::from_value(cond),
                 });
                 paths.push(path.push(*target));
             }
@@ -213,7 +216,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             self.alloc_slice(&encoded_args);
         let precondition_assertion = match function_type {
             FunctionType::DiscriminantValue => None,
-            FunctionType::Panic => Some(Assertion::False),
+            FunctionType::Panic => Some(Assertion::false_(self.arena)),
             FunctionType::RustFunction(_) => {
                 Some(Assertion::Precondition(def_id, substs, encoded_args))
             }

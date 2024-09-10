@@ -1,9 +1,7 @@
-use std::collections::{btree_set::Iter, BTreeSet, HashSet};
-
 use serde_json::Value;
 
 use crate::{
-    transform::SymValueTransformer, value::CanSubst, visualization::OutputMode, VisFormat,
+    transform::SymValueTransformer, value::CanSubst, visualization::OutputMode, Assertion, VisFormat
 };
 
 use super::{
@@ -123,6 +121,7 @@ pub struct PathConditionPredicateAtom<'sym, 'tcx, T> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PathConditionAtom<'sym, 'tcx, T> {
+    Assertion(Assertion<'sym, 'tcx, T>),
     Predicate(PathConditionPredicateAtom<'sym, 'tcx, T>),
     Not(Box<PathConditions<'sym, 'tcx, T>>),
 }
@@ -146,6 +145,9 @@ impl<
         transformer: &mut impl SymValueTransformer<'sym, 'tcx, T>,
     ) -> Self {
         match self {
+            PathConditionAtom::Assertion(a) => {
+                PathConditionAtom::Assertion(a.apply_transformer(arena, transformer))
+            }
             PathConditionAtom::Predicate(p) => {
                 PathConditionAtom::Predicate(p.apply_transformer(arena, transformer))
             }
@@ -163,6 +165,7 @@ impl<
         match self {
             PathConditionAtom::Predicate(p) => PathConditionAtom::Predicate(p.subst(arena, substs)),
             PathConditionAtom::Not(pc) => PathConditionAtom::Not(Box::new(pc.subst(arena, substs))),
+            PathConditionAtom::Assertion(a) => PathConditionAtom::Assertion(a.subst(arena, substs)),
         }
     }
 }
@@ -176,6 +179,7 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for PathConditionAtom<'sym, 'tcx, T> {
         match self {
             PathConditionAtom::Predicate(p) => p.to_vis_string(tcx, debug_info, mode),
             PathConditionAtom::Not(pc) => format!("!({})", pc.to_vis_string(tcx, debug_info, mode)),
+            PathConditionAtom::Assertion(a) => a.to_vis_string(tcx, debug_info, mode),
         }
     }
 }

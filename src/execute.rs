@@ -2,39 +2,12 @@ use crate::{
     context::ErrorLocation,
     encoder::Encoder,
     heap::{HeapData, SymbolicHeap},
-    path::{AcyclicPath, Path, SymExPath},
-    path_conditions::{PathConditionPredicateAtom, PathConditionPredicate, PathConditions},
-    place::Place,
-    results::{ResultAssertion, SymbolicExecutionResult},
-    rustc_interface::middle::{
-        mir::{self, Location},
-        ty,
-    },
+    path::{AcyclicPath, Path},
+    path_conditions::PathConditions,
+    results::{ResultAssertions, SymbolicExecutionResult},
     semantics::VerifierSemantics,
-    visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat},
-    Assertion, SymbolicExecution,
+    visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat}, SymbolicExecution,
 };
-use std::collections::{BTreeSet, HashSet};
-
-#[derive(Clone, Debug)]
-pub struct ResultAssertions<'sym, 'tcx, T>(Vec<ResultAssertion<'sym, 'tcx, T>>);
-
-impl<'sym, 'tcx, T> ResultAssertions<'sym, 'tcx, T> {
-    pub fn new() -> Self {
-        ResultAssertions(Vec::new())
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &ResultAssertion<'sym, 'tcx, T>> {
-        self.0.iter()
-    }
-}
-impl<'sym, 'tcx, T: Eq> ResultAssertions<'sym, 'tcx, T> {
-    pub fn insert(&mut self, assertion: ResultAssertion<'sym, 'tcx, T>) {
-        if !self.0.contains(&assertion) {
-            self.0.push(assertion);
-        }
-    }
-}
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>

@@ -14,7 +14,7 @@ use pcs::{
 };
 
 use crate::{
-    heap::SymbolicHeap, path::AcyclicPath, semantics::VerifierSemantics, visualization::VisFormat,
+    heap::SymbolicHeap, semantics::VerifierSemantics, visualization::VisFormat,
     LookupGet, LookupTake, SymbolicExecution,
 };
 

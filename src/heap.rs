@@ -3,12 +3,10 @@ use crate::context::SymExContext;
 use crate::value::SymVar;
 use crate::visualization::OutputMode;
 use crate::{place::Place, VisFormat};
-use crate::{
-    rustc_interface::middle::{
+use crate::rustc_interface::middle::{
         mir::{self, Body, Location, PlaceElem, VarDebugInfo},
-        ty::{self, TyCtxt},
-    },
-};
+        ty::{TyCtxt},
+    };
 use pcs::borrows::domain::MaybeOldPlace;
 use pcs::utils::{PlaceRepacker, PlaceSnapshot, SnapshotLocation};
 use std::collections::BTreeMap;

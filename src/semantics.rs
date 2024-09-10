@@ -1,10 +1,8 @@
-use std::collections::BTreeSet;
-
-use crate::heap::{HeapData, SymbolicHeap};
-use crate::path::{Path};
+use crate::heap::HeapData;
+use crate::path::Path;
 use crate::path_conditions::PathConditions;
 use crate::rustc_interface::{
-    hir::def_id::{DefId, LocalDefId},
+    hir::def_id::DefId,
     middle::{
         mir::{self, Operand},
         ty::GenericArgsRef,
@@ -13,7 +11,7 @@ use crate::rustc_interface::{
 };
 use crate::terminator::FunctionCallEffects;
 use crate::value::{SymValue, SyntheticSymValue};
-use crate::SymbolicExecution;
+use crate::{Assertion, SymbolicExecution};
 
 pub trait VerifierSemantics<'sym, 'tcx>: std::marker::Sized {
     type SymValSynthetic: Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>;
@@ -23,10 +21,7 @@ pub trait VerifierSemantics<'sym, 'tcx>: std::marker::Sized {
         loop_head: mir::BasicBlock,
         path: Path<'sym, 'tcx, Self::SymValSynthetic>,
         sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, Self>,
-    ) -> Vec<(
-        PathConditions<'sym, 'tcx, Self::SymValSynthetic>,
-        SymValue<'sym, 'tcx, Self::SymValSynthetic>,
-    )>;
+    ) -> Vec<Assertion<'sym, 'tcx, Self::SymValSynthetic>>;
     fn encode_fn_call<'mir>(
         span: Span,
         sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, Self>,

@@ -1,16 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use pcs::utils::PlaceRepacker;
 
 use crate::{
-    context::SymExContext,
-    encoder::Encoder,
     function_call_snapshot::FunctionCallSnapshots,
-    place::Place,
-    rustc_interface::middle::mir::{self, BasicBlock, Body, Location, ProjectionElem, START_BLOCK},
-    rustc_interface::middle::ty,
-    transform::SymValueTransformer,
-    value::{self, SymValue, SymValueData, SymValueKind, SyntheticSymValue},
+    rustc_interface::middle::mir::{BasicBlock, Location, START_BLOCK},
+    value::{SymValue, SyntheticSymValue},
 };
 
 use super::{heap::HeapData, path_conditions::PathConditions};

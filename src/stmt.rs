@@ -7,7 +7,6 @@ use crate::{
     encoder::Encoder,
     heap::SymbolicHeap,
     path::{Path},
-    pcs_interaction::PcsLocation,
     place::Place,
     rustc_interface::middle::mir::{self},
     value::SymValue,

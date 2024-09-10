@@ -1,10 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::HashMap;
 
-use crate::execute::ResultAssertions;
+use crate::context::SymExContext;
 use crate::heap::HeapData;
 use crate::path::{LoopPath, SymExPath};
 use crate::rustc_interface::middle::ty;
 
+use crate::value::{CanSubst, Substs, SyntheticSymValue};
 use crate::{path::AcyclicPath, path_conditions::PathConditions, value::SymValue, Assertion};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -90,10 +91,72 @@ impl<'sym, 'tcx, T> ResultPath<'sym, 'tcx, T> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResultAssertions<'sym, 'tcx, T>(Vec<ResultAssertion<'sym, 'tcx, T>>);
+
+impl<'sym, 'tcx, T> ResultAssertions<'sym, 'tcx, T> {
+    pub fn new() -> Self {
+        ResultAssertions(Vec::new())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &ResultAssertion<'sym, 'tcx, T>> {
+        self.0.iter()
+    }
+
+    pub fn into_iter(self) -> impl Iterator<Item = ResultAssertion<'sym, 'tcx, T>> {
+        self.0.into_iter()
+    }
+}
+impl<'sym, 'tcx, T: Eq> ResultAssertions<'sym, 'tcx, T> {
+    pub fn insert(&mut self, assertion: ResultAssertion<'sym, 'tcx, T>) {
+        if !self.0.contains(&assertion) {
+            self.0.push(assertion);
+        }
+    }
+}
+impl<
+        'sym,
+        'tcx,
+        T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
+    > ResultAssertions<'sym, 'tcx, T>
+{
+    pub fn subst<'substs>(
+        self,
+        arena: &'sym SymExContext<'tcx>,
+        substs: &'substs Substs<'sym, 'tcx, T>,
+    ) -> Self {
+        ResultAssertions(
+            self.0
+                .into_iter()
+                .map(|assertion| assertion.subst(arena, substs))
+                .collect(),
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResultAssertion<'sym, 'tcx, T> {
     pub path: SymExPath,
     pub pcs: PathConditions<'sym, 'tcx, T>,
     pub assertion: Assertion<'sym, 'tcx, T>,
+}
+
+impl<
+        'sym,
+        'tcx,
+        T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
+    > ResultAssertion<'sym, 'tcx, T>
+{
+    pub fn subst<'substs>(
+        self,
+        arena: &'sym SymExContext<'tcx>,
+        substs: &'substs Substs<'sym, 'tcx, T>,
+    ) -> Self {
+        Self {
+            path: self.path,
+            pcs: self.pcs.subst(arena, substs),
+            assertion: self.assertion.subst(arena, substs),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

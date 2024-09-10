@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::rustc_interface::middle::mir::{
-    BasicBlock, Body, Local, StatementKind, Terminator, TerminatorEdges, TerminatorKind,
+    BasicBlock, Body, Local, StatementKind, Terminator, TerminatorKind,
 };
 
 use crate::path::AcyclicPath;

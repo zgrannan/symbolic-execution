@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 
 use pcs::utils::PlaceRepacker;
 use serde_json::json;
@@ -6,8 +5,8 @@ use serde_json::json;
 use crate::{
     context::SymExContext,
     debug_info::DEBUGINFO_NONE,
-    execute::ResultAssertions,
-    path::{AcyclicPath, Path, SymExPath},
+    results::ResultAssertions,
+    path::Path,
     pcs_interaction::PcsLocation,
     results::{ResultAssertion, ResultPaths},
     rustc_interface::{
