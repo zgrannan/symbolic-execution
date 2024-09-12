@@ -93,7 +93,7 @@ impl From<mir::CastKind> for CastKind {
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct BackwardsFn<'sym, 'tcx, T, V = SymVar> {
     /// The DefId of the Rust (forwards) function
-    pub def_id: DefId,
+    def_id: DefId,
 
     pub substs: GenericArgsRef<'tcx>,
 
@@ -106,15 +106,49 @@ pub struct BackwardsFn<'sym, 'tcx, T, V = SymVar> {
     /// expires
     pub return_snapshot: SymValue<'sym, 'tcx, T, V>,
 
-    /// The index of the argument that the backwards function is for. For
-    /// example, if the `arg_index` is `i` then backwards_fn(f, args, res, i)
-    /// returns the value of the `i`th element of `args` at the point when the
-    /// result of `f` expires with value `res`.
-    pub arg_index: usize,
+    /// The the argument that the backwards function is for. For example, if the
+    /// `arg` is `i` then backwards_fn(f, args, res, i) returns the value of the
+    /// `i`th element of `args` at the point when the result of `f` expires with
+    /// value `res`.
+    pub arg: mir::Local,
 }
+impl<'sym, 'tcx, T, V> BackwardsFn<'sym, 'tcx, T, V> {
+    pub fn def_id(&self) -> DefId {
+        self.def_id
+    }
+    pub fn arg_index(&self) -> usize {
+        self.arg.as_usize() - 1
+    }
+}
+
 impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> BackwardsFn<'sym, 'tcx, T, V> {
+    pub fn new(
+        tcx: ty::TyCtxt<'tcx>,
+        def_id: DefId,
+        substs: GenericArgsRef<'tcx>,
+        caller_def_id: Option<DefId>,
+        arg_snapshots: &'sym [SymValue<'sym, 'tcx, T, V>],
+        return_snapshot: SymValue<'sym, 'tcx, T, V>,
+        arg: mir::Local,
+    ) -> Self {
+        assert!(
+            !arg_snapshots[arg.as_usize() - 1].is_primitive(tcx),
+            "Shouln't construct backwards fn for {}'th arg of {:?} with ty {:?}",
+            arg.as_usize() - 1,
+            def_id,
+            arg_snapshots[arg.as_usize() - 1].kind.ty(tcx)
+        );
+        BackwardsFn {
+            def_id,
+            substs,
+            caller_def_id,
+            arg_snapshots,
+            return_snapshot,
+            arg
+        }
+    }
     pub fn ty(&self, tcx: ty::TyCtxt<'tcx>) -> Ty<'tcx> {
-        self.arg_snapshots[self.arg_index].kind.ty(tcx)
+        self.arg_snapshots[self.arg_index()].kind.ty(tcx)
     }
 }
 
@@ -146,7 +180,7 @@ impl<
                     .collect::<Vec<_>>(),
             ),
             return_snapshot: self.return_snapshot.apply_transformer(arena, transformer),
-            arg_index: self.arg_index,
+            arg: self.arg,
         }
     }
 }
@@ -233,6 +267,11 @@ impl<'sym, 'tcx, T: Copy + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug> std:
             writeln!(f, "{:?}: {:?}", k, v.kind)?;
         }
         Ok(())
+    }
+}
+impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueData<'sym, 'tcx, T, V> {
+    pub fn is_primitive(&self, tcx: ty::TyCtxt<'tcx>) -> bool {
+        self.kind.ty(tcx).rust_ty().is_primitive()
     }
 }
 

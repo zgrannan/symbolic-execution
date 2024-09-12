@@ -208,6 +208,26 @@ impl<'tcx> SymExContext<'tcx> {
             _ => {}
         }
 
+        if let Some(b) = rhs.kind.as_bool(self.tcx) {
+            match bin_op {
+                mir::BinOp::Eq => {
+                    if b {
+                        return lhs; // x == true ->
+                    } else {
+                        return self.mk_not(lhs); // x == false -> !x
+                    }
+                }
+                mir::BinOp::Ne => {
+                    if b {
+                        return self.mk_not(lhs); // x != true -> !x
+                    } else {
+                        return lhs; // x != false -> x
+                    }
+                }
+                _ => {}
+            }
+        }
+
         match (&lhs.kind, &rhs.kind) {
             (SymValueKind::Constant(lhs), SymValueKind::Constant(rhs)) => {
                 if lhs.ty() == self.tcx.types.u32 && rhs.ty() == self.tcx.types.u32 {

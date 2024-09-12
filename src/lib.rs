@@ -358,20 +358,26 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                             continue;
                                         }
                                     };
-                                    let value = self.arena.mk_backwards_fn(BackwardsFn {
-                                        caller_def_id: Some(self.def_id.into()),
-                                        def_id: c.def_id(),
-                                        substs: c.substs(),
-                                        arg_snapshots: snapshot.args,
-                                        return_snapshot: self.arena.mk_ref(
+                                    let value = self.arena.mk_backwards_fn(BackwardsFn::new(
+                                        self.arena.tcx,
+                                        c.def_id(),
+                                        c.substs(),
+                                        Some(self.def_id.into()),
+                                        snapshot.args,
+                                        self.arena.mk_ref(
                                             self.encode_maybe_old_place::<LookupGet, _>(
                                                 heap,
                                                 &assigned_place,
                                             ),
                                             Mutability::Mut,
                                         ),
-                                        arg_index: *idx,
-                                    });
+                                        Local::from_usize(*idx + 1),
+                                    ));
+                                    assert!(!snapshot.args[*idx]
+                                        .kind
+                                        .ty(self.tcx)
+                                        .rust_ty()
+                                        .is_primitive());
                                     assert_eq!(
                                         value.ty(self.tcx),
                                         snapshot.args[*idx].ty(self.tcx)

@@ -1,13 +1,12 @@
-
 use pcs::utils::PlaceRepacker;
 use serde_json::json;
 
 use crate::{
     context::SymExContext,
     debug_info::DEBUGINFO_NONE,
-    results::ResultAssertions,
     path::Path,
     pcs_interaction::PcsLocation,
+    results::ResultAssertions,
     results::{ResultAssertion, ResultPaths},
     rustc_interface::{
         ast::Mutability,
@@ -442,8 +441,8 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
             SymValueKind::BackwardsFn(backwards_fn) => {
                 format!(
                     "{}<sub>back_{}</sub>({}, {})",
-                    get_fn_name(tcx, backwards_fn.def_id),
-                    get_arg_name(tcx, backwards_fn.def_id, backwards_fn.arg_index),
+                    get_fn_name(tcx, backwards_fn.def_id()),
+                    get_arg_name(tcx, backwards_fn.def_id(), backwards_fn.arg_index()),
                     backwards_fn
                         .arg_snapshots
                         .to_vis_string(tcx, debug_info, mode),
