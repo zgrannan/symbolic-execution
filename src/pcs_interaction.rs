@@ -1,12 +1,14 @@
 use crate::{
     path::{Path, SymExPath},
     rustc_interface::middle::mir::Location,
+    value::SymValue,
+    LookupType,
 };
 
 use pcs::{
     borrows::{
         deref_expansion::{BorrowDerefExpansion, DerefExpansion},
-        domain::{Latest, MaybeOldPlace, Reborrow},
+        domain::{Latest, MaybeOldPlace, Reborrow, ReborrowBlockedPlace},
         engine::BorrowsDomain,
     },
     free_pcs::{FreePcsLocation, RepackOp},
@@ -14,8 +16,8 @@ use pcs::{
 };
 
 use crate::{
-    heap::SymbolicHeap, semantics::VerifierSemantics, visualization::VisFormat,
-    LookupGet, LookupTake, SymbolicExecution,
+    heap::SymbolicHeap, semantics::VerifierSemantics, visualization::VisFormat, LookupGet,
+    LookupTake, SymbolicExecution,
 };
 
 pub type PcsLocation<'mir, 'tcx> =
@@ -83,7 +85,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub(crate) fn handle_removed_reborrow(
         &self,
-        blocked_place: &MaybeOldPlace<'tcx>,
+        blocked_place: ReborrowBlockedPlace<'tcx>,
         assigned_place: &MaybeOldPlace<'tcx>,
         is_mut: bool,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
@@ -93,10 +95,18 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             return;
         }
         let heap_value = self.encode_maybe_old_place::<LookupTake, _>(heap, assigned_place);
-        if blocked_place.is_old() {
-            heap.insert_maybe_old_place(*blocked_place, heap_value);
-        } else {
-            heap.insert(blocked_place.place(), heap_value, location);
+        match blocked_place {
+            ReborrowBlockedPlace::Local(blocked_place) => {
+                if blocked_place.is_old() {
+                    heap.insert_maybe_old_place(blocked_place, heap_value);
+                } else {
+                    heap.insert(blocked_place.place(), heap_value, location);
+                }
+            }
+            ReborrowBlockedPlace::Remote(_) => {
+                // Presumably this is to determine the result value for a pledge
+                // Don't do anything, we'll use the assigned place from the heap
+            }
         }
     }
 
@@ -157,11 +167,24 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 continue;
             }
             let blocked_value = if reborrow.mutability.is_mut() {
-                self.encode_maybe_old_place::<LookupTake, _>(heap, &reborrow.blocked_place)
+                self.encode_reborrow_blocked_place::<LookupTake>(heap, reborrow.blocked_place)
             } else {
-                self.encode_maybe_old_place::<LookupGet, _>(heap, &reborrow.blocked_place)
+                self.encode_reborrow_blocked_place::<LookupGet>(heap, reborrow.blocked_place)
             };
             heap.insert_maybe_old_place(reborrow.assigned_place, blocked_value);
+        }
+    }
+
+    fn encode_reborrow_blocked_place<'heap, T: LookupType>(
+        &self,
+        heap: &mut SymbolicHeap<'heap, '_, 'sym, 'tcx, S::SymValSynthetic>,
+        place: ReborrowBlockedPlace<'tcx>,
+    ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
+        match place {
+            ReborrowBlockedPlace::Local(place) => self.encode_maybe_old_place::<T, _>(heap, &place),
+            ReborrowBlockedPlace::Remote(local) => {
+                todo!()
+            }
         }
     }
 

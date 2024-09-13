@@ -46,7 +46,7 @@ use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
 use pcs::{
     borrows::{
-        domain::{Latest, MaybeOldPlace},
+        domain::{Latest, MaybeOldPlace, ReborrowBlockedPlace},
         unblock_graph::UnblockGraph,
     },
     combined_pcs::UnblockAction,
@@ -333,7 +333,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     ..
                 } => {
                     self.handle_removed_reborrow(
-                        &blocked_place,
+                        blocked_place,
                         &assigned_place,
                         is_mut,
                         heap,
@@ -410,13 +410,26 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let mut facts = BackwardsFacts::new();
         if return_place.is_mut_ref(self.body, self.tcx) {
             let mut borrow_state = pcs.extra.after.clone();
+            eprintln!(
+                "borrow_state before {:?}",
+                borrow_state.graph_edges().collect::<Vec<_>>()
+            );
             borrow_state.filter_for_path(path.blocks());
-            for arg in 1..=self.body.arg_count {
-                let local = Local::from_usize(arg);
-                let arg_place: mir::Place<'tcx> = local.into();
+            for arg in self.body.args_iter() {
+                let arg_place: mir::Place<'tcx> = arg.into();
                 let arg_place: Place<'tcx> = arg_place.into();
                 if arg_place.is_mut_ref(self.body, self.tcx) {
-                    let blocked_place = arg_place.project_deref(self.repacker());
+                    let remote_place = ReborrowBlockedPlace::Remote(arg);
+                    let blocked_place = match borrow_state.get_place_blocking(remote_place) {
+                        Some(blocked_place) => blocked_place,
+                        None => {
+                            eprintln!(
+                                "{:?} No blocked place found for {:?} in path {:?}",
+                                self.def_id, remote_place, path
+                            );
+                            continue;
+                        }
+                    };
                     let mut heap = heap_data.clone();
                     let mut heap = SymbolicHeap::new(&mut heap, self.tcx, self.body, &self.arena);
                     heap.insert(
@@ -430,8 +443,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         ),
                         pcs.location,
                     );
-                    let ug =
-                        UnblockGraph::for_place(blocked_place.0, &borrow_state, self.repacker());
+                    let ug = UnblockGraph::for_place(
+                        blocked_place.into(),
+                        &borrow_state,
+                        self.repacker(),
+                    );
                     let actions = ug.actions(self.repacker());
                     self.apply_unblock_actions(
                         actions,
@@ -440,7 +456,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         pcs.location,
                     );
                     facts.insert(
-                        arg - 1,
+                        arg.index() - 1,
                         self.encode_maybe_old_place::<LookupGet, _>(&mut heap, &blocked_place),
                     );
                 }
