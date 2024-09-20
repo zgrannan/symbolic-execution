@@ -139,9 +139,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             .collect();
         expands.sort_by_key(|ep| ep.base().place().projection.len());
         for ep in expands {
-            if !path.contains(ep.location().block) {
-                continue;
-            }
             let place = ep.base();
             let value = self.encode_maybe_old_place::<LookupGet, _>(heap, &place);
 

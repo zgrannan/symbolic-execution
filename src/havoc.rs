@@ -142,7 +142,6 @@ impl LoopData {
                 }
             }
         }
-        eprintln!("invariant_info: {:?}", invariant_info);
         Self { invariant_info }
     }
 }
