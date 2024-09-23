@@ -344,15 +344,33 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     self.collapse_place_from(place, places[0], heap, location);
                 }
                 UnblockAction::TerminateAbstraction(_, typ) => match &typ {
+                    pcs::borrows::domain::AbstractionType::Loop(lp) => {
+                        for edge in lp.edges() {
+                            match edge.input {
+                                pcs::borrows::domain::AbstractionTarget::Place(place) => {
+                                    if let Some(place) = place.as_local() {
+                                        heap.insert_maybe_old_place(
+                                            place,
+                                            self.mk_fresh_symvar(place.ty(self.repacker()).ty),
+                                        );
+                                    }
+                                }
+                                pcs::borrows::domain::AbstractionTarget::RegionProjection(
+                                    region_projection,
+                                ) => todo!(),
+                            }
+                        }
+                    }
                     pcs::borrows::domain::AbstractionType::FunctionCall(c) => {
                         let snapshot = function_call_snapshots.get_snapshot(&c.location());
                         for (idx, edge) in c.edges() {
                             match edge.input {
-                                pcs::borrows::domain::AbstractionTarget::MaybeOldPlace(place) => {
+                                pcs::borrows::domain::AbstractionTarget::Place(place) => {
+                                    let place = place.as_local().unwrap();
                                     let assigned_place = match edge.output {
-                                        pcs::borrows::domain::AbstractionTarget::MaybeOldPlace(
-                                            place,
-                                        ) => place,
+                                        pcs::borrows::domain::AbstractionTarget::Place(place) => {
+                                            place
+                                        }
                                         _ => {
                                             // TODO
                                             continue;
