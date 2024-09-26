@@ -7,8 +7,9 @@ use crate::{
 
 use pcs::{
     borrows::{
+        latest::Latest,
         deref_expansion::{BorrowDerefExpansion, DerefExpansion},
-        domain::{Latest, MaybeOldPlace, Reborrow, ReborrowBlockedPlace},
+        domain::{MaybeOldPlace, Reborrow, ReborrowBlockedPlace},
         engine::BorrowsDomain,
     },
     free_pcs::{FreePcsLocation, RepackOp},
@@ -115,7 +116,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         repacks: &Vec<RepackOp<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
-        latest: &Latest<'tcx>,
+        latest: &Latest,
     ) {
         for repack in repacks {
             if matches!(repack, RepackOp::Collapse(..)) {
@@ -130,7 +131,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         path: &SymExPath,
         location: Location,
-        latest: &Latest<'tcx>,
+        latest: &Latest,
     ) {
         // TODO: Explain why owned expansions don't need to be handled
         let mut expands: Vec<BorrowDerefExpansion<'tcx>> = expands
@@ -190,7 +191,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         repacks: &Vec<RepackOp<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
-        latest: &Latest<'tcx>,
+        latest: &Latest,
     ) {
         for repack in repacks {
             if matches!(repack, RepackOp::Expand(..)) {
