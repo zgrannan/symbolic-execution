@@ -131,7 +131,7 @@ impl<'tcx> SymExContext<'tcx> {
         val: SymValue<'sym, 'tcx, T, V>,
     ) -> SymValue<'sym, 'tcx, T, V> {
         if let mir::ProjectionElem::Field(idx, _) = kind {
-            if let SymValueKind::Aggregate(kind, vals) = &val.kind {
+            if let SymValueKind::Aggregate(_, vals) = &val.kind {
                 if let Some(val) = vals.get(idx.as_usize()) {
                     return val;
                 }

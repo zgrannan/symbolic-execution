@@ -26,11 +26,11 @@ fn get_successor<'tcx>(terminator: &Terminator<'tcx>) -> Option<BasicBlock> {
         TerminatorKind::CoroutineDrop => todo!(),
         TerminatorKind::FalseEdge {
             real_target,
-            imaginary_target,
+            ..
         } => Some(real_target),
         TerminatorKind::FalseUnwind {
             real_target,
-            unwind,
+            ..
         } => Some(real_target),
         TerminatorKind::InlineAsm { .. } => todo!(),
         _ => todo!(),

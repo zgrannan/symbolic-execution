@@ -1,6 +1,5 @@
 use crate::heap::HeapData;
 use crate::path::Path;
-use crate::path_conditions::PathConditions;
 use crate::rustc_interface::{
     hir::def_id::DefId,
     middle::{
@@ -10,7 +9,7 @@ use crate::rustc_interface::{
     span::Span,
 };
 use crate::terminator::FunctionCallEffects;
-use crate::value::{SymValue, SyntheticSymValue};
+use crate::value::SyntheticSymValue;
 use crate::{Assertion, SymbolicExecution};
 
 pub trait VerifierSemantics<'sym, 'tcx>: std::marker::Sized {

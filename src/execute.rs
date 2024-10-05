@@ -1,6 +1,5 @@
 use crate::{
     context::ErrorLocation,
-    encoder::Encoder,
     heap::{HeapData, SymbolicHeap},
     path::{AcyclicPath, Path},
     path_conditions::PathConditions,

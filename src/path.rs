@@ -31,7 +31,7 @@ impl SymExPath {
 
     pub fn can_push(&self, block: BasicBlock) -> bool {
         match self {
-            SymExPath::Acyclic(path) => true,
+            SymExPath::Acyclic(_) => true,
             SymExPath::Loop(path) => path.can_push(block),
         }
     }

@@ -217,7 +217,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let precondition_assertion = match function_type {
             FunctionType::DiscriminantValue => None,
             FunctionType::Panic => Some(Assertion::false_(self.arena)),
-            FunctionType::RustFunction(_) => {
+            FunctionType::RustFunction => {
                 Some(Assertion::Precondition(def_id, substs, encoded_args))
             }
         };
@@ -234,7 +234,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 }
             }
             FunctionType::Panic => FunctionCallResult::Never,
-            FunctionType::RustFunction(_) => {
+            FunctionType::RustFunction => {
                 let postcondition_args = args
                     .iter()
                     .zip(encoded_args)
@@ -257,7 +257,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let snapshot = match function_type {
             FunctionType::DiscriminantValue => None,
             FunctionType::Panic => None,
-            FunctionType::RustFunction(_) => Some(FunctionCallSnapshot { args: encoded_args }),
+            FunctionType::RustFunction => Some(FunctionCallSnapshot { args: encoded_args }),
         };
 
         FunctionCallEffects {
@@ -271,7 +271,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 enum FunctionType {
     DiscriminantValue,
     Panic,
-    RustFunction(String),
+    RustFunction,
 }
 
 impl FunctionType {
@@ -280,7 +280,7 @@ impl FunctionType {
         match fn_name.as_str() {
             "std::intrinsics::discriminant_value" => FunctionType::DiscriminantValue,
             "core::panicking::panic" => FunctionType::Panic,
-            _ => FunctionType::RustFunction(fn_name),
+            _ => FunctionType::RustFunction,
         }
     }
 }

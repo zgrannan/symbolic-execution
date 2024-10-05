@@ -198,6 +198,7 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
 
 trait LookupType {
     type Heap<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone + VisFormat>: std::fmt::Debug + VisFormat;
+    #[allow(unused)]
     fn lookup<'heap, 'sym: 'heap, 'tcx: 'sym, S: 'sym + std::fmt::Debug + Clone + VisFormat>(
         heap: Self::Heap<'heap, 'sym, 'tcx, S>,
         place: &MaybeOldPlace<'tcx>,
@@ -356,9 +357,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                         );
                                     }
                                 }
-                                pcs::borrows::domain::AbstractionTarget::RegionProjection(
-                                    region_projection,
-                                ) => todo!(),
+                                pcs::borrows::domain::AbstractionTarget::RegionProjection(_) => {
+                                    todo!()
+                                }
                             }
                         }
                     }

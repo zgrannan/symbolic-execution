@@ -70,7 +70,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         self.handle_reborrow_expands(
             reborrow_expands.into_iter().map(|ep| ep.value).collect(),
             &mut heap,
-            &path.path,
             location,
             &pcs.extra.after.latest,
         );
@@ -129,7 +128,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &self,
         expands: Vec<DerefExpansion<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        path: &SymExPath,
         location: Location,
         latest: &Latest,
     ) {
@@ -180,7 +178,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
         match place {
             ReborrowBlockedPlace::Local(place) => self.encode_maybe_old_place::<T, _>(heap, &place),
-            ReborrowBlockedPlace::Remote(local) => {
+            ReborrowBlockedPlace::Remote(_) => {
                 todo!()
             }
         }

@@ -9,8 +9,7 @@ use crate::{
     results::ResultAssertions,
     rustc_interface::middle::mir::{self, BasicBlock, Location},
     semantics::VerifierSemantics,
-    visualization::VisFormat,
-    Assertion, SymbolicExecution,
+    visualization::VisFormat, SymbolicExecution,
 };
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>

@@ -1,5 +1,6 @@
 use crate::rustc_interface::middle::ty;
 
+#[allow(unused)]
 pub fn assert_tys_match<'tcx>(tcx: ty::TyCtxt<'tcx>, ty1: ty::Ty<'tcx>, ty2: ty::Ty<'tcx>) {
     let ty1 = tcx.erase_regions(ty1);
     let ty2 = tcx.erase_regions(ty2);
