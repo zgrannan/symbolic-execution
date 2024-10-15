@@ -7,10 +7,10 @@ use crate::{
 
 use pcs::{
     borrows::{
-        latest::Latest,
         deref_expansion::{BorrowDerefExpansion, DerefExpansion},
-        domain::{MaybeOldPlace, Reborrow, ReborrowBlockedPlace},
+        domain::{MaybeOldPlace, MaybeRemotePlace, Reborrow},
         engine::BorrowsDomain,
+        latest::Latest,
     },
     free_pcs::{FreePcsLocation, RepackOp},
     ReborrowBridge,
@@ -85,7 +85,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub(crate) fn handle_removed_reborrow(
         &self,
-        blocked_place: ReborrowBlockedPlace<'tcx>,
+        blocked_place: MaybeRemotePlace<'tcx>,
         assigned_place: &MaybeOldPlace<'tcx>,
         is_mut: bool,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
@@ -96,14 +96,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
         let heap_value = self.encode_maybe_old_place::<LookupTake, _>(heap, assigned_place);
         match blocked_place {
-            ReborrowBlockedPlace::Local(blocked_place) => {
+            MaybeRemotePlace::Local(blocked_place) => {
                 if blocked_place.is_old() {
                     heap.insert_maybe_old_place(blocked_place, heap_value);
                 } else {
                     heap.insert(blocked_place.place(), heap_value, location);
                 }
             }
-            ReborrowBlockedPlace::Remote(_) => {
+            MaybeRemotePlace::Remote(_) => {
                 // Presumably this is to determine the result value for a pledge
                 // Don't do anything, we'll use the assigned place from the heap
             }
@@ -174,11 +174,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     fn encode_reborrow_blocked_place<'heap, T: LookupType>(
         &self,
         heap: &mut SymbolicHeap<'heap, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        place: ReborrowBlockedPlace<'tcx>,
+        place: MaybeRemotePlace<'tcx>,
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
         match place {
-            ReborrowBlockedPlace::Local(place) => self.encode_maybe_old_place::<T, _>(heap, &place),
-            ReborrowBlockedPlace::Remote(_) => {
+            MaybeRemotePlace::Local(place) => self.encode_maybe_old_place::<T, _>(heap, &place),
+            MaybeRemotePlace::Remote(_) => {
                 todo!()
             }
         }

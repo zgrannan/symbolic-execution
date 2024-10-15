@@ -46,7 +46,7 @@ use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
 use pcs::{
     borrows::{
-        domain::{MaybeOldPlace, ReborrowBlockedPlace},
+        domain::{MaybeOldPlace, MaybeRemotePlace},
         latest::Latest,
         unblock_graph::UnblockGraph,
     },
@@ -450,7 +450,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let arg_place: mir::Place<'tcx> = arg.into();
                 let arg_place: Place<'tcx> = arg_place.into();
                 if arg_place.is_mut_ref(self.body, self.tcx) {
-                    let remote_place = ReborrowBlockedPlace::Remote(arg);
+                    let remote_place = MaybeRemotePlace::Remote(arg);
                     let blocked_place = match borrow_state.get_place_blocking(remote_place) {
                         Some(blocked_place) => blocked_place,
                         None => {
@@ -604,7 +604,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         for f in places {
             assert_eq!(
                 f.place().projection.len(),
-                place.place().projection.len() + 1
+                place.place().projection.len() + 1,
+                "Place {:?} is not a direct descendant of {:?}",
+                f.place(),
+                place.place(),
             );
             let mut value = value;
             for elem in f.place().projection.iter().skip(old_proj_len) {
