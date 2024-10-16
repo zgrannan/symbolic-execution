@@ -351,7 +351,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             for input in edge.inputs() {
                                 match input {
                                     pcs::borrows::domain::AbstractionTarget::Place(place) => {
-                                        if let Some(place) = place.as_local() {
+                                        if let Some(place) = place.as_local_place() {
                                             heap.insert_maybe_old_place(
                                                 place,
                                                 self.mk_fresh_symvar(place.ty(self.repacker()).ty),
@@ -361,7 +361,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                     pcs::borrows::domain::AbstractionTarget::RegionProjection(
                                         _,
                                     ) => {
-                                        todo!()
+                                        {} // TODO
                                     }
                                 }
                             }
@@ -374,7 +374,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 for output in edge.outputs() {
                                     match input {
                                         pcs::borrows::domain::AbstractionTarget::Place(place) => {
-                                            let place = place.as_local().unwrap();
+                                            let place = place.as_local_place().unwrap();
                                             let assigned_place = match output {
                                                 pcs::borrows::domain::AbstractionTarget::Place(
                                                     place,
@@ -441,16 +441,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let mut facts = BackwardsFacts::new();
         if return_place.is_mut_ref(self.body, self.tcx) {
             let mut borrow_state = pcs.extra.after.clone();
-            eprintln!(
-                "borrow_state before {:?}",
-                borrow_state.graph_edges().collect::<Vec<_>>()
-            );
             borrow_state.filter_for_path(path.blocks());
             for arg in self.body.args_iter() {
                 let arg_place: mir::Place<'tcx> = arg.into();
                 let arg_place: Place<'tcx> = arg_place.into();
                 if arg_place.is_mut_ref(self.body, self.tcx) {
-                    let remote_place = MaybeRemotePlace::Remote(arg);
+                    let remote_place = MaybeRemotePlace::place_assigned_to_local(arg);
                     let blocked_place = match borrow_state.get_place_blocking(remote_place) {
                         Some(blocked_place) => blocked_place,
                         None => {
