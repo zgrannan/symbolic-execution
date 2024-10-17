@@ -115,7 +115,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         repacks: &Vec<RepackOp<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
-        latest: &Latest,
+        latest: &Latest<'tcx>,
     ) {
         for repack in repacks {
             if matches!(repack, RepackOp::Collapse(..)) {
@@ -129,7 +129,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         expands: Vec<DerefExpansion<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
-        latest: &Latest,
+        latest: &Latest<'tcx>,
     ) {
         // TODO: Explain why owned expansions don't need to be handled
         let mut expands: Vec<BorrowDerefExpansion<'tcx>> = expands
@@ -189,7 +189,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         repacks: &Vec<RepackOp<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
-        latest: &Latest,
+        latest: &Latest<'tcx>,
     ) {
         for repack in repacks {
             if matches!(repack, RepackOp::Expand(..)) {

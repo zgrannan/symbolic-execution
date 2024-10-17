@@ -594,7 +594,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         places: impl Iterator<Item = MaybeOldPlace<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
-        latest: &Latest,
+        latest: &Latest<'tcx>,
     ) {
         let old_proj_len = place.place().projection.len();
         for f in places {
@@ -613,7 +613,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 MaybeOldPlace::Current { place: p } => {
                     heap.insert(p, value, location);
                     heap.insert_maybe_old_place(
-                        MaybeOldPlace::new(p, Some(latest.get(&place.place()))),
+                        MaybeOldPlace::new(p, Some(latest.get(place.place()))),
                         value,
                     );
                 }
@@ -628,7 +628,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         guide: &pcs::utils::Place<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
-        latest: &Latest,
+        latest: &Latest<'tcx>,
     ) {
         let value = match place.ty(self.fpcs_analysis.repacker()).ty.kind() {
             ty::TyKind::Ref(_, _, Mutability::Mut) => {
@@ -703,7 +703,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         repack: &RepackOp<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
-        latest: &Latest,
+        latest: &Latest<'tcx>,
     ) {
         match repack {
             RepackOp::StorageDead(_) => todo!(),
