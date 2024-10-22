@@ -1,7 +1,7 @@
-
-
 use crate::{
     function_call_snapshot::FunctionCallSnapshots,
+    predicate::Predicate,
+    results::ResultAssertion,
     rustc_interface::middle::mir::{BasicBlock, Location, START_BLOCK},
     value::{SymValue, SyntheticSymValue},
 };
@@ -185,12 +185,31 @@ impl AcyclicPath {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Path<'sym, 'tcx, T> {
     pub path: SymExPath,
-    pub pcs: PathConditions<'sym, 'tcx, T>,
+    pcs: PathConditions<'sym, 'tcx, T>,
     pub heap: HeapData<'sym, 'tcx, T>,
     pub function_call_snapshots: FunctionCallSnapshots<'sym, 'tcx, T>,
 }
 
 impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> Path<'sym, 'tcx, T> {
+    pub fn pcs(&self) -> &PathConditions<'sym, 'tcx, T> {
+        &self.pcs
+    }
+}
+
+impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx> + Clone> Path<'sym, 'tcx, T> {
+    pub fn conditional_assertion(
+        &self,
+        assertion: Predicate<'sym, 'tcx, T>,
+    ) -> ResultAssertion<'sym, 'tcx, T> {
+        ResultAssertion {
+            path: self.path.clone(),
+            assertion: Predicate::implies(self.pcs().clone(), assertion),
+        }
+    }
+    pub fn add_path_condition(&mut self, predicate: Predicate<'sym, 'tcx, T>) {
+        let new_pcs = self.pcs.clone().and(predicate);
+        self.pcs = new_pcs;
+    }
     pub fn new(
         path: AcyclicPath,
         pcs: PathConditions<'sym, 'tcx, T>,
@@ -213,7 +232,7 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>> Path<'sym, 'tcx, T> {
     }
 
     pub fn has_path_conditions(&self) -> bool {
-        !self.pcs.is_empty()
+        !self.pcs.is_true()
     }
 
     pub fn last_block(&self) -> BasicBlock {

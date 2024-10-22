@@ -11,10 +11,12 @@ mod function_call_snapshot;
 pub mod havoc;
 pub mod heap;
 mod r#loop;
+pub mod params;
 pub mod path;
 pub mod path_conditions;
 mod pcs_interaction;
 pub mod place;
+pub mod predicate;
 pub mod results;
 mod rustc_interface;
 pub mod semantics;
@@ -42,6 +44,7 @@ use context::{ErrorContext, ErrorLocation, SymExContext};
 use function_call_snapshot::FunctionCallSnapshots;
 use havoc::LoopData;
 use heap::{HeapData, SymbolicHeap};
+use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
 use pcs::{
@@ -56,6 +59,7 @@ use pcs::{
     FpcsOutput,
 };
 use pcs_interaction::PcsLocation;
+use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
 use semantics::VerifierSemantics;
 use transform::SymValueTransformer;
@@ -68,115 +72,17 @@ use self::{
     value::{AggregateKind, SymValue},
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Assertion<'sym, 'tcx, T> {
-    Value(SymValue<'sym, 'tcx, T>),
-    Precondition(DefId, GenericArgsRef<'tcx>, &'sym [SymValue<'sym, 'tcx, T>]),
-    Implication(Box<Assertion<'sym, 'tcx, T>>, Box<Assertion<'sym, 'tcx, T>>),
-    PathConditions(PathConditions<'sym, 'tcx, T>),
-}
+pub type Assertion<'sym, 'tcx, T> = Predicate<'sym, 'tcx, T>;
 
 impl<'sym, 'tcx, T> Assertion<'sym, 'tcx, T> {
-    pub fn implication(lhs: Assertion<'sym, 'tcx, T>, rhs: Assertion<'sym, 'tcx, T>) -> Self {
-        Assertion::Implication(Box::new(lhs), Box::new(rhs))
-    }
     pub fn false_(arena: &'sym SymExContext<'tcx>) -> Self {
         Assertion::Value(arena.mk_constant(Constant::from_bool(arena.tcx, false)))
     }
-    pub fn from_value(value: SymValue<'sym, 'tcx, T>) -> Self {
+}
+
+impl<'sym, 'tcx, T> From<SymValue<'sym, 'tcx, T>> for Assertion<'sym, 'tcx, T> {
+    fn from(value: SymValue<'sym, 'tcx, T>) -> Self {
         Assertion::Value(value)
-    }
-    pub fn from_path_conditions(pcs: PathConditions<'sym, 'tcx, T>) -> Self {
-        Assertion::PathConditions(pcs)
-    }
-}
-
-impl<
-        'sym,
-        'tcx,
-        T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
-    > Assertion<'sym, 'tcx, T>
-{
-    pub fn apply_transformer(
-        self,
-        arena: &'sym SymExContext<'tcx>,
-        transformer: &mut impl SymValueTransformer<'sym, 'tcx, T>,
-    ) -> Self {
-        match self {
-            Assertion::Value(value) => {
-                Assertion::Value(value.apply_transformer(arena, transformer))
-            }
-            Assertion::Precondition(def_id, generics, args) => Assertion::Precondition(
-                def_id,
-                generics,
-                arena.alloc_slice(
-                    &args
-                        .into_iter()
-                        .map(|arg| arg.apply_transformer(arena, transformer))
-                        .collect::<Vec<_>>(),
-                ),
-            ),
-            Assertion::PathConditions(pcs) => {
-                Assertion::PathConditions(pcs.apply_transformer(arena, transformer))
-            }
-            Assertion::Implication(lhs, rhs) => Assertion::Implication(
-                Box::new(lhs.apply_transformer(arena, transformer)),
-                Box::new(rhs.apply_transformer(arena, transformer)),
-            ),
-        }
-    }
-
-    pub fn subst<'substs>(
-        self,
-        arena: &'sym SymExContext<'tcx>,
-        substs: &'substs Substs<'sym, 'tcx, T>,
-    ) -> Assertion<'sym, 'tcx, T> {
-        match self {
-            Assertion::Precondition(def_id, generics, args) => Assertion::Precondition(
-                def_id,
-                generics,
-                arena.alloc_slice(
-                    &args
-                        .into_iter()
-                        .map(|arg| arg.subst(arena, substs))
-                        .collect::<Vec<_>>(),
-                ),
-            ),
-            Assertion::Value(val) => Assertion::Value(val.subst(arena, substs)),
-            Assertion::Implication(lhs, rhs) => Assertion::Implication(
-                Box::new(lhs.subst(arena, substs)),
-                Box::new(rhs.subst(arena, substs)),
-            ),
-            Assertion::PathConditions(pcs) => Assertion::PathConditions(pcs.subst(arena, substs)),
-        }
-    }
-}
-
-impl<'sym, 'tcx, T: VisFormat> VisFormat for Assertion<'sym, 'tcx, T> {
-    fn to_vis_string(
-        &self,
-        tcx: Option<TyCtxt<'_>>,
-        debug_info: &[VarDebugInfo],
-        mode: OutputMode,
-    ) -> String {
-        match self {
-            Assertion::Value(val) => val.to_vis_string(tcx, debug_info, mode),
-            Assertion::Precondition(def_id, _substs, args) => {
-                format!(
-                    "{:?}({})",
-                    def_id,
-                    args.to_vis_string(tcx, debug_info, mode)
-                )
-            }
-            Assertion::Implication(lhs, rhs) => {
-                format!(
-                    "({} => {})",
-                    lhs.to_vis_string(tcx, debug_info, mode),
-                    rhs.to_vis_string(tcx, debug_info, mode)
-                )
-            }
-            Assertion::PathConditions(pcs) => pcs.to_vis_string(tcx, debug_info, mode),
-        }
     }
 }
 
@@ -506,15 +412,16 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) where
         S::SymValSynthetic: Eq,
     {
+        let pcs = path.pcs().clone();
         match path.path {
             SymExPath::Loop(loop_path) => {
-                self.add_loop_path(loop_path, path.pcs);
+                self.add_loop_path(loop_path, pcs);
             }
             SymExPath::Acyclic(acyclic_path) => {
                 self.add_return_path(
                     acyclic_path,
                     path.heap,
-                    path.pcs,
+                    pcs,
                     path.function_call_snapshots,
                     pcs_loc,
                 );
@@ -718,17 +625,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             RepackOp::DerefShallowInit(_, _) => todo!(),
         }
     }
-}
-
-pub struct SymExParams<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>> {
-    pub def_id: LocalDefId,
-    pub body: &'mir Body<'tcx>,
-    pub tcx: TyCtxt<'tcx>,
-    pub fpcs_analysis: FpcsOutput<'mir, 'tcx>,
-    pub verifier_semantics: S,
-    pub arena: &'sym SymExContext<'tcx>,
-    pub debug_output_dir: Option<String>,
-    pub new_symvars_allowed: bool,
 }
 
 pub fn run_symbolic_execution<

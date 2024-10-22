@@ -7,11 +7,12 @@ use crate::encoder::Encoder;
 use crate::function_call_snapshot::FunctionCallSnapshot;
 use crate::heap::SymbolicHeap;
 use crate::path::Path;
-use crate::path_conditions::{PathConditionAtom, PathConditionPredicate};
 use crate::pcs_interaction::PcsLocation;
+use crate::predicate::Predicate;
 use crate::results::ResultAssertion;
 use crate::results::ResultAssertions;
 use crate::value::SymValue;
+use crate::value::SymVar;
 use crate::visualization::{export_path_json, StepType};
 use crate::Assertion;
 use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExecution};
@@ -37,7 +38,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) where
         S::SymValSynthetic: Eq,
     {
-        let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
         match &terminator.kind {
             mir::TerminatorKind::Drop { target, .. }
             | mir::TerminatorKind::FalseEdge {
@@ -85,22 +85,22 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let ty = discr.ty(&self.body.local_decls, self.tcx);
                 for ((value, target), _loc) in targets.iter().zip(fpcs_terminator.succs.iter()) {
                     let mut path = path.push(target);
-                    let pred = PathConditionPredicate::Eq(value, ty);
                     let mut heap: SymbolicHeap<'_, 'mir, 'sym, 'tcx, S::SymValSynthetic> =
                         SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
                     let operand: SymValue<'sym, 'tcx, S::SymValSynthetic> =
                         self.encode_operand(&mut heap, discr);
-                    path.pcs
-                        .insert(PathConditionAtom::predicate(operand, pred.clone()));
+                    let pred = Predicate::SwitchIntEq(operand, value, ty);
+                    path.add_path_condition(pred);
                     paths.push(path);
                 }
                 let mut path = path.push(targets.otherwise());
-                let pred = PathConditionPredicate::Ne(targets.iter().map(|t| t.0).collect(), ty);
                 let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
-                path.pcs.insert(PathConditionAtom::predicate(
+                let pred = Predicate::SwitchIntNe(
                     self.encode_operand(&mut heap, discr),
-                    pred.clone(),
-                ));
+                    targets.iter().map(|t| t.0).collect(),
+                    ty,
+                );
+                path.add_path_condition(pred);
                 paths.push(path);
             }
             mir::TerminatorKind::Assert {
@@ -116,11 +116,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 } else {
                     self.arena.mk_not(cond)
                 };
-                assertions.insert(ResultAssertion {
-                    path: path.path.clone(),
-                    pcs: path.pcs.clone(),
-                    assertion: Assertion::from_value(cond),
-                });
+                assertions.insert(path.conditional_assertion(cond.into()));
                 paths.push(path.push(*target));
             }
             mir::TerminatorKind::Call {
@@ -131,6 +127,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 ..
             } => match func.ty(&self.body.local_decls, self.tcx).kind() {
                 ty::TyKind::FnDef(def_id, substs) => {
+                    let mut heap =
+                        SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
                     let effects = self.get_function_call_effects(
                         *def_id,
                         substs,
@@ -141,13 +139,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     );
 
                     if let Some(assertion) = effects.precondition_assertion {
-                        assertions.insert(ResultAssertion {
-                            path: path.path.clone(),
-                            pcs: path.pcs.clone(),
-                            assertion,
-                        });
+                        assertions.insert(path.conditional_assertion(assertion));
                     }
 
+                    let mut heap =
+                        SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
                     match effects.result {
                         FunctionCallResult::Value {
                             value,
@@ -155,11 +151,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         } => {
                             heap.insert(*destination, value, location.location);
                             if let Some(postcondition) = postcondition {
-                                path.pcs
-                                    .insert(PathConditionAtom::predicate(value, postcondition));
+                                path.add_path_condition(postcondition);
                             }
                         }
-                        FunctionCallResult::Unknown { postcondition } => {
+                        FunctionCallResult::Unknown {
+                            pre_values,
+                            post_values,
+                        } => {
                             if let Some(snapshot) = effects.snapshot {
                                 path.function_call_snapshots
                                     .add_snapshot(location.location, snapshot.args);
@@ -168,8 +166,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 destination.ty(&self.body.local_decls, self.tcx).ty,
                             );
                             heap.insert(*destination, sym_var, location.location);
-                            path.pcs
-                                .insert(PathConditionAtom::predicate(sym_var, postcondition));
+                            path.add_path_condition(Predicate::Postcondition {
+                                expr: sym_var,
+                                def_id: *def_id,
+                                substs: *substs,
+                                pre_values: self.alloc_slice(pre_values),
+                                post_values: self.alloc_slice(post_values),
+                            });
                         }
                         FunctionCallResult::Never => {}
                     };
@@ -244,12 +247,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     })
                     .collect::<Vec<_>>();
                 FunctionCallResult::Unknown {
-                    postcondition: PathConditionPredicate::Postcondition {
-                        def_id,
-                        substs,
-                        pre_values: self.alloc_slice(&encoded_args),
-                        post_values: self.alloc_slice(&postcondition_args),
-                    },
+                    pre_values: self.alloc_slice(&encoded_args),
+                    post_values: self.alloc_slice(&postcondition_args),
                 }
             }
         };
@@ -288,11 +287,16 @@ impl FunctionType {
 pub enum FunctionCallResult<'sym, 'tcx, T> {
     Value {
         value: SymValue<'sym, 'tcx, T>,
-        postcondition: Option<PathConditionPredicate<'sym, 'tcx, T>>,
+        postcondition: Option<Predicate<'sym, 'tcx, T>>,
     },
     Never,
     Unknown {
-        postcondition: PathConditionPredicate<'sym, 'tcx, T>,
+        /// The values of the arguments just before the call. These are used to evaluate
+        /// `old()` expressions in the postcondition
+        pre_values: &'sym [SymValue<'sym, 'tcx, T>],
+        /// The values of the arguments just after the call. THe postcondition
+        /// holds w.r.t these values
+        post_values: &'sym [SymValue<'sym, 'tcx, T>],
     },
 }
 

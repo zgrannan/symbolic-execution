@@ -3,13 +3,13 @@ use crate::{
     havoc::InvariantInfo,
     heap::SymbolicHeap,
     path::{Path, SymExPath},
-    path_conditions::{PathConditionAtom, PathConditionPredicate},
     place::Place,
-    results::ResultAssertion,
-    results::ResultAssertions,
+    predicate::Predicate,
+    results::{ResultAssertion, ResultAssertions},
     rustc_interface::middle::mir::{self, BasicBlock, Location},
     semantics::VerifierSemantics,
-    visualization::VisFormat, SymbolicExecution,
+    visualization::VisFormat,
+    SymbolicExecution,
 };
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
@@ -26,14 +26,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         S::SymValSynthetic: Eq,
     {
         for assertion in S::encode_loop_invariant(invariant_info.loop_head, path.clone(), self) {
-            assertions.insert(ResultAssertion {
-                path: path.path.clone(),
-                pcs: path.pcs.clone(),
-                assertion,
-            });
+            assertions.insert(path.conditional_assertion(assertion));
         }
         if let SymExPath::Loop(loop_path) = &path.path {
-            self.add_loop_path(loop_path.clone(), path.pcs.clone());
+            self.add_loop_path(loop_path.clone(), path.pcs().clone());
             return false;
         }
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
@@ -59,18 +55,17 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             match &block_data.terminator().kind {
                 mir::TerminatorKind::SwitchInt { discr, targets } => {
                     let ty = discr.ty(&self.body.local_decls, self.tcx);
-                    let pred = if let Some((value, _)) =
-                        targets.iter().find(|t| t.1 == condition_valid_block)
-                    {
-                        PathConditionPredicate::Eq(value, ty)
-                    } else {
-                        PathConditionPredicate::Ne(targets.iter().map(|t| t.0).collect(), ty)
-                    };
                     let mut heap: SymbolicHeap<'_, 'mir, 'sym, 'tcx, S::SymValSynthetic> =
                         SymbolicHeap::new(&mut path.heap, self.tcx, self.body, &self.arena);
                     let operand = self.encode_operand(&mut heap, discr);
-                    path.pcs
-                        .insert(PathConditionAtom::predicate(operand, pred.clone()));
+                    let pred = if let Some((value, _)) =
+                        targets.iter().find(|t| t.1 == condition_valid_block)
+                    {
+                        Predicate::SwitchIntEq(operand, value, ty)
+                    } else {
+                        Predicate::SwitchIntNe(operand, targets.iter().map(|t| t.0).collect(), ty)
+                    };
+                    path.add_path_condition(pred);
                 }
                 _ => unreachable!(),
             }
@@ -79,7 +74,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         // Assume invariant
 
         for assertion in S::encode_loop_invariant(invariant_info.loop_head, path.clone(), self) {
-            path.pcs.insert(PathConditionAtom::Assertion(assertion));
+            path.add_path_condition(assertion);
         }
         true
     }

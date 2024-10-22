@@ -102,7 +102,7 @@ pub fn export_path_json<
     let mut json_object = serde_json::Map::new();
     json_object.insert(
         "pcs".to_string(),
-        path.pcs
+        path.pcs()
             .to_json(Some(repacker.tcx()), &repacker.body().var_debug_info),
     );
     json_object.insert("heap".to_string(), path.heap.to_json(repacker));
@@ -153,19 +153,12 @@ pub fn export_assertions<'sym, 'tcx, T: VisFormat>(
 ) {
     let assertions_json: Vec<serde_json::Value> = assertions
         .iter()
-        .map(
-            |ResultAssertion {
-                 path,
-                 pcs,
-                 assertion,
-             }| {
-                json!({
-                    "path": path.to_index_vec(),
-                    "pcs": pcs.to_json(Some(tcx), debug_info),
-                    "assertion": assertion.to_vis_string(Some(tcx), debug_info, OutputMode::HTML)
-                })
-            },
-        )
+        .map(|ResultAssertion { path, assertion }| {
+            json!({
+                "path": path.to_index_vec(),
+                "assertion": assertion.to_vis_string(Some(tcx), debug_info, OutputMode::HTML)
+            })
+        })
         .collect();
 
     let json_string = serde_json::to_string_pretty(&assertions_json)

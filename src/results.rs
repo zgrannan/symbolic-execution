@@ -136,7 +136,6 @@ impl<
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResultAssertion<'sym, 'tcx, T> {
     pub path: SymExPath,
-    pub pcs: PathConditions<'sym, 'tcx, T>,
     pub assertion: Assertion<'sym, 'tcx, T>,
 }
 
@@ -153,7 +152,6 @@ impl<
     ) -> Self {
         Self {
             path: self.path,
-            pcs: self.pcs.subst(arena, substs),
             assertion: self.assertion.subst(arena, substs),
         }
     }

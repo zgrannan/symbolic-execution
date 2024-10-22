@@ -1,11 +1,5 @@
 use crate::{
-    context::ErrorLocation,
-    heap::{HeapData, SymbolicHeap},
-    path::{AcyclicPath, Path},
-    path_conditions::PathConditions,
-    results::{ResultAssertions, SymbolicExecutionResult},
-    semantics::VerifierSemantics,
-    visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat}, SymbolicExecution,
+    context::ErrorLocation, heap::{HeapData, SymbolicHeap}, path::{AcyclicPath, Path}, path_conditions::PathConditions, predicate::Predicate, results::{ResultAssertions, SymbolicExecutionResult}, semantics::VerifierSemantics, visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat}, SymbolicExecution
 };
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
@@ -22,7 +16,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             ResultAssertions::new();
         let mut paths = vec![Path::new(
             AcyclicPath::from_start_block(),
-            PathConditions::new(),
+            Predicate::true_(),
             heap_data,
         )];
         'mainloop: while let Some(mut path) = paths.pop() {
