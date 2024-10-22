@@ -134,9 +134,7 @@ impl LookupType for LookupTake {
         heap: Self::Heap<'heap, 'sym, 'tcx, S>,
         place: &MaybeOldPlace<'tcx>,
     ) -> Option<SymValue<'sym, 'tcx, S>> {
-        // TODO: In principle we could make take actually remove from the heap, but
-        // doing so would require a bit of refactoring
-        heap.get(place)
+        heap.take(place)
     }
 }
 

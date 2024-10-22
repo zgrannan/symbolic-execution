@@ -1,12 +1,12 @@
 use crate::add_debug_note;
 use crate::context::SymExContext;
+use crate::rustc_interface::middle::{
+    mir::{self, Body, Location, PlaceElem, VarDebugInfo},
+    ty::TyCtxt,
+};
 use crate::value::SymVar;
 use crate::visualization::OutputMode;
 use crate::{place::Place, VisFormat};
-use crate::rustc_interface::middle::{
-        mir::{self, Body, Location, PlaceElem, VarDebugInfo},
-        ty::{TyCtxt},
-    };
 use pcs::borrows::domain::MaybeOldPlace;
 use pcs::utils::{PlaceRepacker, PlaceSnapshot, SnapshotLocation};
 use std::collections::BTreeMap;
@@ -59,10 +59,10 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
                     place.clone(),
                     SnapshotLocation::Join(block),
                 )),
-                value
+                value,
             );
         }
-}
+    }
 
     pub fn insert<P: Clone + Into<Place<'tcx>>>(
         &mut self,
@@ -84,9 +84,6 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
         value: SymValue<'sym, 'tcx, T>,
     ) {
         let place: MaybeOldPlace<'tcx> = place.into();
-        let _place_ty = place.ty(PlaceRepacker::new(self.2, self.1));
-        let _value_ty = value.kind.ty(self.1);
-        // assert_tys_match(self.1, place_ty.ty, value_ty.rust_ty());
         if let Some(PlaceElem::Deref) = place.place().projection.last() {
             if let Some(base_place) = place.place().prefix_place(self.repacker()) {
                 if let Some(mutability) = base_place.ref_mutability(self.body(), self.tcx()) {
@@ -221,10 +218,9 @@ impl<'sym, 'tcx, T: std::fmt::Debug> HeapData<'sym, 'tcx, T> {
     ) -> Option<SymValue<'sym, 'tcx, T>> {
         let place = place.into();
         let elem = self.get(place);
-        // TODO: actually remove
-        // if let Some(_) = elem {
-        //     self.remove(place);
-        // }
+        if let Some(_) = elem {
+            self.remove(place);
+        }
         elem
     }
 
