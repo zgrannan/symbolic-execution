@@ -64,26 +64,29 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
         }
     }
 
-    pub fn insert<P: Clone + Into<Place<'tcx>>>(
+    /// Sets the heap entry for this place to `value`. If `place` is a current
+    /// place, also sets the heap entry for the place snapshot at `location`.
+    pub fn insert<P: Clone + Into<MaybeOldPlace<'tcx>>>(
         &mut self,
         place: P,
         value: SymValue<'sym, 'tcx, T>,
         location: Location,
     ) {
-        let place: Place<'tcx> = place.into();
+        let place: MaybeOldPlace<'tcx> = place.into();
         self.insert_maybe_old_place(place.clone(), value);
-        self.insert_maybe_old_place(
-            MaybeOldPlace::OldPlace(PlaceSnapshot::new(place.0, location)),
-            value,
-        );
+        if let MaybeOldPlace::Current { place } = place {
+            self.insert_maybe_old_place(
+                MaybeOldPlace::OldPlace(PlaceSnapshot::new(place, location)),
+                value,
+            );
+        }
     }
 
-    pub fn insert_maybe_old_place<P: Into<MaybeOldPlace<'tcx>>>(
+    pub fn insert_maybe_old_place(
         &mut self,
-        place: P,
+        place: MaybeOldPlace<'tcx>,
         value: SymValue<'sym, 'tcx, T>,
     ) {
-        let place: MaybeOldPlace<'tcx> = place.into();
         if let Some(PlaceElem::Deref) = place.place().projection.last() {
             if let Some(base_place) = place.place().prefix_place(self.repacker()) {
                 if let Some(mutability) = base_place.ref_mutability(self.body(), self.tcx()) {

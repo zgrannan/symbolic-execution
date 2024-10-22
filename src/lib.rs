@@ -235,16 +235,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 UnblockAction::TerminateReborrow {
                     blocked_place,
                     assigned_place,
-                    is_mut,
                     ..
                 } => {
-                    self.handle_removed_reborrow(
-                        blocked_place,
-                        &assigned_place,
-                        is_mut,
-                        heap,
-                        location,
-                    );
+                    self.handle_removed_reborrow(blocked_place, &assigned_place, heap, location);
                 }
                 UnblockAction::Collapse(place, places) => {
                     self.collapse_place_from(place, places[0], heap, location);
@@ -596,11 +589,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             AggregateKind::pcs(place_ty.ty, place_ty.variant_index),
             self.arena.alloc_slice(&args),
         );
-        if place.is_current() {
-            heap.insert(place.place(), value, location);
-        } else {
-            heap.insert_maybe_old_place(place, value);
-        }
+        heap.insert(place, value, location);
     }
 
     fn handle_repack(

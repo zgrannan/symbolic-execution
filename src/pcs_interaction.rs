@@ -27,8 +27,7 @@ pub type PcsLocation<'mir, 'tcx> =
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
-
-    pub (crate) fn handle_pcg(
+    pub(crate) fn handle_pcg(
         &mut self,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,
@@ -98,13 +97,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &self,
         blocked_place: MaybeRemotePlace<'tcx>,
         assigned_place: &MaybeOldPlace<'tcx>,
-        is_mut: bool,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
-        if !is_mut {
-            return;
-        }
         let heap_value = self.encode_maybe_old_place::<LookupTake, _>(heap, assigned_place);
         match blocked_place {
             MaybeRemotePlace::Local(blocked_place) => {
