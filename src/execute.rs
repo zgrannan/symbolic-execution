@@ -23,23 +23,22 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             let block = path.last_block();
             let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
             heap.snapshot_values(block);
-            let pcs_block = self.fpcs_analysis.get_all_for_bb(block);
+            let pcg_block = self.fpcs_analysis.get_all_for_bb(block);
             let block_data = &self.body.basic_blocks[block];
             if let Some(invariant_info) = self.havoc.get_invariant_info(block) {
                 if !self.handle_loop(block, invariant_info, &mut path, &mut assertions) {
                     continue 'mainloop;
                 }
             }
-            self.execute_stmts_in_block(&pcs_block, block_data, &mut path, true);
+            self.execute_stmts_in_block(&pcg_block, block_data, &mut path, true);
             // Actions made to evaluate terminator
-            let last_fpcs_loc = pcs_block.statements.last().unwrap();
+            let last_fpcs_loc = pcg_block.statements.last().unwrap();
             self.set_error_context(
                 path.path.clone(),
                 ErrorLocation::Location(last_fpcs_loc.location),
             );
-            assert!(pcs_block.statements.len() == block_data.statements.len() + 1);
-            self.handle_pcs(&mut path, &last_fpcs_loc, true, last_fpcs_loc.location);
-            self.handle_pcs(&mut path, &last_fpcs_loc, false, last_fpcs_loc.location);
+            assert!(pcg_block.statements.len() == block_data.statements.len() + 1);
+            self.handle_pcg(&mut path, &last_fpcs_loc, last_fpcs_loc.location);
             if let Some(debug_output_dir) = &self.debug_output_dir {
                 export_path_json(
                     &debug_output_dir,
@@ -54,7 +53,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 &mut paths,
                 &mut assertions,
                 path,
-                pcs_block.terminator,
+                pcg_block.terminator,
                 &last_fpcs_loc,
             );
         }

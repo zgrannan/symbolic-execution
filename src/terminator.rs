@@ -56,20 +56,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 }
                 let old_path = path.path.clone();
                 let mut path = path.push(*target);
-                self.set_error_context(old_path.clone(), ErrorLocation::TerminatorStart(*target));
-                self.handle_pcs(
-                    &mut path,
-                    &fpcs_terminator.succs[0],
-                    true,
-                    location.location,
-                );
-                self.set_error_context(old_path, ErrorLocation::TerminatorMid(*target));
-                self.handle_pcs(
-                    &mut path,
-                    &fpcs_terminator.succs[0],
-                    false,
-                    location.location,
-                );
+                self.set_error_context(old_path.clone(), ErrorLocation::Terminator(*target));
+                self.handle_pcg(&mut path, &fpcs_terminator.succs[0], location.location);
                 if let Some(debug_output_dir) = &self.debug_output_dir {
                     export_path_json(
                         &debug_output_dir,

@@ -17,8 +17,7 @@ use crate::{
 #[derive(Debug)]
 pub enum ErrorLocation {
     Location(Location),
-    TerminatorStart(BasicBlock),
-    TerminatorMid(BasicBlock),
+    Terminator(BasicBlock),
 }
 
 #[derive(Debug)]

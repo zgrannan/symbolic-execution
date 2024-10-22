@@ -27,7 +27,18 @@ pub type PcsLocation<'mir, 'tcx> =
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
-    pub(crate) fn handle_pcs(
+
+    pub (crate) fn handle_pcg(
+        &mut self,
+        path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
+        pcs: &PcsLocation<'mir, 'tcx>,
+        location: Location,
+    ) {
+        self.handle_pcg_partial(path, pcs, true, location);
+        self.handle_pcg_partial(path, pcs, false, location);
+    }
+
+    pub(crate) fn handle_pcg_partial(
         &mut self,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         pcs: &PcsLocation<'mir, 'tcx>,

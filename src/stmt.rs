@@ -66,10 +66,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             path.path.clone(),
             ErrorLocation::Location(fpcs_loc.location),
         );
-        self.handle_pcs(path, &fpcs_loc, true, fpcs_loc.location);
+        self.handle_pcg_partial(path, &fpcs_loc, true, fpcs_loc.location);
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         let rhs = self.handle_stmt_rhs(stmt, &mut heap);
-        self.handle_pcs(path, &fpcs_loc, false, fpcs_loc.location);
+        self.handle_pcg_partial(path, &fpcs_loc, false, fpcs_loc.location);
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         self.handle_stmt_lhs(stmt, &mut heap, fpcs_loc.location, rhs);
     }
