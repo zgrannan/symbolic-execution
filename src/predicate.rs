@@ -43,7 +43,14 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for Predicate<'sym, 'tcx, T> {
     ) -> String {
         match self {
             Predicate::Value(value) => value.to_vis_string(tcx, debug_info, mode),
-            Predicate::Precondition(def_id, _, _) => todo!(),
+            Predicate::Precondition(def_id, _, values) => {
+                let values_str = values
+                    .iter()
+                    .map(|v| v.to_vis_string(tcx, debug_info, mode))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("precondition of {:?}({})", def_id, values_str)
+            }
             Predicate::Implies(predicate, predicate1) => {
                 let predicate_str = predicate.to_vis_string(tcx, debug_info, mode);
                 let predicate1_str = predicate1.to_vis_string(tcx, debug_info, mode);

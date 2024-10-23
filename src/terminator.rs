@@ -148,7 +148,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         } => {
                             if let Some(snapshot) = effects.snapshot {
                                 path.function_call_snapshots
-                                    .add_snapshot(location.location, snapshot.args);
+                                    .add_snapshot(location.location, snapshot);
                             }
                             let sym_var = self.mk_fresh_symvar(
                                 destination.ty(&self.body.local_decls, self.tcx).ty,
@@ -244,7 +244,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let snapshot = match function_type {
             FunctionType::DiscriminantValue => None,
             FunctionType::Panic => None,
-            FunctionType::RustFunction => Some(FunctionCallSnapshot { args: encoded_args }),
+            FunctionType::RustFunction => Some(FunctionCallSnapshot::new(
+                encoded_args,
+                args.iter()
+                    .map(|arg| arg.place().map(|p| p.local))
+                    .collect(),
+            )),
         };
 
         FunctionCallEffects {

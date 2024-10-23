@@ -246,77 +246,70 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     pcs::borrows::domain::AbstractionType::Loop(lp) => {
                         for edge in lp.edges() {
                             for input in edge.inputs() {
-                                match input {
-                                    pcs::borrows::domain::AbstractionTarget::Place(place) => {
-                                        if let Some(place) = place.as_local_place() {
-                                            heap.insert_maybe_old_place(
-                                                place,
-                                                self.mk_fresh_symvar(place.ty(self.repacker()).ty),
-                                            );
-                                        }
-                                    }
-                                    pcs::borrows::domain::AbstractionTarget::RegionProjection(
-                                        _,
-                                    ) => {
-                                        {} // TODO
-                                    }
-                                }
+                                // match input {
+                                //     pcs::borrows::domain::AbstractionTarget::Place(place) => {
+                                //         if let Some(place) = place.as_local_place() {
+                                //             heap.insert_maybe_old_place(
+                                //                 place,
+                                //                 self.mk_fresh_symvar(place.ty(self.repacker()).ty),
+                                //             );
+                                //         }
+                                //     }
+                                //     pcs::borrows::domain::AbstractionTarget::RegionProjection(
+                                //         _,
+                                //     ) => {
+                                //         {} // TODO
+                                //     }
+                                // }
                             }
                         }
                     }
                     pcs::borrows::domain::AbstractionType::FunctionCall(c) => {
                         let snapshot = function_call_snapshots.get_snapshot(&c.location());
-                        for (idx, edge) in c.edges() {
+                        for edge in c.edges() {
                             for input in edge.inputs() {
                                 for output in edge.outputs() {
-                                    match input {
-                                        pcs::borrows::domain::AbstractionTarget::Place(place) => {
-                                            let place = place.as_local_place().unwrap();
-                                            let assigned_place = match output {
-                                                pcs::borrows::domain::AbstractionTarget::Place(
-                                                    place,
-                                                ) => place,
-                                                _ => {
-                                                    // TODO
-                                                    continue;
-                                                }
-                                            };
-                                            let value = self
-                                                .arena
-                                                .mk_backwards_fn(BackwardsFn::new(
-                                                self.arena.tcx,
-                                                c.def_id(),
-                                                c.substs(),
-                                                Some(self.def_id.into()),
-                                                snapshot.args,
-                                                self.arena.mk_ref(
-                                                    self.encode_maybe_old_place::<LookupGet, _>(
-                                                        heap,
-                                                        &assigned_place,
-                                                    ),
-                                                    Mutability::Mut,
-                                                ),
-                                                Local::from_usize(*idx + 1),
-                                            ));
-                                            assert!(!snapshot.args[*idx]
-                                                .kind
-                                                .ty(self.tcx)
-                                                .rust_ty()
-                                                .is_primitive());
-                                            assert_eq!(
-                                                value.ty(self.tcx),
-                                                snapshot.args[*idx].ty(self.tcx)
-                                            );
-                                            heap.insert_maybe_old_place(
-                                                place,
-                                                self.arena
-                                                    .mk_projection(ProjectionElem::Deref, value),
-                                            );
+                                    let idx = snapshot.index_of_arg_local(input.local());
+                                    let input_place = match input.deref(self.repacker()) {
+                                        Some(place) => place,
+                                        None => {
+                                            // TODO: region projection
+                                            continue;
                                         }
-                                        _ => {
-                                            // TODO: Region projection
+                                    };
+                                    let output_place = match output.deref(self.repacker()) {
+                                        Some(place) => place,
+                                        None => {
+                                            // TODO: region projection
+                                            continue;
                                         }
-                                    }
+                                    };
+                                    let value = self.arena.mk_backwards_fn(BackwardsFn::new(
+                                        self.arena.tcx,
+                                        c.def_id(),
+                                        c.substs(),
+                                        Some(self.def_id.into()),
+                                        snapshot.args(),
+                                        self.arena.mk_ref(
+                                            self.encode_maybe_old_place::<LookupGet, _>(
+                                                heap,
+                                                &output_place,
+                                            ),
+                                            Mutability::Mut,
+                                        ),
+                                        Local::from_usize(idx + 1),
+                                    ));
+                                    assert!(!snapshot
+                                        .arg(idx)
+                                        .kind
+                                        .ty(self.tcx)
+                                        .rust_ty()
+                                        .is_primitive());
+                                    assert_eq!(value.ty(self.tcx), snapshot.arg(idx).ty(self.tcx));
+                                    heap.insert_maybe_old_place(
+                                        input_place,
+                                        self.arena.mk_projection(ProjectionElem::Deref, value),
+                                    );
                                 }
                             }
                         }
@@ -344,16 +337,17 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let arg_place: Place<'tcx> = arg_place.into();
                 if arg_place.is_mut_ref(self.body, self.tcx) {
                     let remote_place = MaybeRemotePlace::place_assigned_to_local(arg);
-                    let blocked_place = match borrow_state.get_place_blocking(remote_place) {
-                        Some(blocked_place) => blocked_place,
-                        None => {
-                            eprintln!(
-                                "{:?} No blocked place found for {:?} in path {:?}",
-                                self.def_id, remote_place, path
-                            );
-                            continue;
-                        }
-                    };
+                    let blocked_place =
+                        match borrow_state.get_place_blocking(remote_place, self.repacker()) {
+                            Some(blocked_place) => blocked_place,
+                            None => {
+                                eprintln!(
+                                    "{:?} No blocked place found for {:?} in path {:?}",
+                                    self.def_id, remote_place, path
+                                );
+                                continue;
+                            }
+                        };
                     let mut heap = heap_data.clone();
                     let mut heap = SymbolicHeap::new(&mut heap, self.tcx, self.body, &self.arena);
                     heap.insert(

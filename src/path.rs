@@ -1,5 +1,5 @@
 use crate::{
-    function_call_snapshot::FunctionCallSnapshots,
+    function_call_snapshot::{FunctionCallSnapshot, FunctionCallSnapshots},
     predicate::Predicate,
     results::ResultAssertion,
     rustc_interface::middle::mir::{BasicBlock, Location, START_BLOCK},
@@ -226,9 +226,9 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx> + Clone> Path<'sym, 'tcx, T> {
     pub fn add_function_call_snapshot(
         &mut self,
         location: Location,
-        args: &'sym [SymValue<'sym, 'tcx, T>],
+        snapshot: FunctionCallSnapshot<'sym, 'tcx, T>,
     ) {
-        self.function_call_snapshots.add_snapshot(location, args);
+        self.function_call_snapshots.add_snapshot(location, snapshot);
     }
 
     pub fn has_path_conditions(&self) -> bool {
