@@ -175,6 +175,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         self.arena.mk_internal_error(err, ty, self.err_ctx.as_ref())
     }
 
+    /// Encodes the symbolic value of the place in the heap. In the most
+    /// simple cases, this is simply a heap lookup. If the place to lookup is a
+    /// dereference, we return a dereference to the base value in the heap.
     fn encode_place_opt<'heap, T: LookupType, P: Into<MaybeOldPlace<'tcx>> + Copy>(
         &self,
         heap: &SymbolicHeap<'heap, '_, 'sym, 'tcx, S::SymValSynthetic>,
@@ -197,9 +200,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap.0.get(&place)
     }
 
-    /// Encodes the symbolic value that the place currently holds. In the most
-    /// simple cases, this is simply a heap lookup. If the place to lookup is a
-    /// reference, we return a reference to the dereferenced value in the heap.
     fn encode_maybe_old_place<'heap, T: LookupType, P: Into<MaybeOldPlace<'tcx>> + Copy>(
         &self,
         heap: &mut SymbolicHeap<'heap, '_, 'sym, 'tcx, S::SymValSynthetic>,
@@ -487,25 +487,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn explode_value(
         &self,
-        place: &MaybeOldPlace<'tcx>,
-        value: SymValue<'sym, 'tcx, S::SymValSynthetic>,
+        base_value: SymValue<'sym, 'tcx, S::SymValSynthetic>,
         places: impl Iterator<Item = MaybeOldPlace<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
-        let old_proj_len = place.place().projection.len();
         for f in places {
-            assert_eq!(
-                f.place().projection.len(),
-                place.place().projection.len() + 1,
-                "Place {:?} is not a direct descendant of {:?}",
-                f.place(),
-                place.place(),
-            );
-            let mut value = value;
-            for elem in f.place().projection.iter().skip(old_proj_len) {
-                value = self.arena.mk_projection(elem.clone(), value);
-            }
+            let value = self
+                .arena
+                .mk_projection(f.last_projection().unwrap().1, base_value);
             heap.insert(f, value, location);
         }
     }
@@ -525,7 +515,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         };
         let (field, rest, _) = place.expand_one_level(*guide, self.fpcs_analysis.repacker());
         self.explode_value(
-            &MaybeOldPlace::Current { place: *place },
             value,
             std::iter::once(field)
                 .chain(rest.into_iter())
@@ -575,23 +564,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             self.arena.alloc_slice(&args),
         );
         heap.insert(place, value, location);
-    }
-
-    fn handle_repack(
-        &self,
-        repack: &RepackOp<'tcx>,
-        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
-    ) {
-        match repack {
-            RepackOp::Expand(place, guide, _) => {
-                self.expand_place_with_guide(place, guide, heap, location)
-            }
-            RepackOp::Collapse(place, from, _) => {
-                self.collapse_place_from((*place).into(), (*from).into(), heap, location)
-            }
-            _ => {}
-        }
     }
 }
 

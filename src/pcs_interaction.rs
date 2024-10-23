@@ -85,10 +85,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         self.handle_added_reborrows(
             &added_reborrows
                 .into_iter()
+                .filter(|r| r.conditions.valid_for_path(&path.path.blocks()))
                 .map(|r| r.value)
                 .collect::<Vec<_>>(),
             &mut heap,
-            &path.path,
         );
     }
 
@@ -122,8 +122,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         location: Location,
     ) {
         for repack in repacks {
-            if matches!(repack, RepackOp::Collapse(..)) {
-                self.handle_repack(repack, heap, location)
+            if let RepackOp::Collapse(place, from, _) = repack {
+                self.collapse_place_from((*place).into(), (*from).into(), heap, location)
             }
         }
     }
@@ -139,13 +139,17 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             .into_iter()
             .flat_map(|ep| ep.borrow_expansion().cloned())
             .collect();
+
+        // Expand places with smaller projections first. For example, if f ->
+        // {f.g} and f.g -> {f.g.h}, are expansions, we must expand f before
+        // f.g.
         expands.sort_by_key(|ep| ep.base().place().projection.len());
+
         for ep in expands {
             let place = ep.base();
             let value = self.encode_maybe_old_place::<LookupGet, _>(heap, &place);
 
             self.explode_value(
-                &place,
                 value,
                 ep.expansion(self.fpcs_analysis.repacker()).into_iter(),
                 heap,
@@ -154,16 +158,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
     }
 
-    pub(crate) fn handle_added_reborrows(
+    fn handle_added_reborrows(
         &self,
         reborrows: &[Reborrow<'tcx>],
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        path: &SymExPath,
     ) {
         for reborrow in reborrows {
-            if !path.contains(reborrow.reserve_location().block) {
-                continue;
-            }
             let blocked_value = if reborrow.mutability.is_mut() {
                 self.encode_reborrow_blocked_place::<LookupTake>(heap, reborrow.blocked_place)
             } else {
@@ -193,8 +193,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         location: Location,
     ) {
         for repack in repacks {
-            if matches!(repack, RepackOp::Expand(..)) {
-                self.handle_repack(repack, heap, location)
+            if let RepackOp::Expand(place, guide, _) = repack {
+                self.expand_place_with_guide(place, guide, heap, location)
             }
         }
     }
