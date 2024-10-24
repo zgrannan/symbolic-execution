@@ -56,6 +56,10 @@ use pcs::{
     combined_pcs::UnblockAction,
     free_pcs::RepackOp,
     utils::PlaceRepacker,
+    visualization::{
+        dot_graph::DotGraph, generate_dot_graph_str, generate_unblock_dot_graph,
+        graph_constructor::UnblockGraphConstructor,
+    },
     FpcsOutput,
 };
 use pcs_interaction::PcsLocation;
@@ -224,7 +228,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     }
 
     fn apply_unblock_actions(
-        &mut self,
+        &self,
         actions: Vec<UnblockAction<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         function_call_snapshots: &FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
@@ -320,7 +324,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     }
 
     fn compute_backwards_facts(
-        &mut self,
+        &self,
         path: &AcyclicPath,
         heap_data: &HeapData<'sym, 'tcx, S::SymValSynthetic>,
         function_call_snapshots: FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
@@ -330,8 +334,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let return_place: Place<'tcx> = return_place.into();
         let mut facts = BackwardsFacts::new();
         if return_place.is_mut_ref(self.body, self.tcx) {
-            let mut borrow_state = pcs.extra.after.clone();
-            borrow_state.filter_for_path(path.blocks());
+            let borrow_state = {
+                let mut mut_borrow_state = pcs.extra.after.clone();
+                mut_borrow_state.filter_for_path(path.blocks());
+                mut_borrow_state
+            };
             for arg in self.body.args_iter() {
                 let arg_place: mir::Place<'tcx> = arg.into();
                 let arg_place: Place<'tcx> = arg_place.into();
@@ -366,6 +373,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         &borrow_state,
                         self.repacker(),
                     );
+
                     let actions = ug.actions(self.repacker());
                     self.apply_unblock_actions(
                         actions,
@@ -373,10 +381,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         &function_call_snapshots,
                         pcs.location,
                     );
-                    facts.insert(
-                        arg.index() - 1,
-                        self.encode_maybe_old_place::<LookupGet, _>(&mut heap, &blocked_place),
-                    );
+                    let blocked_place_value =
+                        self.encode_maybe_old_place::<LookupGet, _>(&mut heap, &blocked_place);
+                    facts.insert(arg.index() - 1, blocked_place_value);
                 }
             }
         }
