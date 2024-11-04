@@ -1,6 +1,6 @@
 use pcs::borrows::engine::BorrowsDomain;
 use pcs::free_pcs::FreePcsTerminator;
-use pcs::ReborrowBridge;
+use pcs::BorrowsBridge;
 
 use crate::context::ErrorLocation;
 use crate::encoder::Encoder;
@@ -33,7 +33,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         paths: &mut Vec<Path<'sym, 'tcx, S::SymValSynthetic>>,
         assertions: &mut ResultAssertions<'sym, 'tcx, S::SymValSynthetic>,
         mut path: Path<'sym, 'tcx, S::SymValSynthetic>,
-        fpcs_terminator: FreePcsTerminator<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
+        fpcs_terminator: FreePcsTerminator<'tcx>,
         location: &PcsLocation<'mir, 'tcx>,
     ) where
         S::SymValSynthetic: Eq,

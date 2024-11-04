@@ -1,12 +1,12 @@
 use pcs::borrows::engine::BorrowsDomain;
-use pcs::{free_pcs::FreePcsBasicBlock, ReborrowBridge};
+use pcs::{free_pcs::FreePcsBasicBlock, BorrowsBridge};
 
 use crate::visualization::{export_path_json, StepType};
 use crate::{
     context::ErrorLocation,
     encoder::Encoder,
     heap::SymbolicHeap,
-    path::{Path},
+    path::Path,
     place::Place,
     rustc_interface::middle::mir::{self},
     value::SymValue,
@@ -56,7 +56,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub fn handle_stmt(
         &mut self,
-        pcs_block: &FreePcsBasicBlock<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
+        pcs_block: &FreePcsBasicBlock<'tcx>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         stmt: &mir::Statement<'tcx>,
         stmt_idx: usize,
@@ -76,7 +76,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub fn execute_stmts_in_block(
         &mut self,
-        pcs_block: &FreePcsBasicBlock<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>,
+        pcs_block: &FreePcsBasicBlock<'tcx>,
         block_data: &mir::BasicBlockData<'tcx>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         output_debug_json: bool,

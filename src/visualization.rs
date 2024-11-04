@@ -108,7 +108,7 @@ pub fn export_path_json<
     json_object.insert("heap".to_string(), path.heap.to_json(repacker));
     json_object.insert(
         "borrows".to_string(),
-        fpcs_loc.extra.after.to_json(repacker),
+        fpcs_loc.borrows.after.to_json(repacker),
     );
     json_object.insert(
         "repacks_start".to_string(),
@@ -134,12 +134,10 @@ pub fn export_path_json<
         "reborrow_start".to_string(),
         fpcs_loc.extra_start.to_json(repacker),
     );
-    if let Some(reborrow_middle) = &fpcs_loc.extra_middle {
-        json_object.insert(
-            "reborrow_middle".to_string(),
-            reborrow_middle.to_json(repacker),
-        );
-    }
+    json_object.insert(
+        "reborrow_middle".to_string(),
+        fpcs_loc.extra_middle.to_json(repacker),
+    );
     let heap_json = serde_json::Value::Object(json_object);
     std::fs::write(filename, serde_json::to_string_pretty(&heap_json).unwrap())
         .expect("Unable to write file");

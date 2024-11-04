@@ -8,12 +8,12 @@ use crate::{
 use pcs::{
     borrows::{
         deref_expansion::{BorrowDerefExpansion, DerefExpansion},
-        domain::{MaybeOldPlace, MaybeRemotePlace, Reborrow},
+        domain::{Borrow, MaybeOldPlace, MaybeRemotePlace},
         engine::BorrowsDomain,
         latest::Latest,
     },
     free_pcs::{FreePcsLocation, RepackOp},
-    ReborrowBridge,
+    BorrowsBridge,
 };
 
 use crate::{
@@ -21,8 +21,7 @@ use crate::{
     LookupTake, SymbolicExecution,
 };
 
-pub type PcsLocation<'mir, 'tcx> =
-    FreePcsLocation<'tcx, BorrowsDomain<'mir, 'tcx>, ReborrowBridge<'tcx>>;
+pub type PcsLocation<'mir, 'tcx> = FreePcsLocation<'tcx>;
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
@@ -44,25 +43,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         start: bool,
         location: Location,
     ) {
-        let bridge = if start {
-            Some(pcs.extra_start.clone())
+        let mut bridge = if start {
+            pcs.extra_start.clone()
         } else {
             pcs.extra_middle.clone()
         };
-        let (ug_actions, added_reborrows, reborrow_expands) = if let Some(mut bridge) = bridge {
-            bridge.ug.filter_for_path(&path.path.blocks());
-            (
-                bridge.ug.actions(self.repacker()),
-                bridge.added_reborrows,
-                bridge.expands,
-            )
-        } else {
-            (
-                vec![],
-                vec![].into_iter().collect(),
-                vec![].into_iter().collect(),
-            )
-        };
+        bridge.ug.filter_for_path(&path.path.blocks());
+        let ug_actions = bridge.ug.actions(self.repacker());
+        let added_borrows = bridge.added_borrows;
+        let borrows_expands = bridge.expands;
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         self.apply_unblock_actions(
             ug_actions,
@@ -78,12 +67,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         self.handle_repack_collapses(repacks, &mut heap, location);
         self.handle_repack_expands(repacks, &mut heap, location);
         self.handle_reborrow_expands(
-            reborrow_expands.into_iter().map(|ep| ep.value).collect(),
+            borrows_expands.into_iter().map(|ep| ep.value).collect(),
             &mut heap,
             location,
         );
-        self.handle_added_reborrows(
-            &added_reborrows
+        self.handle_added_borrows(
+            &added_borrows
                 .into_iter()
                 .filter(|r| r.conditions.valid_for_path(&path.path.blocks()))
                 .map(|r| r.value)
@@ -158,9 +147,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
     }
 
-    fn handle_added_reborrows(
+    fn handle_added_borrows(
         &self,
-        reborrows: &[Reborrow<'tcx>],
+        reborrows: &[Borrow<'tcx>],
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
     ) {
         for reborrow in reborrows {

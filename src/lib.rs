@@ -335,7 +335,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let mut facts = BackwardsFacts::new();
         if return_place.is_mut_ref(self.body, self.tcx) {
             let borrow_state = {
-                let mut mut_borrow_state = pcs.extra.after.clone();
+                let mut mut_borrow_state = pcs.borrows.after.clone();
                 mut_borrow_state.filter_for_path(path.blocks());
                 mut_borrow_state
             };
