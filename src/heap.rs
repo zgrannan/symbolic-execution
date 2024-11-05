@@ -57,7 +57,7 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
             self.0.insert(
                 MaybeOldPlace::OldPlace(PlaceSnapshot::new(
                     place.clone(),
-                    SnapshotLocation::Join(block),
+                    SnapshotLocation::Start(block),
                 )),
                 value,
             );
