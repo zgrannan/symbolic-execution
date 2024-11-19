@@ -334,6 +334,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         }
                     }
                 },
+                UnblockAction::TerminateRegionProjectionMember(region_projection_member) => {
+
+                }
             }
         }
     }
