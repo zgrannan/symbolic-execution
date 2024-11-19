@@ -1,5 +1,5 @@
 use crate::{
-    path::{Path, SymExPath},
+    path::Path,
     rustc_interface::middle::mir::Location,
     value::SymValue,
     LookupType,
@@ -8,13 +8,10 @@ use crate::{
 use pcs::{
     borrows::{
         borrow_edge::BorrowEdge,
-        deref_expansion::{BorrowDerefExpansion, DerefExpansion},
+        deref_expansion::DerefExpansion,
         domain::{MaybeOldPlace, MaybeRemotePlace},
-        engine::BorrowsDomain,
-        latest::Latest,
     },
     free_pcs::{FreePcsLocation, RepackOp},
-    BorrowsBridge,
 };
 
 use crate::{

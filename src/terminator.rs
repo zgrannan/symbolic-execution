@@ -195,7 +195,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     where
         'mir: 'heap,
     {
-        if let Some(result) = S::encode_fn_call(span, self, def_id, substs, heap.0, args, location) {
+        if let Some(result) = S::encode_fn_call(span, self, def_id, substs, heap.0, args, location)
+        {
             return result;
         }
         let function_type = FunctionType::new(self.tcx, def_id);

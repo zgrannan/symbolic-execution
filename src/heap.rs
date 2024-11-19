@@ -89,7 +89,7 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
     ) {
         if let Some(PlaceElem::Deref) = place.place().projection.last() {
             if let Some(base_place) = place.place().prefix_place(self.repacker()) {
-                if let Some(mutability) = base_place.ref_mutability(self.body(), self.tcx()) {
+                if let Some(mutability) = base_place.ref_mutability(self.repacker()) {
                     let place = MaybeOldPlace::new(base_place, place.location());
                     let value = self.arena().mk_ref(value, mutability);
                     self.0.insert(place, value);
