@@ -47,7 +47,7 @@ impl<'sym, 'tcx, T> FunctionCallSnapshots<'sym, 'tcx, T> {
         self.0.insert(location, snapshot);
     }
 
-    pub fn get_snapshot(&self, location: &Location) -> &FunctionCallSnapshot<'sym, 'tcx, T> {
-        self.0.get(location).unwrap()
+    pub fn get_snapshot(&self, location: &Location) -> Option<&FunctionCallSnapshot<'sym, 'tcx, T>> {
+        self.0.get(location)
     }
 }

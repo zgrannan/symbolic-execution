@@ -3,7 +3,7 @@ use crate::path::Path;
 use crate::rustc_interface::{
     hir::def_id::DefId,
     middle::{
-        mir::{self, Operand},
+        mir::{self, Operand, Location},
         ty::GenericArgsRef,
     },
     span::Span,
@@ -28,5 +28,6 @@ pub trait VerifierSemantics<'sym, 'tcx>: std::marker::Sized {
         substs: GenericArgsRef<'tcx>,
         heap: &mut HeapData<'sym, 'tcx, Self::SymValSynthetic>,
         args: &Vec<&Operand<'tcx>>,
+        location: Location,
     ) -> Option<FunctionCallEffects<'sym, 'tcx, Self::SymValSynthetic>>;
 }

@@ -190,7 +190,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let place: MaybeOldPlace<'tcx> = (*place).into();
         if let Some(PlaceElem::Deref) = place.place().projection.last() {
             if let Some(base_place) = place.place().prefix_place(self.repacker()) {
-                if base_place.is_ref(self.body, self.tcx) {
+                if base_place.is_ref(self.repacker()) {
                     return Some(
                         self.arena.mk_projection(
                             ProjectionElem::Deref,
@@ -236,12 +236,20 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) {
         for action in actions {
             match action {
-                UnblockAction::TerminateReborrow {
+                UnblockAction::TerminateBorrow {
                     blocked_place,
                     assigned_place,
+                    is_mut,
                     ..
                 } => {
-                    self.handle_removed_reborrow(blocked_place, &assigned_place, heap, location);
+                    if is_mut {
+                        self.handle_removed_borrow(
+                            blocked_place,
+                            &assigned_place,
+                            heap,
+                            location,
+                        );
+                    }
                 }
                 UnblockAction::Collapse(place, places) => {
                     self.collapse_place_from(place, places[0], heap, location);
@@ -269,51 +277,58 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         }
                     }
                     pcs::borrows::domain::AbstractionType::FunctionCall(c) => {
-                        let snapshot = function_call_snapshots.get_snapshot(&c.location());
-                        for edge in c.edges() {
-                            for input in edge.inputs() {
-                                for output in edge.outputs() {
-                                    let idx = snapshot.index_of_arg_local(input.local());
-                                    let input_place = match input.deref(self.repacker()) {
-                                        Some(place) => place,
-                                        None => {
-                                            // TODO: region projection
-                                            continue;
-                                        }
-                                    };
-                                    let output_place = match output.deref(self.repacker()) {
-                                        Some(place) => place,
-                                        None => {
-                                            // TODO: region projection
-                                            continue;
-                                        }
-                                    };
-                                    let value = self.arena.mk_backwards_fn(BackwardsFn::new(
-                                        self.arena.tcx,
-                                        c.def_id(),
-                                        c.substs(),
-                                        Some(self.def_id.into()),
-                                        snapshot.args(),
-                                        self.arena.mk_ref(
-                                            self.encode_maybe_old_place::<LookupGet, _>(
-                                                heap,
-                                                &output_place,
+                        // A snapshot may not exist if the call is specification "ghost" code, e.g. old()
+                        // statements applied to mutable refs in Prusti.
+                        if let Some(snapshot) = function_call_snapshots.get_snapshot(&c.location())
+                        {
+                            for edge in c.edges() {
+                                for input in edge.inputs() {
+                                    for output in edge.outputs() {
+                                        let idx = snapshot.index_of_arg_local(input.local());
+                                        let input_place = match input.deref(self.repacker()) {
+                                            Some(place) => place,
+                                            None => {
+                                                // TODO: region projection
+                                                continue;
+                                            }
+                                        };
+                                        let output_place = match output.deref(self.repacker()) {
+                                            Some(place) => place,
+                                            None => {
+                                                // TODO: region projection
+                                                continue;
+                                            }
+                                        };
+                                        let value = self.arena.mk_backwards_fn(BackwardsFn::new(
+                                            self.arena.tcx,
+                                            c.def_id(),
+                                            c.substs(),
+                                            Some(self.def_id.into()),
+                                            snapshot.args(),
+                                            self.arena.mk_ref(
+                                                self.encode_maybe_old_place::<LookupGet, _>(
+                                                    heap,
+                                                    &output_place,
+                                                ),
+                                                Mutability::Mut,
                                             ),
-                                            Mutability::Mut,
-                                        ),
-                                        Local::from_usize(idx + 1),
-                                    ));
-                                    assert!(!snapshot
-                                        .arg(idx)
-                                        .kind
-                                        .ty(self.tcx)
-                                        .rust_ty()
-                                        .is_primitive());
-                                    assert_eq!(value.ty(self.tcx), snapshot.arg(idx).ty(self.tcx));
-                                    heap.insert_maybe_old_place(
-                                        input_place,
-                                        self.arena.mk_projection(ProjectionElem::Deref, value),
-                                    );
+                                            Local::from_usize(idx + 1),
+                                        ));
+                                        assert!(!snapshot
+                                            .arg(idx)
+                                            .kind
+                                            .ty(self.tcx)
+                                            .rust_ty()
+                                            .is_primitive());
+                                        assert_eq!(
+                                            value.ty(self.tcx),
+                                            snapshot.arg(idx).ty(self.tcx)
+                                        );
+                                        heap.insert_maybe_old_place(
+                                            input_place,
+                                            self.arena.mk_projection(ProjectionElem::Deref, value),
+                                        );
+                                    }
                                 }
                             }
                         }

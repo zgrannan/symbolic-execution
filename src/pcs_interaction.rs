@@ -7,8 +7,9 @@ use crate::{
 
 use pcs::{
     borrows::{
+        borrow_edge::BorrowEdge,
         deref_expansion::{BorrowDerefExpansion, DerefExpansion},
-        domain::{Borrow, MaybeOldPlace, MaybeRemotePlace},
+        domain::{MaybeOldPlace, MaybeRemotePlace},
         engine::BorrowsDomain,
         latest::Latest,
     },
@@ -81,7 +82,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         );
     }
 
-    pub(crate) fn handle_removed_reborrow(
+    pub(crate) fn handle_removed_borrow(
         &self,
         blocked_place: MaybeRemotePlace<'tcx>,
         assigned_place: &MaybeOldPlace<'tcx>,
@@ -119,15 +120,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub(crate) fn handle_reborrow_expands(
         &self,
-        expands: Vec<DerefExpansion<'tcx>>,
+        mut expands: Vec<DerefExpansion<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
-        // TODO: Explain why owned expansions don't need to be handled
-        let mut expands: Vec<BorrowDerefExpansion<'tcx>> = expands
-            .into_iter()
-            .flat_map(|ep| ep.borrow_expansion().cloned())
-            .collect();
+        // // TODO: Explain why owned expansions don't need to be handled
+        // let mut expands: Vec<BorrowDerefExpansion<'tcx>> = expands
+        //     .into_iter()
+        //     .flat_map(|ep| ep.borrow_expansion().cloned())
+        //     .collect();
 
         // Expand places with smaller projections first. For example, if f ->
         // {f.g} and f.g -> {f.g.h}, are expansions, we must expand f before
@@ -149,7 +150,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn handle_added_borrows(
         &self,
-        reborrows: &[Borrow<'tcx>],
+        reborrows: &[BorrowEdge<'tcx>],
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
     ) {
         for reborrow in reborrows {
