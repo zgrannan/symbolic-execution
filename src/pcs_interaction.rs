@@ -1,9 +1,4 @@
-use crate::{
-    path::Path,
-    rustc_interface::middle::mir::Location,
-    value::SymValue,
-    LookupType,
-};
+use crate::{path::Path, rustc_interface::middle::mir::Location, value::SymValue, LookupType};
 
 use pcs::{
     borrows::{
@@ -147,20 +142,20 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn handle_added_borrows(
         &self,
-        reborrows: &[BorrowEdge<'tcx>],
+        borrows: &[BorrowEdge<'tcx>],
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
     ) {
-        for reborrow in reborrows {
-            let blocked_value = if reborrow.mutability.is_mut() {
-                self.encode_reborrow_blocked_place::<LookupTake>(heap, reborrow.blocked_place)
+        for reborrow in borrows {
+            let blocked_value = if reborrow.is_mut() {
+                self.encode_borrow_blocked_place::<LookupTake>(heap, reborrow.blocked_place)
             } else {
-                self.encode_reborrow_blocked_place::<LookupGet>(heap, reborrow.blocked_place)
+                self.encode_borrow_blocked_place::<LookupGet>(heap, reborrow.blocked_place)
             };
             heap.insert_maybe_old_place(reborrow.assigned_place, blocked_value);
         }
     }
 
-    fn encode_reborrow_blocked_place<'heap, T: LookupType>(
+    fn encode_borrow_blocked_place<'heap, T: LookupType>(
         &self,
         heap: &mut SymbolicHeap<'heap, '_, 'sym, 'tcx, S::SymValSynthetic>,
         place: MaybeRemotePlace<'tcx>,

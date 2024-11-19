@@ -243,12 +243,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     ..
                 } => {
                     if is_mut {
-                        self.handle_removed_borrow(
-                            blocked_place,
-                            &assigned_place,
-                            heap,
-                            location,
-                        );
+                        self.handle_removed_borrow(blocked_place, &assigned_place, heap, location);
                     }
                 }
                 UnblockAction::Collapse(place, places) => {
@@ -334,9 +329,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         }
                     }
                 },
-                UnblockAction::TerminateRegionProjectionMember(region_projection_member) => {
-
-                }
+                UnblockAction::TerminateRegionProjectionMember(region_projection_member) => {}
             }
         }
     }
@@ -362,17 +355,16 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let arg_place: Place<'tcx> = arg_place.into();
                 if arg_place.is_mut_ref(self.body, self.tcx) {
                     let remote_place = MaybeRemotePlace::place_assigned_to_local(arg);
-                    let blocked_place =
-                        match borrow_state.get_place_blocking(remote_place, self.repacker()) {
-                            Some(blocked_place) => blocked_place,
-                            None => {
-                                eprintln!(
-                                    "{:?} No blocked place found for {:?} in path {:?}",
-                                    self.def_id, remote_place, path
-                                );
-                                continue;
-                            }
-                        };
+                    let blocked_place = match borrow_state.get_place_blocking(remote_place) {
+                        Some(blocked_place) => blocked_place,
+                        None => {
+                            eprintln!(
+                                "{:?} No blocked place found for {:?} in path {:?}",
+                                self.def_id, remote_place, path
+                            );
+                            continue;
+                        }
+                    };
                     let mut heap = heap_data.clone();
                     let mut heap = SymbolicHeap::new(&mut heap, self.tcx, self.body, &self.arena);
                     heap.insert(
