@@ -355,7 +355,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let arg_place: Place<'tcx> = arg_place.into();
                 if arg_place.is_mut_ref(self.body, self.tcx) {
                     let remote_place = MaybeRemotePlace::place_assigned_to_local(arg);
-                    let blocked_place = match borrow_state.get_place_blocking(remote_place) {
+                    let blocked_place = match borrow_state.get_place_blocking(
+                        remote_place,
+                        self.repacker(),
+                    ) {
                         Some(blocked_place) => blocked_place,
                         None => {
                             eprintln!(
