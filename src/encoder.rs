@@ -143,7 +143,7 @@ where
         'sym: 'ctxt,
         'mir: 'ctxt,
     {
-        self.encode_maybe_old_place::<LookupGet, _>(ctxt, place)
+        self.encode_maybe_old_place::<LookupGet, _>(ctxt.0, place)
     }
 
     fn remove_place_from_heap<'ctxt>(&self, ctxt: &mut Self::Ctxt<'ctxt>, place: Place<'tcx>)

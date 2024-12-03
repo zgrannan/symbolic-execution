@@ -57,7 +57,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         } else {
             &pcs.repacks_middle
         };
+        eprintln!("repacks: {repacks:?}");
         self.handle_repack_collapses(repacks, &mut heap, location);
+        self.handle_repack_weakens(repacks, &mut heap, location);
         self.handle_repack_expands(repacks, &mut heap, location);
         self.handle_reborrow_expands(
             borrows_expands.into_iter().map(|ep| ep.value).collect(),
@@ -81,7 +83,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
-        let heap_value = self.encode_maybe_old_place::<LookupTake, _>(heap, assigned_place);
+        // TODO: LookupTake
+        let heap_value = self.encode_maybe_old_place::<LookupGet, _>(heap.0, assigned_place);
         match blocked_place {
             MaybeRemotePlace::Local(blocked_place) => {
                 if blocked_place.is_old() {
@@ -95,6 +98,20 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 // Don't do anything, we'll use the assigned place from the heap
             }
         }
+    }
+
+    pub(crate) fn handle_repack_weakens(
+        &self,
+        repacks: &Vec<RepackOp<'tcx>>,
+        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
+        location: Location,
+    ) {
+        // TODO: Check why this doesn't work
+        // for repack in repacks {
+        //     if let RepackOp::Weaken(place, _, CapabilityKind::Write) = repack {
+        //         heap.0.remove(place);
+        //     }
+        // }
     }
 
     pub(crate) fn handle_repack_collapses(
@@ -129,7 +146,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
         for ep in expands {
             let place = ep.base();
-            let value = self.encode_maybe_old_place::<LookupGet, _>(heap, &place);
+            let value = self.encode_maybe_old_place::<LookupGet, _>(heap.0, &place);
 
             self.explode_value(
                 value,
@@ -147,9 +164,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) {
         for reborrow in borrows {
             let blocked_value = if reborrow.is_mut() {
-                self.encode_borrow_blocked_place::<LookupTake>(heap, reborrow.blocked_place)
+                self.encode_borrow_blocked_place::<LookupTake>(heap.0, reborrow.blocked_place)
             } else {
-                self.encode_borrow_blocked_place::<LookupGet>(heap, reborrow.blocked_place)
+                self.encode_borrow_blocked_place::<LookupGet>(heap.0, reborrow.blocked_place)
             };
             heap.insert_maybe_old_place(reborrow.assigned_place, blocked_value);
         }
@@ -157,7 +174,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn encode_borrow_blocked_place<'heap, T: LookupType>(
         &self,
-        heap: &mut SymbolicHeap<'heap, '_, 'sym, 'tcx, S::SymValSynthetic>,
+        heap: T::Heap<'heap, 'sym, 'tcx, S::SymValSynthetic>,
         place: MaybeRemotePlace<'tcx>,
     ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
         match place {
