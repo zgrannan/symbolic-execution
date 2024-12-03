@@ -1,9 +1,9 @@
 use pcs::utils::PlaceRepacker;
 
 use crate::context::SymExContext;
-use crate::heap::{SymbolicHeap};
+use crate::heap::SymbolicHeap;
 use crate::place::Place;
-use crate::rustc_interface::{middle::mir};
+use crate::rustc_interface::middle::mir;
 use crate::value::{AggregateKind, SymVar, SyntheticSymValue};
 use crate::visualization::VisFormat;
 use crate::{semantics::VerifierSemantics, value::SymValue};
@@ -61,6 +61,9 @@ pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S> {
                 .mk_discriminant(self.encode_place(ctxt, &(*target).into())),
             mir::Rvalue::Ref(_, kind, referred_place) => {
                 let base = self.encode_place(ctxt, &(*referred_place).into());
+                if kind.mutability().is_mut() {
+                    self.remove_place_from_heap(ctxt, (*referred_place).into());
+                }
                 arena.mk_ref(base, kind.mutability())
             }
             mir::Rvalue::UnaryOp(op, operand) => {
@@ -87,11 +90,20 @@ pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S> {
         match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => {
                 let place: Place<'tcx> = (*place).into();
-                self.encode_place(ctxt, &place)
+                let sym_value = self.encode_place(ctxt, &place);
+                // TODO: Remove the place from the heap if it is a move.
+                // if matches!(operand, mir::Operand::Move(_)) {
+                //     self.remove_place_from_heap(ctxt, place)
+                // }
+                sym_value
             }
             mir::Operand::Constant(box c) => self.arena().mk_constant(c.const_.into()),
         }
     }
+
+    fn remove_place_from_heap<'ctxt>(&self, ctxt: &mut Self::Ctxt<'ctxt>, place: Place<'tcx>)
+    where
+        'mir: 'ctxt;
 
     fn encode_place<'ctxt>(
         &self,
@@ -132,5 +144,12 @@ where
         'mir: 'ctxt,
     {
         self.encode_maybe_old_place::<LookupGet, _>(ctxt, place)
+    }
+
+    fn remove_place_from_heap<'ctxt>(&self, ctxt: &mut Self::Ctxt<'ctxt>, place: Place<'tcx>)
+    where
+        'mir: 'ctxt,
+    {
+        ctxt.0.remove(&place);
     }
 }

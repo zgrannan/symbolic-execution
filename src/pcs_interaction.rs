@@ -6,7 +6,7 @@ use pcs::{
         deref_expansion::DerefExpansion,
         domain::{MaybeOldPlace, MaybeRemotePlace},
     },
-    free_pcs::{FreePcsLocation, RepackOp},
+    free_pcs::{CapabilityKind, FreePcsLocation, RepackOp},
 };
 
 use crate::{
@@ -104,7 +104,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         location: Location,
     ) {
         for repack in repacks {
-            if let RepackOp::Collapse(place, from, _) = repack {
+            if let RepackOp::Collapse(place, from, CapabilityKind::Exclusive) = repack {
                 self.collapse_place_from((*place).into(), (*from).into(), heap, location)
             }
         }
