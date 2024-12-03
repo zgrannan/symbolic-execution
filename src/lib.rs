@@ -517,15 +517,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         guide: &pcs::utils::Place<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
+        take: bool,
     ) {
-        let value = match place.ty(self.fpcs_analysis.repacker()).ty.kind() {
-            ty::TyKind::Ref(_, _, Mutability::Not) => {
-                self.encode_maybe_old_place::<LookupGet, _>(heap.0, place)
-            }
-            _ => {
-                // TODO: LookupTake
-                self.encode_maybe_old_place::<LookupGet, _>(heap.0, place)
-            }
+        let value = if take {
+            self.encode_maybe_old_place::<LookupTake, _>(heap.0, place)
+        } else {
+            self.encode_maybe_old_place::<LookupGet, _>(heap.0, place)
         };
         let (field, rest, _) = place.expand_one_level(*guide, self.fpcs_analysis.repacker());
         self.explode_value(
@@ -563,8 +560,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 .map(|p| {
                     let place_to_take: MaybeOldPlace<'tcx> =
                         MaybeOldPlace::new(p.clone(), place.location());
-                    // TODO: LookupTake
-                    self.encode_place_opt::<LookupGet, MaybeOldPlace<'tcx>>(heap.0, &place_to_take)
+                    self.encode_place_opt::<LookupTake, MaybeOldPlace<'tcx>>(heap.0, &place_to_take)
                         .unwrap_or_else(|| {
                             self.mk_internal_err_expr(
                                 format!("Place {:?} not found in heap[collapse]", place_to_take),

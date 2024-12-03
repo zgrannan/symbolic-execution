@@ -1,3 +1,4 @@
+use crate::rustc_interface::hir::Mutability;
 use crate::{path::Path, rustc_interface::middle::mir::Location, value::SymValue, LookupType};
 
 use pcs::{
@@ -57,7 +58,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         } else {
             &pcs.repacks_middle
         };
-        eprintln!("repacks: {repacks:?}");
         self.handle_repack_collapses(repacks, &mut heap, location);
         self.handle_repack_weakens(repacks, &mut heap, location);
         self.handle_repack_expands(repacks, &mut heap, location);
@@ -83,8 +83,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
-        // TODO: LookupTake
-        let heap_value = self.encode_maybe_old_place::<LookupGet, _>(heap.0, assigned_place);
+        let heap_value = self.encode_maybe_old_place::<LookupTake, _>(heap.0, assigned_place);
         match blocked_place {
             MaybeRemotePlace::Local(blocked_place) => {
                 if blocked_place.is_old() {
@@ -192,8 +191,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         location: Location,
     ) {
         for repack in repacks {
-            if let RepackOp::Expand(place, guide, _) = repack {
-                self.expand_place_with_guide(place, guide, heap, location)
+            if let RepackOp::Expand(place, guide, capability) = repack {
+                let is_shared_ref = place.ty(self.fpcs_analysis.repacker()).ty.ref_mutability()
+                    == Some(Mutability::Not);
+                let take = capability == &CapabilityKind::Exclusive && !is_shared_ref;
+                eprintln!("Expanding {:?} with {:?} to {:?}", place, guide, take);
+                self.expand_place_with_guide(place, guide, heap, location, take)
             }
         }
     }
