@@ -279,6 +279,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             for edge in c.edges() {
                                 for input in edge.inputs() {
                                     for output in edge.outputs() {
+                                        let input = input.as_region_projection().unwrap();
                                         let idx = snapshot.index_of_arg_local(input.local());
                                         let input_place = match input.deref(self.repacker()) {
                                             Some(place) => place,

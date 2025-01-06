@@ -26,6 +26,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     {
         match &stmt.kind {
             mir::StatementKind::Assign(box (_place, rvalue)) => {
+                if matches!(rvalue, mir::Rvalue::Ref(_, mir::BorrowKind::Fake(_), _)) {
+                    return None;
+                }
                 let sym_value = self.encode_rvalue(heap, rvalue);
                 Some(sym_value)
             }
@@ -41,7 +44,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) {
         match &stmt.kind {
             mir::StatementKind::Assign(box (place, _)) => {
-                heap.insert(*place, rhs.unwrap(), location);
+                // Could be undefined if the assignment doesn't need to be handled,
+                // e.g. assigning a fake borrow
+                if let Some(rhs) = rhs {
+                    heap.insert(*place, rhs, location);
+                }
             }
             mir::StatementKind::StorageDead(local) => {
                 heap.0.remove(&Place::new(*local, &[]));
