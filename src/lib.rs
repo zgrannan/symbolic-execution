@@ -47,6 +47,7 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
+use pcs::borrows::region_projection_member::RegionProjectionMemberDirection;
 use pcs::{
     borrows::{
         domain::{MaybeOldPlace, MaybeRemotePlace},
@@ -228,7 +229,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     }
 
     fn apply_unblock_actions(
-        &self,
+        &mut self,
         actions: Vec<UnblockAction<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         function_call_snapshots: &FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
@@ -330,13 +331,27 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         }
                     }
                 },
-                UnblockAction::TerminateRegionProjectionMember(region_projection_member) => {}
+                UnblockAction::TerminateRegionProjectionMember(region_projection_member) => {
+                    match region_projection_member.direction() {
+                        RegionProjectionMemberDirection::ProjectionBlocksPlace => {
+                            let place = region_projection_member.place.as_local_place().unwrap();
+                            heap.insert(
+                                place,
+                                self.mk_fresh_symvar(place.ty(self.repacker()).ty),
+                                location,
+                            );
+                        }
+                        RegionProjectionMemberDirection::PlaceBlocksProjection => {
+                            // TODO
+                        }
+                    }
+                }
             }
         }
     }
 
     fn compute_backwards_facts(
-        &self,
+        &mut self,
         path: &AcyclicPath,
         heap_data: &HeapData<'sym, 'tcx, S::SymValSynthetic>,
         function_call_snapshots: FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
