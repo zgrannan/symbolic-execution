@@ -32,10 +32,10 @@ use std::marker::PhantomData;
 use crate::{
     rustc_interface::{
         ast::Mutability,
-        hir::def_id::{DefId, LocalDefId},
+        hir::def_id::LocalDefId,
         middle::{
-            mir::{self, Body, Local, Location, PlaceElem, ProjectionElem, VarDebugInfo},
-            ty::{self, GenericArgsRef, TyCtxt},
+            mir::{self, Body, Local, Location, PlaceElem, ProjectionElem},
+            ty::{self, TyCtxt},
         },
     },
     value::BackwardsFn,
@@ -47,28 +47,20 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcs::borrows::region_projection_member::RegionProjectionMemberDirection;
 use pcs::{
     borrows::{
         domain::{MaybeOldPlace, MaybeRemotePlace},
-        latest::Latest,
         unblock_graph::UnblockGraph,
     },
     combined_pcs::UnblockAction,
-    free_pcs::RepackOp,
     utils::PlaceRepacker,
-    visualization::{
-        dot_graph::DotGraph, generate_dot_graph_str, generate_unblock_dot_graph,
-        graph_constructor::UnblockGraphConstructor,
-    },
     FpcsOutput,
 };
 use pcs_interaction::PcsLocation;
 use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
 use semantics::VerifierSemantics;
-use transform::SymValueTransformer;
-use value::{CanSubst, Constant, Substs, SymVar, SyntheticSymValue};
+use value::{Constant, SymVar};
 use visualization::{OutputMode, VisFormat};
 
 use self::{
@@ -333,17 +325,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     }
                 },
                 UnblockAction::TerminateRegionProjectionMember(region_projection_member) => {
-                    match region_projection_member.direction() {
-                        RegionProjectionMemberDirection::ProjectionBlocksPlace => {
-                            let place = region_projection_member.place.as_local_place().unwrap();
+                    for input in region_projection_member.inputs().iter() {
+                        if let Ok(place) = TryInto::<MaybeOldPlace<'tcx>>::try_into(*input) {
                             heap.insert(
                                 place,
                                 self.mk_fresh_symvar(place.ty(self.repacker()).ty),
                                 location,
                             );
-                        }
-                        RegionProjectionMemberDirection::PlaceBlocksProjection => {
-                            // TODO
                         }
                     }
                 }
