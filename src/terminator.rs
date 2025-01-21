@@ -62,7 +62,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     export_path_json(
                         &debug_output_dir,
                         &path,
-                        &fpcs_terminator.succs[0],
                         StepType::Transition,
                         self.fpcs_analysis.repacker(),
                     );

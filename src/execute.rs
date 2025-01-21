@@ -1,5 +1,12 @@
 use crate::{
-    context::ErrorLocation, heap::{HeapData, SymbolicHeap}, path::{AcyclicPath, Path}, path_conditions::PathConditions, predicate::Predicate, results::{ResultAssertions, SymbolicExecutionResult}, semantics::VerifierSemantics, visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat}, SymbolicExecution
+    context::ErrorLocation,
+    heap::{HeapData, SymbolicHeap},
+    path::{AcyclicPath, Path},
+    predicate::Predicate,
+    results::{ResultAssertions, SymbolicExecutionResult},
+    semantics::VerifierSemantics,
+    visualization::{export_assertions, export_path_json, export_path_list, StepType, VisFormat},
+    SymbolicExecution,
 };
 
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
@@ -43,7 +50,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 export_path_json(
                     &debug_output_dir,
                     &path,
-                    last_fpcs_loc,
                     StepType::Instruction(block_data.statements.len()),
                     self.fpcs_analysis.repacker(),
                 );

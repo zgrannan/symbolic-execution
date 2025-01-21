@@ -71,14 +71,13 @@ pub enum StepType {
     Transition,
 }
 
-pub fn export_path_json<
+pub (crate) fn export_path_json<
     'sym,
     'tcx,
     T: VisFormat + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug,
 >(
     debug_output_dir: &str,
     path: &Path<'sym, 'tcx, T>,
-    fpcs_loc: &PcsLocation<'_, 'tcx>,
     step: StepType,
     repacker: PlaceRepacker<'_, 'tcx>,
 ) {
@@ -106,38 +105,6 @@ pub fn export_path_json<
             .to_json(Some(repacker.tcx()), &repacker.body().var_debug_info),
     );
     json_object.insert("heap".to_string(), path.heap.to_json(repacker));
-    json_object.insert(
-        "borrows".to_string(),
-        fpcs_loc.borrows.after.to_json(repacker),
-    );
-    json_object.insert(
-        "repacks_start".to_string(),
-        serde_json::Value::Array(
-            fpcs_loc
-                .repacks_start
-                .iter()
-                .map(|repack| serde_json::Value::String(format!("{:?}", repack)))
-                .collect(),
-        ),
-    );
-    json_object.insert(
-        "repacks_middle".to_string(),
-        serde_json::Value::Array(
-            fpcs_loc
-                .repacks_middle
-                .iter()
-                .map(|repack| serde_json::Value::String(format!("{:?}", repack)))
-                .collect(),
-        ),
-    );
-    json_object.insert(
-        "reborrow_start".to_string(),
-        fpcs_loc.extra_start.to_json(repacker),
-    );
-    json_object.insert(
-        "reborrow_middle".to_string(),
-        fpcs_loc.extra_middle.to_json(repacker),
-    );
     let heap_json = serde_json::Value::Object(json_object);
     std::fs::write(filename, serde_json::to_string_pretty(&heap_json).unwrap())
         .expect("Unable to write file");
