@@ -49,10 +49,11 @@ use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
 use pcs::{
     borrows::{
+        borrow_pcg_edge::BorrowPCGEdgeKind,
         domain::{MaybeOldPlace, MaybeRemotePlace},
+        unblock_graph::BorrowPCGUnblockAction,
         unblock_graph::UnblockGraph,
     },
-    combined_pcs::UnblockAction,
     utils::PlaceRepacker,
     FpcsOutput,
 };
@@ -222,48 +223,34 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn apply_unblock_actions(
         &mut self,
-        actions: Vec<UnblockAction<'tcx>>,
+        actions: Vec<BorrowPCGUnblockAction<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         function_call_snapshots: &FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
         for action in actions {
-            match action {
-                UnblockAction::TerminateBorrow {
-                    blocked_place,
-                    assigned_place,
-                    is_mut,
-                    ..
-                } => {
-                    if is_mut {
-                        self.handle_removed_borrow(blocked_place, &assigned_place, heap, location);
+            match action.edge().kind() {
+                BorrowPCGEdgeKind::Borrow(borrow) => {
+                    if borrow.is_mut() {
+                        self.handle_removed_borrow(
+                            borrow.blocked_place,
+                            &borrow.assigned_place,
+                            heap,
+                            location,
+                        );
                     }
                 }
-                UnblockAction::Collapse(place, places) => {
-                    self.collapse_place_from(place, places[0], heap, location);
+                BorrowPCGEdgeKind::DerefExpansion(deref_expansion) => {
+                    self.collapse_place_from(
+                        deref_expansion.base(),
+                        deref_expansion.expansion(self.repacker())[0],
+                        heap,
+                        location,
+                    );
                 }
-                UnblockAction::TerminateAbstraction(_, typ) => match &typ {
-                    pcs::borrows::domain::AbstractionType::Loop(lp) => {
-                        for edge in lp.edges() {
-                            for input in edge.inputs() {
-                                // match input {
-                                //     pcs::borrows::domain::AbstractionTarget::Place(place) => {
-                                //         if let Some(place) = place.as_local_place() {
-                                //             heap.insert_maybe_old_place(
-                                //                 place,
-                                //                 self.mk_fresh_symvar(place.ty(self.repacker()).ty),
-                                //             );
-                                //         }
-                                //     }
-                                //     pcs::borrows::domain::AbstractionTarget::RegionProjection(
-                                //         _,
-                                //     ) => {
-                                //         {} // TODO
-                                //     }
-                                // }
-                            }
-                        }
-                    }
+                BorrowPCGEdgeKind::Abstraction(abstraction_edge) => match &abstraction_edge
+                    .abstraction_type
+                {
                     pcs::borrows::domain::AbstractionType::FunctionCall(c) => {
                         // A snapshot may not exist if the call is specification "ghost" code, e.g. old()
                         // statements applied to mutable refs in Prusti.
@@ -323,8 +310,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             }
                         }
                     }
+                    _ => {
+                        // TODO: loops
+                    }
                 },
-                UnblockAction::TerminateRegionProjectionMember(region_projection_member) => {
+                BorrowPCGEdgeKind::RegionProjectionMember(region_projection_member) => {
                     for input in region_projection_member.inputs().iter() {
                         if let Ok(place) = TryInto::<MaybeOldPlace<'tcx>>::try_into(*input) {
                             heap.insert(
