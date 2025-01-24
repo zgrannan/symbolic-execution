@@ -1,10 +1,11 @@
 use crate::rustc_interface::hir::Mutability;
 use crate::{path::Path, rustc_interface::middle::mir::Location, value::SymValue, LookupType};
 
+use pcs::borrows::borrow_pcg_edge::PCGNode;
+use pcs::borrows::borrow_pcg_expansion::BorrowPCGExpansion;
 use pcs::{
     borrows::{
         borrow_edge::BorrowEdge,
-        deref_expansion::DerefExpansion,
         domain::{MaybeOldPlace, MaybeRemotePlace},
     },
     free_pcs::{CapabilityKind, FreePcsLocation, RepackOp},
@@ -133,7 +134,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub(crate) fn handle_reborrow_expands(
         &self,
-        mut expands: Vec<DerefExpansion<'tcx>>,
+        mut expands: Vec<BorrowPCGExpansion<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
@@ -146,9 +147,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         // Expand places with smaller projections first. For example, if f ->
         // {f.g} and f.g -> {f.g.h}, are expansions, we must expand f before
         // f.g.
-        expands.sort_by_key(|ep| ep.base().place().projection.len());
+        expands.sort_by_key(|ep| ep.base().place().projection().len());
 
         for ep in expands {
+            let ep: BorrowPCGExpansion<'tcx, MaybeOldPlace<'tcx>> = if let Ok(ep) = ep.try_into() {
+                ep
+            } else {
+                // Expansion of region projections are not supported
+                continue;
+            };
             let place = ep.base();
             let value = self.encode_maybe_old_place::<LookupGet, _>(heap.0, &place);
 
@@ -172,7 +179,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             } else {
                 self.encode_borrow_blocked_place::<LookupGet>(heap.0, reborrow.blocked_place)
             };
-            heap.insert_maybe_old_place(reborrow.assigned_place, blocked_value);
+            heap.insert_maybe_old_place(reborrow.deref_place(self.repacker()), blocked_value);
         }
     }
 

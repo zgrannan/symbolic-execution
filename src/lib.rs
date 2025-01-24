@@ -60,6 +60,7 @@ use pcs::{
 use pcs_interaction::PcsLocation;
 use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
+use pcs::borrows::borrow_pcg_edge::PCGNode;
 use semantics::VerifierSemantics;
 use value::{Constant, SymVar};
 use visualization::{OutputMode, VisFormat};
@@ -234,19 +235,24 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     if borrow.is_mut() {
                         self.handle_removed_borrow(
                             borrow.blocked_place,
-                            &borrow.assigned_place,
+                            &borrow.deref_place(self.repacker()),
                             heap,
                             location,
                         );
                     }
                 }
-                BorrowPCGEdgeKind::DerefExpansion(deref_expansion) => {
-                    self.collapse_place_from(
-                        deref_expansion.base(),
-                        deref_expansion.expansion(self.repacker())[0],
-                        heap,
-                        location,
-                    );
+                BorrowPCGEdgeKind::BorrowPCGExpansion(borrow_pcg_expansion) => {
+                    match (
+                        borrow_pcg_expansion.base(),
+                        borrow_pcg_expansion.expansion(self.repacker())[0],
+                    ) {
+                        (PCGNode::Place(base), PCGNode::Place(expansion)) => {
+                            self.collapse_place_from(base, expansion, heap, location);
+                        }
+                        _ => {
+                            // TODO: handle errors
+                        }
+                    }
                 }
                 BorrowPCGEdgeKind::Abstraction(abstraction_edge) => match &abstraction_edge
                     .abstraction_type
