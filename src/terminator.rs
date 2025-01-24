@@ -1,6 +1,7 @@
 use pcs::borrows::engine::BorrowsDomain;
 use pcs::free_pcs::FreePcsTerminator;
 use pcs::BorrowsBridge;
+use pcs::borrows::latest::Latest;
 
 use crate::context::ErrorLocation;
 use crate::encoder::Encoder;
@@ -122,6 +123,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         &mut heap,
                         &args.iter().map(|arg| &arg.node).collect(),
                         location.location,
+                        &location.borrows.post_main().latest,
                         terminator.source_info.span,
                     );
 
@@ -189,6 +191,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap: &mut SymbolicHeap<'heap, 'mir, 'sym, 'tcx, S::SymValSynthetic>,
         args: &Vec<&Operand<'tcx>>,
         location: Location,
+        latest: &Latest<'tcx>,
         span: Span,
     ) -> FunctionCallEffects<'sym, 'tcx, S::SymValSynthetic>
     where
@@ -230,7 +233,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     .iter()
                     .zip(encoded_args)
                     .map(|(operand, encoded)| {
-                        self.havoc_operand_ref(operand, heap, location)
+                        self.havoc_operand_ref(operand, heap, latest)
                             .unwrap_or(encoded)
                     })
                     .collect::<Vec<_>>();

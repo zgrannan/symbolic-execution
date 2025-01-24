@@ -47,6 +47,8 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
+use pcs::borrows::borrow_pcg_edge::PCGNode;
+use pcs::borrows::latest::Latest;
 use pcs::{
     borrows::{
         borrow_pcg_edge::BorrowPCGEdgeKind,
@@ -60,7 +62,6 @@ use pcs::{
 use pcs_interaction::PcsLocation;
 use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
-use pcs::borrows::borrow_pcg_edge::PCGNode;
 use semantics::VerifierSemantics;
 use value::{Constant, SymVar};
 use visualization::{OutputMode, VisFormat};
@@ -395,6 +396,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     );
                     let blocked_place_value =
                         self.encode_maybe_old_place::<LookupGet, _>(heap.0, &blocked_place);
+                    eprintln!(
+                        "Backwards fact for {:?}: ({}: {})",
+                        arg,
+                        blocked_place_value,
+                        blocked_place_value.ty(self.tcx)
+                    );
                     facts.insert(arg.index() - 1, blocked_place_value);
                 }
             }
@@ -464,7 +471,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         operand: &mir::Operand<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        latest: &Latest<'tcx>,
     ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>> {
         match operand {
             mir::Operand::Move(place) => {
@@ -473,10 +480,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     place.ty(self.body, self.tcx).ty.kind()
                 {
                     let sym_var = self.mk_fresh_symvar(place.ty(self.body, self.tcx).ty);
-                    heap.insert_maybe_old_place(
-                        MaybeOldPlace::new(place.0, Some(location)),
-                        sym_var,
-                    );
+                    let latest = latest.get(place.0);
+                    heap.insert_maybe_old_place(MaybeOldPlace::new(place.0, Some(latest)), sym_var);
                     Some(sym_var)
                 } else {
                     None

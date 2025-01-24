@@ -1,5 +1,3 @@
-use pcs::borrows::region_projection::RegionProjection;
-
 use crate::rustc_interface::middle::mir::{Local, Location};
 use std::collections::BTreeMap;
 

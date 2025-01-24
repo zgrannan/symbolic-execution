@@ -5,7 +5,7 @@ use crate::{
     path::{Path, SymExPath},
     place::Place,
     predicate::Predicate,
-    results::{ResultAssertion, ResultAssertions},
+    results::ResultAssertions,
     rustc_interface::middle::mir::{self, BasicBlock, Location},
     semantics::VerifierSemantics,
     visualization::VisFormat,
