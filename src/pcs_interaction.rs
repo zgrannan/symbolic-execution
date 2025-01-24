@@ -10,6 +10,7 @@ use pcs::{
     },
     free_pcs::{CapabilityKind, FreePcsLocation, RepackOp},
 };
+use pcs::utils::HasPlace;
 
 use crate::{
     heap::SymbolicHeap, semantics::VerifierSemantics, visualization::VisFormat, LookupGet,

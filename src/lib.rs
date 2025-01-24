@@ -49,6 +49,7 @@ use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
 use pcs::borrows::borrow_pcg_edge::PCGNode;
 use pcs::borrows::latest::Latest;
+use pcs::utils::HasPlace;
 use pcs::{
     borrows::{
         borrow_pcg_edge::BorrowPCGEdgeKind,
@@ -381,13 +382,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         ),
                         pcs.location,
                     );
-                    let ug = UnblockGraph::for_place(
-                        blocked_place.into(),
-                        &borrow_state,
-                        self.repacker(),
-                    );
+                    let ug = UnblockGraph::for_node(blocked_place, &borrow_state, self.repacker());
 
                     let actions = ug.actions(self.repacker());
+                    eprintln!("Unblock actions for {:?}: {:#?}", arg, actions);
                     self.apply_unblock_actions(
                         actions,
                         &mut heap,
