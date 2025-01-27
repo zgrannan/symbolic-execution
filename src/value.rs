@@ -166,7 +166,8 @@ impl<
     ) -> BackwardsFn<'sym, 'tcx, TT, U>
     where
         F: SymValueTransformer<'sym, 'tcx, T, V, U, TT>,
-        TT: SyntheticSymValue<'sym, 'tcx>,
+        TT: SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug,
+        U: std::fmt::Debug,
     {
         BackwardsFn {
             def_id: self.def_id,
@@ -289,7 +290,8 @@ impl<
     ) -> SymValue<'sym, 'tcx, TT, U>
     where
         F: SymValueTransformer<'sym, 'tcx, T, V, U, TT>,
-        TT: SyntheticSymValue<'sym, 'tcx>,
+        TT: SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug,
+        U: std::fmt::Debug,
     {
         match &self.kind {
             SymValueKind::Var(var, ty) => transformer.transform_var(arena, *var, *ty),

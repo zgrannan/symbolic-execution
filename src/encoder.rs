@@ -33,7 +33,8 @@ pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S> {
     where
         'tcx: 'ctxt,
         'sym: 'ctxt,
-        S: SyntheticSymValue<'sym, 'tcx>,
+        S: SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug,
+        Self::V: std::fmt::Debug,
     {
         let body = self.repacker().body();
         let tcx = self.repacker().tcx();

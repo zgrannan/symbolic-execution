@@ -80,7 +80,11 @@ pub trait BaseSymValueTransformer<'sym, 'tcx, T, V = SymVar, U = SymVar, TT = T>
         &mut self,
         arena: &'sym SymExContext<'tcx>,
         val: SymValue<'sym, 'tcx, TT, U>,
-    ) -> SymValue<'sym, 'tcx, TT, U> {
+    ) -> SymValue<'sym, 'tcx, TT, U>
+    where
+        TT: SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug,
+        U: std::fmt::Debug
+    {
         arena.mk_discriminant(val)
     }
     fn transform_cast(

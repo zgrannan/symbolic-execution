@@ -82,10 +82,21 @@ impl<'tcx> SymExContext<'tcx> {
         self.mk_sym_value(SymValueKind::InternalError(err, ty))
     }
 
-    pub fn mk_discriminant<'sym, T, V>(
+    pub fn mk_discriminant<
+        'sym,
+        T: SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug,
+        V: std::fmt::Debug,
+    >(
         &'sym self,
         val: SymValue<'sym, 'tcx, T, V>,
     ) -> SymValue<'sym, 'tcx, T, V> {
+        // TODO: This assertion seems to fail, I think because it's sometimes applied
+        //       in a context where type substitution did not occur for some reason.
+        // assert!(
+        //   val.kind.ty(self.tcx).rust_ty().is_enum(),
+        //   "{:?} is not an enum (ty: {:?})",
+        //   val.kind, val.kind.ty(self.tcx).rust_ty()
+        // );
         self.mk_sym_value(SymValueKind::Discriminant(val))
     }
 
