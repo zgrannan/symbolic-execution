@@ -3,6 +3,7 @@ use crate::{path::Path, rustc_interface::middle::mir::Location, value::SymValue,
 
 use pcs::borrows::borrow_pcg_edge::PCGNode;
 use pcs::borrows::borrow_pcg_expansion::BorrowPCGExpansion;
+use pcs::utils::HasPlace;
 use pcs::{
     borrows::{
         borrow_edge::BorrowEdge,
@@ -10,7 +11,6 @@ use pcs::{
     },
     free_pcs::{CapabilityKind, FreePcsLocation, RepackOp},
 };
-use pcs::utils::HasPlace;
 
 use crate::{
     heap::SymbolicHeap, semantics::VerifierSemantics, visualization::VisFormat, LookupGet,
@@ -44,10 +44,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         } else {
             pcs.extra_middle.clone()
         };
-        bridge.ug.filter_for_path(&path.path.blocks());
-        let ug_actions = bridge.ug.actions(self.repacker());
-        let added_borrows = bridge.added_borrows;
-        let borrows_expands = bridge.expands;
+        let mut ug_actions = bridge.unblock_actions();
+        ug_actions.retain(|action| action.edge().valid_for_path(&path.path.blocks()));
+        let borrows_expands = bridge.expands();
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         self.apply_unblock_actions(
             ug_actions,
@@ -67,14 +66,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             borrows_expands.into_iter().map(|ep| ep.value).collect(),
             &mut heap,
             location,
-        );
-        self.handle_added_borrows(
-            &added_borrows
-                .into_iter()
-                .filter(|r| r.conditions.valid_for_path(&path.path.blocks()))
-                .map(|r| r.value)
-                .collect::<Vec<_>>(),
-            &mut heap,
         );
     }
 
@@ -166,21 +157,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 heap,
                 location,
             );
-        }
-    }
-
-    fn handle_added_borrows(
-        &self,
-        borrows: &[BorrowEdge<'tcx>],
-        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-    ) {
-        for reborrow in borrows {
-            let blocked_value = if reborrow.is_mut() {
-                self.encode_borrow_blocked_place::<LookupTake>(heap.0, reborrow.blocked_place)
-            } else {
-                self.encode_borrow_blocked_place::<LookupGet>(heap.0, reborrow.blocked_place)
-            };
-            heap.insert_maybe_old_place(reborrow.deref_place(self.repacker()), blocked_value);
         }
     }
 

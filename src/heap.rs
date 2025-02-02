@@ -11,6 +11,7 @@ use pcs::borrows::domain::MaybeOldPlace;
 use pcs::utils::{PlaceRepacker, PlaceSnapshot, SnapshotLocation};
 use pcs::utils::HasPlace;
 use std::collections::BTreeMap;
+use pcs::utils::display::DisplayWithRepacker;
 
 use super::value::{SymValue, SyntheticSymValue};
 

@@ -84,7 +84,7 @@ impl From<mir::CastKind> for CastKind {
     fn from(value: mir::CastKind) -> Self {
         match value {
             mir::CastKind::IntToInt => CastKind::IntToInt,
-            mir::CastKind::PointerCoercion(_) => CastKind::PointerCoercion,
+            mir::CastKind::PointerCoercion(..) => CastKind::PointerCoercion,
             other => todo!("{:?}", other),
         }
     }
