@@ -1,7 +1,6 @@
 use crate::rustc_interface::hir::Mutability;
 use crate::{path::Path, rustc_interface::middle::mir::Location, value::SymValue, LookupType};
 
-use pcs::borrows::borrow_pcg_edge::PCGNode;
 use pcs::borrows::borrow_pcg_expansion::BorrowPCGExpansion;
 use pcs::utils::HasPlace;
 use pcs::{

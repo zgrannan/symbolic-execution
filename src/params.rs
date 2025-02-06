@@ -3,15 +3,13 @@ use pcs::FpcsOutput;
 use crate::{
     context::SymExContext,
     rustc_interface::{
-        ast::Mutability,
-        hir::def_id::{DefId, LocalDefId},
+        hir::def_id::LocalDefId,
         middle::{
-            mir::{self, Body, Local, Location, PlaceElem, ProjectionElem, VarDebugInfo},
-            ty::{self, GenericArgsRef, TyCtxt},
+            mir::Body,
+            ty::TyCtxt,
         },
     },
     semantics::VerifierSemantics,
-    value::BackwardsFn,
 };
 pub struct SymExParams<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>> {
     pub def_id: LocalDefId,

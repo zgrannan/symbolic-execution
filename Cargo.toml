@@ -18,5 +18,5 @@ serde_json = "1.0.64"
 rustc_private = true
 
 [features]
-default = ["crash_on_internal_error"]
+# default = ["crash_on_internal_error"]
 crash_on_internal_error = []
