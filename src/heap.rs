@@ -68,11 +68,11 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
 
     /// Sets the heap entry for this place to `value`. If `place` is a current
     /// place, also sets the heap entry for the place snapshot at `location`.
-    pub fn insert<P: Clone + Into<MaybeOldPlace<'tcx>>>(
+    pub (crate) fn insert<P: Clone + Into<MaybeOldPlace<'tcx>>>(
         &mut self,
         place: P,
         value: SymValue<'sym, 'tcx, T>,
-        location: Location,
+        location: impl Into<SnapshotLocation>,
     ) {
         let place: MaybeOldPlace<'tcx> = place.into();
         self.insert_maybe_old_place(place.clone(), value);

@@ -47,7 +47,7 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcs::{borrows::latest::Latest, combined_pcs::PCGNode};
+use pcs::{borrows::latest::Latest, combined_pcs::PCGNode, utils::SnapshotLocation};
 use pcs::utils::display::DisplayWithRepacker;
 use pcs::utils::HasPlace;
 use pcs::{
@@ -386,7 +386,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let ug = UnblockGraph::for_node(blocked_place, &borrow_state, self.repacker());
 
                     let actions = ug.actions(self.repacker());
-                    eprintln!("Unblock actions for {:?}: {:#?}", arg, actions);
                     self.apply_unblock_actions(
                         actions,
                         &mut heap,
@@ -395,12 +394,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     );
                     let blocked_place_value =
                         self.encode_maybe_old_place::<LookupGet, _>(heap.0, &blocked_place);
-                    eprintln!(
-                        "Backwards fact for {:?}: ({}: {})",
-                        arg,
-                        blocked_place_value,
-                        blocked_place_value.ty(self.tcx)
-                    );
                     facts.insert(arg.index() - 1, blocked_place_value);
                 }
             }
@@ -506,7 +499,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         base_value: SymValue<'sym, 'tcx, S::SymValSynthetic>,
         places: impl Iterator<Item = MaybeOldPlace<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        location: impl Copy + Into<SnapshotLocation>,
     ) {
         for f in places {
             let value = self

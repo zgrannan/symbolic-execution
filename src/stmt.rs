@@ -61,7 +61,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
     }
 
-    pub fn handle_stmt(
+    pub(crate) fn handle_stmt(
         &mut self,
         pcs_block: &FreePcsBasicBlock<'tcx>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
