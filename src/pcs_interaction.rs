@@ -2,12 +2,10 @@ use crate::rustc_interface::hir::Mutability;
 use crate::{path::Path, rustc_interface::middle::mir::Location, value::SymValue, LookupType};
 
 use pcs::borrows::borrow_pcg_expansion::BorrowPCGExpansion;
+use pcs::borrows::latest::Latest;
 use pcs::utils::HasPlace;
 use pcs::{
-    borrows::{
-        borrow_edge::BorrowEdge,
-        domain::{MaybeOldPlace, MaybeRemotePlace},
-    },
+    borrows::domain::{MaybeOldPlace, MaybeRemotePlace},
     free_pcs::{CapabilityKind, FreePcsLocation, RepackOp},
 };
 
@@ -38,7 +36,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         start: bool,
         location: Location,
     ) {
-        let mut bridge = if start {
+        let bridge = if start {
             pcs.extra_start.clone()
         } else {
             pcs.extra_middle.clone()
@@ -64,7 +62,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         self.handle_reborrow_expands(
             borrows_expands.into_iter().map(|ep| ep.value).collect(),
             &mut heap,
-            location,
+            pcs.latest(),
         );
     }
 
@@ -127,17 +125,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &self,
         mut expands: Vec<BorrowPCGExpansion<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        latest: &Latest<'tcx>,
     ) {
-        // // TODO: Explain why owned expansions don't need to be handled
-        // let mut expands: Vec<BorrowDerefExpansion<'tcx>> = expands
-        //     .into_iter()
-        //     .flat_map(|ep| ep.borrow_expansion().cloned())
-        //     .collect();
-
-        // Expand places with smaller projections first. For example, if f ->
-        // {f.g} and f.g -> {f.g.h}, are expansions, we must expand f before
-        // f.g.
         expands.sort_by_key(|ep| ep.base().place().projection().len());
 
         for ep in expands {
@@ -154,21 +143,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 value,
                 ep.expansion(self.fpcs_analysis.repacker()).into_iter(),
                 heap,
-                location,
+                latest.get(place.place()),
             );
-        }
-    }
-
-    fn encode_borrow_blocked_place<'heap, T: LookupType>(
-        &self,
-        heap: T::Heap<'heap, 'sym, 'tcx, S::SymValSynthetic>,
-        place: MaybeRemotePlace<'tcx>,
-    ) -> SymValue<'sym, 'tcx, S::SymValSynthetic> {
-        match place {
-            MaybeRemotePlace::Local(place) => self.encode_maybe_old_place::<T, _>(heap, &place),
-            MaybeRemotePlace::Remote(_) => {
-                todo!()
-            }
         }
     }
 
@@ -183,7 +159,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let is_shared_ref = place.ty(self.fpcs_analysis.repacker()).ty.ref_mutability()
                     == Some(Mutability::Not);
                 let take = capability == &CapabilityKind::Exclusive && !is_shared_ref;
-                eprintln!("Expanding {:?} with {:?} to {:?}", place, guide, take);
                 self.expand_place_with_guide(place, guide, heap, location, take)
             }
         }
