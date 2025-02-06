@@ -5,6 +5,7 @@ use crate::heap::HeapData;
 use crate::path::{LoopPath, SymExPath};
 use crate::rustc_interface::middle::ty;
 
+use crate::semantics::VerifierSemantics;
 use crate::value::{CanSubst, Substs, SyntheticSymValue};
 use crate::{path::AcyclicPath, path_conditions::PathConditions, value::SymValue, Assertion};
 
@@ -158,10 +159,11 @@ impl<
 }
 
 #[derive(Clone, Debug)]
-pub struct SymbolicExecutionResult<'sym, 'tcx, T> {
-    pub paths: ResultPaths<'sym, 'tcx, T>,
-    pub assertions: ResultAssertions<'sym, 'tcx, T>,
+pub struct SymbolicExecutionResult<'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>> {
+    pub paths: ResultPaths<'sym, 'tcx, S::SymValSynthetic>,
+    pub assertions: ResultAssertions<'sym, 'tcx, S::SymValSynthetic>,
     pub fresh_symvars: Vec<ty::Ty<'tcx>>,
+    pub verifier_semantics: S,
 }
 
 #[derive(Clone, Debug)]

@@ -21,6 +21,7 @@ pub trait VerifierSemantics<'sym, 'tcx>: std::marker::Sized {
         path: Path<'sym, 'tcx, Self::SymValSynthetic>,
         sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, Self>,
     ) -> Vec<Assertion<'sym, 'tcx, Self::SymValSynthetic>>;
+
     fn encode_fn_call<'mir>(
         span: Span,
         sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, Self>,

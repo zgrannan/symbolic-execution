@@ -25,7 +25,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     where
         S::SymValSynthetic: Eq,
     {
-        for assertion in S::encode_loop_invariant(invariant_info.loop_head, path.clone(), self) {
+        for assertion in S::encode_loop_invariant(
+            invariant_info.loop_head,
+            path.clone(),
+            self,
+        ) {
             assertions.insert(path.conditional_assertion(assertion));
         }
         if let SymExPath::Loop(loop_path) = &path.path {
@@ -73,7 +77,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
         // Assume invariant
 
-        for assertion in S::encode_loop_invariant(invariant_info.loop_head, path.clone(), self) {
+        for assertion in S::encode_loop_invariant(
+            invariant_info.loop_head,
+            path.clone(),
+            self,
+        ) {
             path.add_path_condition(assertion);
         }
         true

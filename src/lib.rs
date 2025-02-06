@@ -47,8 +47,7 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcs::borrows::borrow_pcg_edge::PCGNode;
-use pcs::borrows::latest::Latest;
+use pcs::{borrows::latest::Latest, combined_pcs::PCGNode};
 use pcs::utils::display::DisplayWithRepacker;
 use pcs::utils::HasPlace;
 use pcs::{
@@ -57,6 +56,7 @@ use pcs::{
         domain::{MaybeOldPlace, MaybeRemotePlace},
         unblock_graph::BorrowPCGUnblockAction,
         unblock_graph::UnblockGraph,
+        region_projection::RegionProjection,
     },
     utils::PlaceRepacker,
     FpcsOutput,
@@ -98,7 +98,7 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     pub arena: &'sym SymExContext<'tcx>,
     debug_output_dir: Option<String>,
     err_ctx: Option<ErrorContext>,
-    verifier_semantics: PhantomData<S>,
+    pub verifier_semantics: S,
     new_symvars_allowed: bool,
     result_paths: ResultPaths<'sym, 'tcx, S::SymValSynthetic>,
     debug_paths: Vec<Path<'sym, 'tcx, S::SymValSynthetic>>,
@@ -151,7 +151,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             body: params.body,
             fpcs_analysis: params.fpcs_analysis,
             havoc: LoopData::new(&params.body),
-            verifier_semantics: PhantomData,
+            verifier_semantics: params.verifier_semantics,
             arena: params.arena,
             debug_output_dir: params.debug_output_dir,
             err_ctx: None,
@@ -268,7 +268,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             for edge in c.edges() {
                                 for input in edge.inputs() {
                                     for output in edge.outputs() {
-                                        let input = input.as_region_projection().unwrap();
+                                        let input: RegionProjection<'tcx> = input.try_into().unwrap();
                                         let idx =
                                             snapshot.index_of_arg_local(input.local().unwrap());
                                         let input_place = match input.deref(self.repacker()) {
@@ -591,7 +591,7 @@ pub fn run_symbolic_execution<
     S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat> + 'sym,
 >(
     params: SymExParams<'mir, 'sym, 'tcx, S>,
-) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic>
+) -> SymbolicExecutionResult<'sym, 'tcx, S>
 where
     S::SymValSynthetic: Eq,
 {

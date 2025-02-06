@@ -15,7 +15,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     pub fn execute(
         mut self,
         heap_data: HeapData<'sym, 'tcx, S::SymValSynthetic>,
-    ) -> SymbolicExecutionResult<'sym, 'tcx, S::SymValSynthetic>
+    ) -> SymbolicExecutionResult<'sym, 'tcx, S>
     where
         S::SymValSynthetic: Eq,
     {
@@ -76,6 +76,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             paths: self.result_paths,
             assertions,
             fresh_symvars: self.fresh_symvars.clone(),
+            verifier_semantics: self.verifier_semantics,
         }
     }
 }
