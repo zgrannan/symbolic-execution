@@ -1,4 +1,3 @@
-use pcs::borrows::engine::BorrowsDomain;
 use pcs::{free_pcs::FreePcsBasicBlock, BorrowsBridge};
 
 use crate::visualization::{export_path_json, StepType};

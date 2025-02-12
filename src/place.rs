@@ -1,5 +1,5 @@
-use pcs::{borrows::domain::MaybeOldPlace, utils::PlaceRepacker};
-
+use pcs::utils::PlaceRepacker;
+use pcs::utils::place::maybe_old::MaybeOldPlace;
 use crate::rustc_interface::middle::{
     mir::{self, tcx::PlaceTy, ProjectionElem},
     ty,

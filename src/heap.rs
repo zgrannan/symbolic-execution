@@ -7,9 +7,9 @@ use crate::rustc_interface::middle::{
 use crate::value::SymVar;
 use crate::visualization::OutputMode;
 use crate::{place::Place, VisFormat};
-use pcs::borrows::domain::MaybeOldPlace;
 use pcs::utils::{PlaceRepacker, PlaceSnapshot, SnapshotLocation};
 use pcs::utils::HasPlace;
+use pcs::utils::place::maybe_old::MaybeOldPlace;
 use std::collections::BTreeMap;
 use pcs::utils::display::DisplayWithRepacker;
 

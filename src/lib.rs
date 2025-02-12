@@ -47,16 +47,13 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcs::{borrows::latest::Latest, combined_pcs::PCGNode, utils::SnapshotLocation};
 use pcs::utils::display::DisplayWithRepacker;
 use pcs::utils::HasPlace;
+use pcs::{borrows::latest::Latest, combined_pcs::PCGNode, utils::SnapshotLocation};
 use pcs::{
     borrows::{
-        borrow_pcg_edge::BorrowPCGEdgeKind,
-        domain::{MaybeOldPlace, MaybeRemotePlace},
-        unblock_graph::BorrowPCGUnblockAction,
+        region_projection::RegionProjection, unblock_graph::BorrowPCGUnblockAction,
         unblock_graph::UnblockGraph,
-        region_projection::RegionProjection,
     },
     utils::PlaceRepacker,
     FpcsOutput,
@@ -64,6 +61,10 @@ use pcs::{
 use pcs_interaction::PcsLocation;
 use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
+use pcs::utils::maybe_old::MaybeOldPlace;
+use pcs::borrows::edge::kind::BorrowPCGEdgeKind;
+use pcs::borrows::edge::abstraction::AbstractionType;
+use pcs::utils::maybe_remote::MaybeRemotePlace;
 use semantics::VerifierSemantics;
 use value::{Constant, SymVar};
 use visualization::{OutputMode, VisFormat};
@@ -257,10 +258,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         }
                     }
                 }
-                BorrowPCGEdgeKind::Abstraction(abstraction_edge) => match &abstraction_edge
-                    .abstraction_type
-                {
-                    pcs::borrows::domain::AbstractionType::FunctionCall(c) => {
+                BorrowPCGEdgeKind::Abstraction(abstraction_edge) => match &abstraction_edge {
+                    AbstractionType::FunctionCall(c) => {
                         // A snapshot may not exist if the call is specification "ghost" code, e.g. old()
                         // statements applied to mutable refs in Prusti.
                         if let Some(snapshot) = function_call_snapshots.get_snapshot(&c.location())
@@ -268,7 +267,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             for edge in c.edges() {
                                 for input in edge.inputs() {
                                     for output in edge.outputs() {
-                                        let input: RegionProjection<'tcx> = input.try_into().unwrap();
+                                        let input: RegionProjection<'tcx> =
+                                            input.try_into().unwrap();
                                         let idx =
                                             snapshot.index_of_arg_local(input.local().unwrap());
                                         let input_place = match input.deref(self.repacker()) {
@@ -385,7 +385,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     );
                     let ug = UnblockGraph::for_node(blocked_place, &borrow_state, self.repacker());
 
-                    let actions = ug.actions(self.repacker());
+                    let actions = ug.actions(self.repacker()).unwrap();
                     self.apply_unblock_actions(
                         actions,
                         &mut heap,

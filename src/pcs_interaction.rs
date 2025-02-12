@@ -4,10 +4,9 @@ use crate::{path::Path, rustc_interface::middle::mir::Location, value::SymValue,
 use pcs::borrows::borrow_pcg_expansion::BorrowPCGExpansion;
 use pcs::borrows::latest::Latest;
 use pcs::utils::HasPlace;
-use pcs::{
-    borrows::domain::{MaybeOldPlace, MaybeRemotePlace},
-    free_pcs::{CapabilityKind, FreePcsLocation, RepackOp},
-};
+use pcs::free_pcs::{CapabilityKind, FreePcsLocation, RepackOp};
+use pcs::utils::place::maybe_old::MaybeOldPlace;
+use pcs::utils::place::maybe_remote::MaybeRemotePlace;
 
 use crate::{
     heap::SymbolicHeap, semantics::VerifierSemantics, visualization::VisFormat, LookupGet,
