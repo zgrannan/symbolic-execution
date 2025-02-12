@@ -530,8 +530,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             self.encode_maybe_old_place::<LookupGet, _>(heap.0, place)
         };
         let (field, rest, _) = place
-            .expand_one_level(*guide, self.fpcs_analysis.repacker())
-            .unwrap();
+            .expand_one_level(*guide, self.fpcs_analysis.repacker());
         self.explode_value(
             value,
             std::iter::once(field)
@@ -563,7 +562,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             place
                 .place()
                 .expand_field(None, self.fpcs_analysis.repacker())
-                .unwrap()
                 .iter()
                 .map(|p| {
                     let place_to_take: MaybeOldPlace<'tcx> =
