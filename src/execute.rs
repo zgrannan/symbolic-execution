@@ -30,7 +30,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             let block = path.last_block();
             let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
             heap.snapshot_values(block);
-            let pcg_block = self.fpcs_analysis.get_all_for_bb(block);
+            let pcg_block = self.fpcs_analysis.get_all_for_bb(block).unwrap();
             let block_data = &self.body.basic_blocks[block];
             if let Some(invariant_info) = self.havoc.get_invariant_info(block) {
                 if !self.handle_loop(block, invariant_info, &mut path, &mut assertions) {
