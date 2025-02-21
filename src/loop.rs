@@ -53,7 +53,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         {
             let pcs_block = self
                 .fpcs_analysis
-                .get_all_for_bb(invariant_info.condition_check_block);
+                .get_all_for_bb(invariant_info.condition_check_block)
+                .unwrap()
+                .unwrap();
             let block_data = &self.body.basic_blocks[invariant_info.condition_check_block];
             self.execute_stmts_in_block(&pcs_block, block_data, path, false);
             match &block_data.terminator().kind {

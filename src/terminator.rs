@@ -1,18 +1,15 @@
 use pcs::free_pcs::FreePcsTerminator;
-use pcs::BorrowsBridge;
 use pcs::borrows::latest::Latest;
+use pcs::free_pcs::PcgLocation;
 
 use crate::context::ErrorLocation;
 use crate::encoder::Encoder;
 use crate::function_call_snapshot::FunctionCallSnapshot;
 use crate::heap::SymbolicHeap;
 use crate::path::Path;
-use crate::pcs_interaction::PcsLocation;
 use crate::predicate::Predicate;
-use crate::results::ResultAssertion;
 use crate::results::ResultAssertions;
 use crate::value::SymValue;
-use crate::value::SymVar;
 use crate::visualization::{export_path_json, StepType};
 use crate::Assertion;
 use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExecution};
@@ -34,7 +31,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         assertions: &mut ResultAssertions<'sym, 'tcx, S::SymValSynthetic>,
         mut path: Path<'sym, 'tcx, S::SymValSynthetic>,
         fpcs_terminator: FreePcsTerminator<'tcx>,
-        location: &PcsLocation<'mir, 'tcx>,
+        location: &PcgLocation<'tcx>,
     ) where
         S::SymValSynthetic: Eq,
     {

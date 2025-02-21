@@ -3,7 +3,7 @@ use crate::{
     predicate::Predicate,
     results::ResultAssertion,
     rustc_interface::middle::mir::{BasicBlock, Location, START_BLOCK},
-    value::{SymValue, SyntheticSymValue},
+    value::SyntheticSymValue,
 };
 
 use super::{heap::HeapData, path_conditions::PathConditions};

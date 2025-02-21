@@ -1,10 +1,10 @@
 use crate::rustc_interface::hir::Mutability;
-use crate::{path::Path, rustc_interface::middle::mir::Location, value::SymValue, LookupType};
+use crate::{path::Path, rustc_interface::middle::mir::Location};
 
 use pcs::borrows::borrow_pcg_expansion::BorrowPCGExpansion;
 use pcs::borrows::latest::Latest;
 use pcs::utils::HasPlace;
-use pcs::free_pcs::{CapabilityKind, FreePcsLocation, RepackOp};
+use pcs::free_pcs::{CapabilityKind, PcgLocation, RepackOp};
 use pcs::utils::place::maybe_old::MaybeOldPlace;
 use pcs::utils::place::maybe_remote::MaybeRemotePlace;
 
@@ -13,15 +13,13 @@ use crate::{
     LookupTake, SymbolicExecution,
 };
 
-pub type PcsLocation<'mir, 'tcx> = FreePcsLocation<'tcx>;
-
 impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
     SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
     pub(crate) fn handle_pcg(
         &mut self,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
-        pcs: &PcsLocation<'mir, 'tcx>,
+        pcs: &PcgLocation<'tcx>,
         location: Location,
     ) {
         self.handle_pcg_partial(path, pcs, true, location);
@@ -31,7 +29,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     pub(crate) fn handle_pcg_partial(
         &mut self,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
-        pcs: &PcsLocation<'mir, 'tcx>,
+        pcs: &PcgLocation<'tcx>,
         start: bool,
         location: Location,
     ) {
@@ -90,9 +88,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub(crate) fn handle_repack_weakens(
         &self,
-        repacks: &Vec<RepackOp<'tcx>>,
-        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        _repacks: &Vec<RepackOp<'tcx>>,
+        _heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
+        _location: Location,
     ) {
         // TODO: Check why this doesn't work
         // for repack in repacks {

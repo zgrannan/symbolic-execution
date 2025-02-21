@@ -27,8 +27,6 @@ mod util;
 pub mod value;
 pub mod visualization;
 
-use std::marker::PhantomData;
-
 use crate::{
     rustc_interface::{
         ast::Mutability,
@@ -47,7 +45,11 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
+use pcs::borrows::edge::abstraction::AbstractionType;
+use pcs::borrows::edge::kind::BorrowPCGEdgeKind;
 use pcs::utils::display::DisplayWithRepacker;
+use pcs::utils::maybe_old::MaybeOldPlace;
+use pcs::utils::maybe_remote::MaybeRemotePlace;
 use pcs::utils::HasPlace;
 use pcs::{borrows::latest::Latest, combined_pcs::PCGNode, utils::SnapshotLocation};
 use pcs::{
@@ -58,13 +60,9 @@ use pcs::{
     utils::PlaceRepacker,
     FpcsOutput,
 };
-use pcs_interaction::PcsLocation;
 use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
-use pcs::utils::maybe_old::MaybeOldPlace;
-use pcs::borrows::edge::kind::BorrowPCGEdgeKind;
-use pcs::borrows::edge::abstraction::AbstractionType;
-use pcs::utils::maybe_remote::MaybeRemotePlace;
+use pcs::free_pcs::PcgLocation;
 use semantics::VerifierSemantics;
 use value::{Constant, SymVar};
 use visualization::{OutputMode, VisFormat};
@@ -343,14 +341,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         path: &AcyclicPath,
         heap_data: &HeapData<'sym, 'tcx, S::SymValSynthetic>,
         function_call_snapshots: FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
-        pcs: &PcsLocation<'mir, 'tcx>,
+        pcs: &PcgLocation<'tcx>,
     ) -> BackwardsFacts<'sym, 'tcx, S::SymValSynthetic> {
         let return_place: mir::Place<'tcx> = mir::RETURN_PLACE.into();
         let return_place: Place<'tcx> = return_place.into();
         let mut facts = BackwardsFacts::new();
         if return_place.is_mut_ref(self.body, self.tcx) {
             let borrow_state = {
-                let mut mut_borrow_state = pcs.borrows.post_main().clone();
+                let mut mut_borrow_state = pcs.borrows.post_main().as_ref().clone();
+                // let mut mut_borrow_state = pcs.borrows.post_main().clone();
                 mut_borrow_state.filter_for_path(path.blocks());
                 mut_borrow_state
             };
@@ -411,7 +410,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     fn complete_path(
         &mut self,
         path: Path<'sym, 'tcx, S::SymValSynthetic>,
-        pcs_loc: &PcsLocation<'mir, 'tcx>,
+        pcs_loc: &PcgLocation<'tcx>,
     ) where
         S::SymValSynthetic: Eq,
     {
@@ -438,7 +437,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap_data: HeapData<'sym, 'tcx, S::SymValSynthetic>,
         path_conditions: PathConditions<'sym, 'tcx, S::SymValSynthetic>,
         function_call_snapshots: FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
-        pcs_loc: &PcsLocation<'mir, 'tcx>,
+        pcs_loc: &PcgLocation<'tcx>,
     ) where
         S::SymValSynthetic: Eq,
     {
@@ -523,7 +522,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             self.encode_maybe_old_place::<LookupGet, _>(heap.0, place)
         };
         let (field, rest, _) = place
-            .expand_one_level(*guide, self.fpcs_analysis.repacker());
+            .expand_one_level(*guide, self.fpcs_analysis.repacker())
+            .unwrap();
         self.explode_value(
             value,
             std::iter::once(field)
@@ -555,6 +555,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             place
                 .place()
                 .expand_field(None, self.fpcs_analysis.repacker())
+                .unwrap()
                 .iter()
                 .map(|p| {
                     let place_to_take: MaybeOldPlace<'tcx> =

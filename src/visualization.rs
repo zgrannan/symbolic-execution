@@ -5,7 +5,6 @@ use crate::{
     context::SymExContext,
     debug_info::DEBUGINFO_NONE,
     path::Path,
-    pcs_interaction::PcsLocation,
     results::ResultAssertions,
     results::{ResultAssertion, ResultPaths},
     rustc_interface::{

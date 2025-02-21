@@ -4,10 +4,9 @@ use crate::{
         hir::def_id::DefId,
         middle::{
             mir::VarDebugInfo,
-            ty::{self, GenericArgsRef, TyCtxt, TyKind},
+            ty::{self, GenericArgsRef, TyCtxt},
         },
     },
-    transform::SymValueTransformer,
     value::{CanSubst, Substs, SymValue, SyntheticSymValue},
     visualization::{OutputMode, VisFormat},
 };
@@ -56,11 +55,11 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for Predicate<'sym, 'tcx, T> {
                 let predicate1_str = predicate1.to_vis_string(tcx, debug_info, mode);
                 format!("({} ⇒ {})", predicate_str, predicate1_str)
             }
-            Predicate::SwitchIntEq(value, switch_val, ty) => {
+            Predicate::SwitchIntEq(value, switch_val, _) => {
                 let value = value.to_vis_string(tcx, debug_info, mode);
                 format!("{} == {}", value, switch_val)
             }
-            Predicate::SwitchIntNe(value, switch_vals, ty) => {
+            Predicate::SwitchIntNe(value, switch_vals, _) => {
                 let value = value.to_vis_string(tcx, debug_info, mode);
                 if switch_vals.len() == 1 {
                     format!("{} ≠ {}", value, switch_vals[0])
@@ -75,9 +74,8 @@ impl<'sym, 'tcx, T: VisFormat> VisFormat for Predicate<'sym, 'tcx, T> {
             Predicate::Postcondition {
                 expr,
                 def_id,
-                substs,
                 pre_values,
-                post_values,
+                ..
             } => {
                 let expr_str = expr.to_vis_string(tcx, debug_info, mode);
                 let pre_values_str = pre_values
@@ -138,28 +136,6 @@ impl<
         T: Copy + Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx> + CanSubst<'sym, 'tcx>,
     > Predicate<'sym, 'tcx, T>
 {
-    pub fn apply_transformer(
-        self,
-        arena: &'sym SymExContext<'tcx>,
-        transformer: &mut impl SymValueTransformer<'sym, 'tcx, T>,
-    ) -> Self {
-        match self {
-            Predicate::Value(_) => todo!(),
-            Predicate::Precondition(def_id, _, _) => todo!(),
-            Predicate::Implies(predicate, predicate1) => todo!(),
-            Predicate::SwitchIntEq(_, _, ty) => todo!(),
-            Predicate::SwitchIntNe(_, vec, ty) => todo!(),
-            Predicate::Postcondition {
-                expr,
-                def_id,
-                substs,
-                pre_values,
-                post_values,
-            } => todo!(),
-            Predicate::All(vec) => todo!(),
-        }
-    }
-
     pub fn subst<'substs>(
         self,
         arena: &'sym SymExContext<'tcx>,
