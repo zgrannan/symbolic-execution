@@ -1,8 +1,8 @@
 use crate::rustc_interface::hir::Mutability;
 use crate::{path::Path, rustc_interface::middle::mir::Location};
 
-use pcs::borrows::borrow_pcg_expansion::BorrowPCGExpansion;
-use pcs::borrows::latest::Latest;
+use pcs::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
+use pcs::borrow_pcg::latest::Latest;
 use pcs::utils::HasPlace;
 use pcs::free_pcs::{CapabilityKind, PcgLocation, RepackOp};
 use pcs::utils::place::maybe_old::MaybeOldPlace;
