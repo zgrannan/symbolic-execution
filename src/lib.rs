@@ -322,8 +322,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         // TODO: loops
                     }
                 },
-                BorrowPCGEdgeKind::RegionProjectionMember(region_projection_member) => {
-                    for input in region_projection_member.inputs().iter() {
+                BorrowPCGEdgeKind::Block(block_edge) => {
+                    for input in block_edge.inputs().iter() {
                         if let Ok(place) = TryInto::<MaybeOldPlace<'tcx>>::try_into(*input) {
                             heap.insert(
                                 place,

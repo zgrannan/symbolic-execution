@@ -1,3 +1,4 @@
+use pcs::combined_pcs::EvalStmtPhase;
 use pcs::free_pcs::PcgBasicBlock;
 
 use crate::visualization::{export_path_json, StepType};
@@ -67,17 +68,26 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         stmt: &mir::Statement<'tcx>,
         stmt_idx: usize,
     ) {
-        let fpcs_loc = &pcs_block.statements[stmt_idx];
-        self.set_error_context(
-            path.path.clone(),
-            ErrorLocation::Location(fpcs_loc.location),
+        let pcg = &pcs_block.statements[stmt_idx];
+        self.set_error_context(path.path.clone(), ErrorLocation::Location(pcg.location));
+        self.handle_pcg_partial(
+            path,
+            pcg.borrow_pcg_actions(EvalStmtPhase::PreOperands),
+            &pcg.repacks_start,
+            pcg.latest(),
+            pcg.location,
         );
-        self.handle_pcg_partial(path, &fpcs_loc, true, fpcs_loc.location);
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         let rhs = self.handle_stmt_rhs(stmt, &mut heap);
-        self.handle_pcg_partial(path, &fpcs_loc, false, fpcs_loc.location);
+        self.handle_pcg_partial(
+            path,
+            pcg.borrow_pcg_actions(EvalStmtPhase::PreMain),
+            &pcg.repacks_middle,
+            pcg.latest(),
+            pcg.location,
+        );
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
-        self.handle_stmt_lhs(stmt, &mut heap, fpcs_loc.location, rhs);
+        self.handle_stmt_lhs(stmt, &mut heap, pcg.location, rhs);
     }
 
     pub fn execute_stmts_in_block(

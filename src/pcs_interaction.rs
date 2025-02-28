@@ -1,12 +1,15 @@
 use crate::rustc_interface::hir::Mutability;
 use crate::{path::Path, rustc_interface::middle::mir::Location};
 
+use pcs::borrow_pcg::action::actions::BorrowPCGActions;
 use pcs::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
 use pcs::borrow_pcg::latest::Latest;
-use pcs::utils::HasPlace;
+use pcs::combined_pcs::EvalStmtPhase;
 use pcs::free_pcs::{CapabilityKind, PcgLocation, RepackOp};
+use pcs::utils::eval_stmt_data::EvalStmtData;
 use pcs::utils::place::maybe_old::MaybeOldPlace;
 use pcs::utils::place::maybe_remote::MaybeRemotePlace;
+use pcs::utils::HasPlace;
 
 use crate::{
     heap::SymbolicHeap, semantics::VerifierSemantics, visualization::VisFormat, LookupGet,
@@ -19,28 +22,35 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     pub(crate) fn handle_pcg(
         &mut self,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
-        pcs: &PcgLocation<'tcx>,
+        pcg: &PcgLocation<'tcx>,
         location: Location,
     ) {
-        self.handle_pcg_partial(path, pcs, true, location);
-        self.handle_pcg_partial(path, pcs, false, location);
+        self.handle_pcg_partial(
+            path,
+            pcg.borrow_pcg_actions(EvalStmtPhase::PreOperands),
+            &pcg.repacks_start,
+            pcg.latest(),
+            location,
+        );
+        self.handle_pcg_partial(
+            path,
+            pcg.borrow_pcg_actions(EvalStmtPhase::PreMain),
+            &pcg.repacks_middle,
+            pcg.latest(),
+            location,
+        );
     }
-
     pub(crate) fn handle_pcg_partial(
         &mut self,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
-        pcs: &PcgLocation<'tcx>,
-        start: bool,
+        borrow_pcg_actions: &BorrowPCGActions<'tcx>,
+        repacks: &[RepackOp<'tcx>],
+        latest: &Latest<'tcx>,
         location: Location,
     ) {
-        let bridge = if start {
-            pcs.extra_start.clone()
-        } else {
-            pcs.extra_middle.clone()
-        };
-        let mut ug_actions = bridge.unblock_actions();
+        let mut ug_actions = borrow_pcg_actions.unblock_actions();
         ug_actions.retain(|action| action.edge().valid_for_path(&path.path.blocks()));
-        let borrows_expands = bridge.expands();
+        let borrows_expands = borrow_pcg_actions.expands();
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         self.apply_unblock_actions(
             ug_actions,
@@ -48,18 +58,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             &path.function_call_snapshots,
             location,
         );
-        let repacks = if start {
-            &pcs.repacks_start
-        } else {
-            &pcs.repacks_middle
-        };
         self.handle_repack_collapses(repacks, &mut heap, location);
         self.handle_repack_weakens(repacks, &mut heap, location);
         self.handle_repack_expands(repacks, &mut heap, location);
         self.handle_reborrow_expands(
             borrows_expands.into_iter().map(|ep| ep.value).collect(),
             &mut heap,
-            pcs.latest(),
+            latest,
         );
     }
 
@@ -88,7 +93,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub(crate) fn handle_repack_weakens(
         &self,
-        _repacks: &Vec<RepackOp<'tcx>>,
+        _repacks: &[RepackOp<'tcx>],
         _heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         _location: Location,
     ) {
@@ -102,7 +107,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub(crate) fn handle_repack_collapses(
         &self,
-        repacks: &Vec<RepackOp<'tcx>>,
+        repacks: &[RepackOp<'tcx>],
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
@@ -147,7 +152,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub(crate) fn handle_repack_expands(
         &self,
-        repacks: &Vec<RepackOp<'tcx>>,
+        repacks: &[RepackOp<'tcx>],
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {

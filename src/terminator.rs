@@ -1,6 +1,5 @@
-use pcs::free_pcs::FreePcsTerminator;
 use pcs::borrow_pcg::latest::Latest;
-use pcs::free_pcs::PcgLocation;
+use pcs::free_pcs::{PcgLocation, PcgTerminator};
 
 use crate::context::ErrorLocation;
 use crate::encoder::Encoder;
@@ -30,7 +29,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         paths: &mut Vec<Path<'sym, 'tcx, S::SymValSynthetic>>,
         assertions: &mut ResultAssertions<'sym, 'tcx, S::SymValSynthetic>,
         mut path: Path<'sym, 'tcx, S::SymValSynthetic>,
-        fpcs_terminator: FreePcsTerminator<'tcx>,
+        fpcs_terminator: PcgTerminator<'tcx>,
         location: &PcgLocation<'tcx>,
     ) where
         S::SymValSynthetic: Eq,
@@ -54,7 +53,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let old_path = path.path.clone();
                 let mut path = path.push(*target);
                 self.set_error_context(old_path.clone(), ErrorLocation::Terminator(*target));
-                self.handle_pcg(&mut path, &fpcs_terminator.succs[0], location.location);
+                let succ = &fpcs_terminator.succs[0];
+                self.handle_pcg_partial(
+                    &mut path,
+                    succ.borrow_ops(),
+                    &succ.owned_ops(),
+                    &succ.latest(),
+                    location.location,
+                );
                 if let Some(debug_output_dir) = &self.debug_output_dir {
                     export_path_json(
                         &debug_output_dir,
