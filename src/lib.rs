@@ -47,23 +47,22 @@ use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
 use pcs::borrow_pcg::edge::abstraction::AbstractionType;
 use pcs::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use pcs::free_pcs::PcgLocation;
 use pcs::utils::display::DisplayWithRepacker;
 use pcs::utils::maybe_old::MaybeOldPlace;
 use pcs::utils::maybe_remote::MaybeRemotePlace;
 use pcs::utils::HasPlace;
-use pcs::{combined_pcs::PCGNode, utils::SnapshotLocation};
 use pcs::{
     borrow_pcg::{
-        latest::Latest,
-        region_projection::RegionProjection, unblock_graph::BorrowPCGUnblockAction,
+        latest::Latest, region_projection::RegionProjection, unblock_graph::BorrowPCGUnblockAction,
         unblock_graph::UnblockGraph,
     },
     utils::PlaceRepacker,
     FpcsOutput,
 };
+use pcs::{combined_pcs::PCGNode, utils::SnapshotLocation};
 use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
-use pcs::free_pcs::PcgLocation;
 use semantics::VerifierSemantics;
 use value::{Constant, SymVar};
 use visualization::{OutputMode, VisFormat};
@@ -247,7 +246,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 BorrowPCGEdgeKind::BorrowPCGExpansion(borrow_pcg_expansion) => {
                     match (
                         borrow_pcg_expansion.base(),
-                        borrow_pcg_expansion.expansion(self.repacker())[0],
+                        borrow_pcg_expansion.expansion(self.repacker()).unwrap()[0],
                     ) {
                         (PCGNode::Place(base), PCGNode::Place(expansion)) => {
                             self.collapse_place_from(base, expansion, heap, location);
