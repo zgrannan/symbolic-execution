@@ -262,57 +262,50 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         // statements applied to mutable refs in Prusti.
                         if let Some(snapshot) = function_call_snapshots.get_snapshot(&c.location())
                         {
-                            for edge in c.edges() {
-                                for input in edge.inputs() {
-                                    for output in edge.outputs() {
-                                        let input: RegionProjection<'tcx> =
-                                            input.try_into().unwrap();
-                                        let idx =
-                                            snapshot.index_of_arg_local(input.local().unwrap());
-                                        let input_place = match input.deref(self.repacker()) {
-                                            Some(place) => place,
-                                            None => {
-                                                // TODO: region projection
-                                                continue;
-                                            }
-                                        };
-                                        let output_place = match output.deref(self.repacker()) {
-                                            Some(place) => place,
-                                            None => {
-                                                // TODO: region projection
-                                                continue;
-                                            }
-                                        };
-                                        let value = self.arena.mk_backwards_fn(BackwardsFn::new(
-                                            self.arena.tcx,
-                                            c.def_id(),
-                                            c.substs(),
-                                            Some(self.def_id.into()),
-                                            snapshot.args(),
-                                            self.arena.mk_ref(
-                                                self.encode_maybe_old_place::<LookupGet, _>(
-                                                    heap.0,
-                                                    &output_place,
-                                                ),
-                                                Mutability::Mut,
+                            for input in abstraction_edge.inputs() {
+                                for output in abstraction_edge.outputs() {
+                                    let input: RegionProjection<'tcx> = input.try_into().unwrap();
+                                    let idx = snapshot.index_of_arg_local(input.local().unwrap());
+                                    let input_place = match input.deref(self.repacker()) {
+                                        Some(place) => place,
+                                        None => {
+                                            // TODO: region projection
+                                            continue;
+                                        }
+                                    };
+                                    let output_place = match output.deref(self.repacker()) {
+                                        Some(place) => place,
+                                        None => {
+                                            // TODO: region projection
+                                            continue;
+                                        }
+                                    };
+                                    let value = self.arena.mk_backwards_fn(BackwardsFn::new(
+                                        self.arena.tcx,
+                                        c.def_id(),
+                                        c.substs(),
+                                        Some(self.def_id.into()),
+                                        snapshot.args(),
+                                        self.arena.mk_ref(
+                                            self.encode_maybe_old_place::<LookupGet, _>(
+                                                heap.0,
+                                                &output_place,
                                             ),
-                                            Local::from_usize(idx + 1),
-                                        ));
-                                        assert!(!snapshot
-                                            .arg(idx)
-                                            .kind
-                                            .ty(self.tcx)
-                                            .rust_ty()
-                                            .is_primitive());
-                                        assert_eq!(
-                                            value.ty(self.tcx),
-                                            snapshot.arg(idx).ty(self.tcx)
-                                        );
-                                        heap.insert_maybe_old_place(
-                                            input_place,
-                                            self.arena.mk_projection(ProjectionElem::Deref, value),
-                                        );
-                                    }
+                                            Mutability::Mut,
+                                        ),
+                                        Local::from_usize(idx + 1),
+                                    ));
+                                    assert!(!snapshot
+                                        .arg(idx)
+                                        .kind
+                                        .ty(self.tcx)
+                                        .rust_ty()
+                                        .is_primitive());
+                                    assert_eq!(value.ty(self.tcx), snapshot.arg(idx).ty(self.tcx));
+                                    heap.insert_maybe_old_place(
+                                        input_place,
+                                        self.arena.mk_projection(ProjectionElem::Deref, value),
+                                    );
                                 }
                             }
                         }

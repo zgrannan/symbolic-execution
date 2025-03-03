@@ -112,12 +112,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         location: Location,
     ) {
         for repack in repacks {
-            if let RepackOp::Collapse(
-                place,
-                from,
-                CapabilityKind::Exclusive | CapabilityKind::Lent,
-            ) = repack
-            {
+            if let RepackOp::Collapse(place, from, CapabilityKind::Exclusive) = repack {
                 self.collapse_place_from((*place).into(), (*from).into(), heap, location)
             }
         }
