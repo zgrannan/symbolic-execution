@@ -379,6 +379,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let ug = UnblockGraph::for_node(blocked_place, &borrow_state, self.repacker());
 
                     let actions = ug.actions(self.repacker()).unwrap();
+                    eprintln!("Actions to unblock {:?}", blocked_place);
+                    for action in actions.iter() {
+                        // eprintln!("{:?}", action.edge().kind());
+                        eprintln!("{}", action.edge().to_short_string(self.repacker()));
+                    }
                     self.apply_unblock_actions(
                         actions,
                         &mut heap,
