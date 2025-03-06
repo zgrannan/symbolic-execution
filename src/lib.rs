@@ -47,6 +47,7 @@ use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
 use pcs::borrow_pcg::edge::abstraction::AbstractionType;
 use pcs::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use pcs::borrow_pcg::edge_data::EdgeData;
 use pcs::free_pcs::PcgLocation;
 use pcs::utils::display::DisplayWithRepacker;
 use pcs::utils::maybe_old::MaybeOldPlace;
@@ -514,14 +515,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         } else {
             self.encode_maybe_old_place::<LookupGet, _>(heap.0, place)
         };
-        let (field, rest, _) = place
+        let expansion = place
             .expand_one_level(*guide, self.fpcs_analysis.repacker())
             .unwrap();
         self.explode_value(
             value,
-            std::iter::once(field)
-                .chain(rest.into_iter())
-                .map(|p| p.into()),
+            expansion.expansion().into_iter().map(|p| p.into()),
             heap,
             location,
         );
