@@ -330,6 +330,7 @@ dependencies = [
  "pcs",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

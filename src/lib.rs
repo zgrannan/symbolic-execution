@@ -235,9 +235,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         for action in actions {
             match action.edge().kind() {
                 BorrowPCGEdgeKind::Borrow(borrow) => {
-                    if borrow.is_mut() {
+                    if borrow.is_mut(self.repacker()) {
                         self.handle_removed_borrow(
-                            borrow.blocked_place,
+                            borrow.blocked_place(),
                             &borrow.deref_place(self.repacker()),
                             heap,
                             location,
@@ -247,7 +247,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 BorrowPCGEdgeKind::BorrowPCGExpansion(borrow_pcg_expansion) => {
                     match (
                         borrow_pcg_expansion.base(),
-                        borrow_pcg_expansion.expansion(self.repacker()).unwrap()[0],
+                        borrow_pcg_expansion.expansion()[0],
                     ) {
                         (PCGNode::Place(base), PCGNode::Place(expansion)) => {
                             self.collapse_place_from(base, expansion, heap, location);
@@ -315,8 +315,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         // TODO: loops
                     }
                 },
-                BorrowPCGEdgeKind::Block(block_edge) => {
-                    for input in block_edge.inputs().iter() {
+                BorrowPCGEdgeKind::Outlives(block_edge) => {
+                    for input in block_edge.blocked_nodes(self.repacker()).iter() {
                         if let Ok(place) = TryInto::<MaybeOldPlace<'tcx>>::try_into(*input) {
                             heap.insert(
                                 place,
@@ -326,10 +326,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         }
                     }
                 }
+                _ => {
+                    todo!()
+                }
             }
         }
     }
 
+    #[tracing::instrument(skip(self,path,heap_data,function_call_snapshots, pcs))]
     fn compute_backwards_facts(
         &mut self,
         path: &AcyclicPath,
@@ -379,11 +383,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let ug = UnblockGraph::for_node(blocked_place, &borrow_state, self.repacker());
 
                     let actions = ug.actions(self.repacker()).unwrap();
-                    eprintln!("Actions to unblock {:?}", blocked_place);
-                    for action in actions.iter() {
-                        // eprintln!("{:?}", action.edge().kind());
-                        eprintln!("{}", action.edge().to_short_string(self.repacker()));
-                    }
                     self.apply_unblock_actions(
                         actions,
                         &mut heap,

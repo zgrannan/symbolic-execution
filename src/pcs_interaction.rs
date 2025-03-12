@@ -138,9 +138,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
             self.explode_value(
                 value,
-                ep.expansion(self.fpcs_analysis.repacker())
-                    .unwrap()
-                    .into_iter(),
+                ep.expansion().into_iter().copied(),
                 heap,
                 latest.get(place.place()),
             );
