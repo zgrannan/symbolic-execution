@@ -2,11 +2,12 @@ use crate::rustc_interface::hir::Mutability;
 use crate::{path::Path, rustc_interface::middle::mir::Location};
 
 use pcs::borrow_pcg::action::actions::BorrowPCGActions;
+use pcs::borrow_pcg::action::BorrowPCGActionKind;
 use pcs::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
+use pcs::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use pcs::borrow_pcg::latest::Latest;
 use pcs::combined_pcs::EvalStmtPhase;
 use pcs::free_pcs::{CapabilityKind, PcgLocation, RepackOp};
-use pcs::utils::eval_stmt_data::EvalStmtData;
 use pcs::utils::place::maybe_old::MaybeOldPlace;
 use pcs::utils::place::maybe_remote::MaybeRemotePlace;
 use pcs::utils::HasPlace;
@@ -39,6 +40,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             pcg.latest(),
             location,
         );
+        self.handle_reborrow_added_edges(
+            pcg.borrow_pcg_actions(EvalStmtPhase::PostMain),
+            &mut SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena),
+            pcg.latest(),
+        );
     }
     pub(crate) fn handle_pcg_partial(
         &mut self,
@@ -50,7 +56,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) {
         let mut ug_actions = borrow_pcg_actions.unblock_actions();
         ug_actions.retain(|action| action.edge().valid_for_path(&path.path.blocks()));
-        let borrows_expands = borrow_pcg_actions.expands();
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         self.apply_unblock_actions(
             ug_actions,
@@ -61,11 +66,50 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         self.handle_repack_collapses(repacks, &mut heap, location);
         self.handle_repack_weakens(repacks, &mut heap, location);
         self.handle_repack_expands(repacks, &mut heap, location);
-        self.handle_reborrow_expands(
-            borrows_expands.into_iter().map(|ep| ep.value).collect(),
-            &mut heap,
-            latest,
-        );
+        self.handle_reborrow_added_edges(borrow_pcg_actions, &mut heap, latest);
+    }
+
+    fn handle_reborrow_added_edges(
+        &self,
+        borrow_pcg_actions: &BorrowPCGActions<'tcx>,
+        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
+        latest: &Latest<'tcx>,
+    ) {
+        for action in borrow_pcg_actions.iter() {
+            if let BorrowPCGActionKind::AddEdge { edge, .. } = action.kind() {
+                match edge.kind() {
+                    BorrowPCGEdgeKind::BorrowPCGExpansion(ep) => {
+                        let ep: BorrowPCGExpansion<'tcx, MaybeOldPlace<'tcx>> =
+                            if let Ok(ep) = (ep.clone()).try_into() {
+                                ep
+                            } else {
+                                // Expansion of region projections are not supported
+                                continue;
+                            };
+                        let place = ep.base();
+                        let value = self.encode_maybe_old_place::<LookupGet, _>(heap.0, &place);
+
+                        self.explode_value(
+                            value,
+                            ep.expansion().into_iter().copied(),
+                            heap,
+                            latest.get(place.place()),
+                        );
+                    }
+                    BorrowPCGEdgeKind::FunctionCallRegionCoupling(fc) => {
+                        if fc.num_coupled_nodes() == 1
+                            && let Some(input) = fc.inputs()[0].deref(self.repacker())
+                            && let Some(output) = fc.outputs()[0].deref(self.repacker())
+                        {
+                            let input_value =
+                                self.encode_maybe_old_place::<LookupGet, _>(heap.0, &input);
+                            heap.insert_maybe_old_place(output, input_value);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 
     pub(crate) fn handle_removed_borrow(
@@ -115,33 +159,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             if let RepackOp::Collapse(place, from, CapabilityKind::Exclusive) = repack {
                 self.collapse_place_from((*place).into(), (*from).into(), heap, location)
             }
-        }
-    }
-
-    pub(crate) fn handle_reborrow_expands(
-        &self,
-        mut expands: Vec<BorrowPCGExpansion<'tcx>>,
-        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        latest: &Latest<'tcx>,
-    ) {
-        expands.sort_by_key(|ep| ep.base().place().projection().len());
-
-        for ep in expands {
-            let ep: BorrowPCGExpansion<'tcx, MaybeOldPlace<'tcx>> = if let Ok(ep) = ep.try_into() {
-                ep
-            } else {
-                // Expansion of region projections are not supported
-                continue;
-            };
-            let place = ep.base();
-            let value = self.encode_maybe_old_place::<LookupGet, _>(heap.0, &place);
-
-            self.explode_value(
-                value,
-                ep.expansion().into_iter().copied(),
-                heap,
-                latest.get(place.place()),
-            );
         }
     }
 

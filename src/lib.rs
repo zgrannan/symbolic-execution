@@ -45,7 +45,6 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcs::borrow_pcg::edge::abstraction::AbstractionType;
 use pcs::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
 use pcs::borrow_pcg::edge_data::EdgeData;
 use pcs::free_pcs::PcgLocation;
@@ -53,9 +52,10 @@ use pcs::utils::display::DisplayWithRepacker;
 use pcs::utils::maybe_old::MaybeOldPlace;
 use pcs::utils::maybe_remote::MaybeRemotePlace;
 use pcs::utils::HasPlace;
+use pcs::{borrow_pcg::edge::abstraction::AbstractionType, combined_pcs::MaybeHasLocation};
 use pcs::{
     borrow_pcg::{
-        latest::Latest, region_projection::RegionProjection, unblock_graph::BorrowPCGUnblockAction,
+        region_projection::RegionProjection, unblock_graph::BorrowPCGUnblockAction,
         unblock_graph::UnblockGraph,
     },
     utils::PlaceRepacker,
@@ -312,7 +312,18 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         }
                     }
                     _ => {
-                        // TODO: loops
+                        for input in abstraction_edge.inputs().iter() {
+                            match &input {
+                                PCGNode::Place(MaybeRemotePlace::Local(place)) => {
+                                    heap.insert(
+                                        *place,
+                                        self.mk_fresh_symvar(place.ty(self.repacker()).ty),
+                                        location,
+                                    );
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                 },
                 BorrowPCGEdgeKind::Outlives(block_edge) => {
@@ -326,6 +337,21 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         }
                     }
                 }
+                BorrowPCGEdgeKind::FunctionCallRegionCoupling(edge) => {
+                    if edge.num_coupled_nodes() == 1 {
+                        let deref_input = edge.inputs()[0].deref(self.repacker());
+                        let deref_output = edge.outputs()[0].deref(self.repacker());
+                        if let Some(deref_input) = deref_input
+                            && let Some(deref_output) = deref_output
+                        {
+                            let later =
+                                self.encode_maybe_old_place::<LookupGet, _>(heap.0, &deref_output);
+                            heap.insert(deref_input, later, location)
+                        }
+                    } else {
+                        // TODO
+                    }
+                }
                 _ => {
                     todo!()
                 }
@@ -333,7 +359,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
     }
 
-    #[tracing::instrument(skip(self,path,heap_data,function_call_snapshots, pcs))]
+    #[tracing::instrument(skip(self, path, heap_data, function_call_snapshots, pcs))]
     fn compute_backwards_facts(
         &mut self,
         path: &AcyclicPath,
@@ -460,7 +486,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         operand: &mir::Operand<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        latest: &Latest<'tcx>,
+        location: Location,
     ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>> {
         match operand {
             mir::Operand::Move(place) => {
@@ -469,8 +495,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     place.ty(self.body, self.tcx).ty.kind()
                 {
                     let sym_var = self.mk_fresh_symvar(place.ty(self.body, self.tcx).ty);
-                    let latest = latest.get(place.0);
-                    heap.insert_maybe_old_place(MaybeOldPlace::new(place.0, Some(latest)), sym_var);
+                    heap.insert_maybe_old_place(
+                        MaybeOldPlace::new(place.0, Some(location)),
+                        sym_var,
+                    );
                     Some(sym_var)
                 } else {
                     None

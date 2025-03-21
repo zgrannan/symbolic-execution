@@ -7,6 +7,7 @@ use crate::rustc_interface::middle::{
 use crate::value::SymVar;
 use crate::visualization::OutputMode;
 use crate::{place::Place, VisFormat};
+use pcs::combined_pcs::MaybeHasLocation;
 use pcs::utils::{PlaceRepacker, PlaceSnapshot, SnapshotLocation};
 use pcs::utils::HasPlace;
 use pcs::utils::place::maybe_old::MaybeOldPlace;
@@ -217,7 +218,7 @@ impl<'sym, 'tcx, T: std::fmt::Debug> HeapData<'sym, 'tcx, T> {
             .copied()
     }
 
-    pub fn take<P: Into<MaybeOldPlace<'tcx>> + Copy>(
+    pub(crate) fn take<P: Into<MaybeOldPlace<'tcx>> + Copy>(
         &mut self,
         place: &P,
     ) -> Option<SymValue<'sym, 'tcx, T>> {
