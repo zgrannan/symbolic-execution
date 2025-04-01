@@ -1,5 +1,5 @@
-use pcs::combined_pcs::EvalStmtPhase;
-use pcs::free_pcs::PcgBasicBlock;
+use pcg::pcg::EvalStmtPhase;
+use pcg::free_pcs::PcgBasicBlock;
 
 use crate::visualization::{export_path_json, StepType};
 use crate::{

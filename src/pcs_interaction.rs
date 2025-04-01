@@ -1,16 +1,16 @@
 use crate::rustc_interface::hir::Mutability;
 use crate::{path::Path, rustc_interface::middle::mir::Location};
 
-use pcs::borrow_pcg::action::actions::BorrowPCGActions;
-use pcs::borrow_pcg::action::BorrowPCGActionKind;
-use pcs::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
-use pcs::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
-use pcs::borrow_pcg::latest::Latest;
-use pcs::combined_pcs::EvalStmtPhase;
-use pcs::free_pcs::{CapabilityKind, PcgLocation, RepackOp};
-use pcs::utils::place::maybe_old::MaybeOldPlace;
-use pcs::utils::place::maybe_remote::MaybeRemotePlace;
-use pcs::utils::HasPlace;
+use pcg::borrow_pcg::action::actions::BorrowPCGActions;
+use pcg::borrow_pcg::action::BorrowPCGActionKind;
+use pcg::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
+use pcg::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use pcg::borrow_pcg::latest::Latest;
+use pcg::pcg::EvalStmtPhase;
+use pcg::free_pcs::{CapabilityKind, PcgLocation, RepackOp};
+use pcg::utils::place::maybe_old::MaybeOldPlace;
+use pcg::utils::place::maybe_remote::MaybeRemotePlace;
+use pcg::utils::HasPlace;
 
 use crate::{
     heap::SymbolicHeap, semantics::VerifierSemantics, visualization::VisFormat, LookupGet,

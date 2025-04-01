@@ -45,15 +45,15 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcs::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
-use pcs::borrow_pcg::edge_data::EdgeData;
-use pcs::free_pcs::PcgLocation;
-use pcs::utils::display::DisplayWithRepacker;
-use pcs::utils::maybe_old::MaybeOldPlace;
-use pcs::utils::maybe_remote::MaybeRemotePlace;
-use pcs::utils::HasPlace;
-use pcs::{borrow_pcg::edge::abstraction::AbstractionType, combined_pcs::MaybeHasLocation};
-use pcs::{
+use pcg::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use pcg::borrow_pcg::edge_data::EdgeData;
+use pcg::free_pcs::PcgLocation;
+use pcg::utils::display::DisplayWithRepacker;
+use pcg::utils::maybe_old::MaybeOldPlace;
+use pcg::utils::maybe_remote::MaybeRemotePlace;
+use pcg::utils::HasPlace;
+use pcg::{borrow_pcg::edge::abstraction::AbstractionType, pcg::MaybeHasLocation};
+use pcg::{
     borrow_pcg::{
         region_projection::RegionProjection, unblock_graph::BorrowPCGUnblockAction,
         unblock_graph::UnblockGraph,
@@ -61,7 +61,7 @@ use pcs::{
     utils::PlaceRepacker,
     FpcsOutput,
 };
-use pcs::{combined_pcs::PCGNode, utils::SnapshotLocation};
+use pcg::{pcg::PCGNode, utils::SnapshotLocation};
 use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
 use semantics::VerifierSemantics;
@@ -536,8 +536,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn expand_place_with_guide(
         &self,
-        place: &pcs::utils::Place<'tcx>,
-        guide: &pcs::utils::Place<'tcx>,
+        place: &pcg::utils::Place<'tcx>,
+        guide: &pcg::utils::Place<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
         take: bool,

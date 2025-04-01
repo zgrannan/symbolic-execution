@@ -1,4 +1,4 @@
-use pcs::free_pcs::{PcgLocation, PcgTerminator};
+use pcg::free_pcs::{PcgLocation, PcgTerminator};
 
 use crate::context::ErrorLocation;
 use crate::encoder::Encoder;

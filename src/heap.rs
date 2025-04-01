@@ -7,12 +7,12 @@ use crate::rustc_interface::middle::{
 use crate::value::SymVar;
 use crate::visualization::OutputMode;
 use crate::{place::Place, VisFormat};
-use pcs::combined_pcs::MaybeHasLocation;
-use pcs::utils::{PlaceRepacker, PlaceSnapshot, SnapshotLocation};
-use pcs::utils::HasPlace;
-use pcs::utils::place::maybe_old::MaybeOldPlace;
+use pcg::pcg::MaybeHasLocation;
+use pcg::utils::{PlaceRepacker, PlaceSnapshot, SnapshotLocation};
+use pcg::utils::HasPlace;
+use pcg::utils::place::maybe_old::MaybeOldPlace;
 use std::collections::BTreeMap;
-use pcs::utils::display::DisplayWithRepacker;
+use pcg::utils::display::DisplayWithRepacker;
 
 use super::value::{SymValue, SyntheticSymValue};
 
@@ -235,7 +235,7 @@ impl<'sym, 'tcx, T: std::fmt::Debug> HeapData<'sym, 'tcx, T> {
         self.0.retain(|(p, _)| *p != place);
     }
 
-    pub fn current_values(&self) -> Vec<(pcs::utils::Place<'tcx>, SymValue<'sym, 'tcx, T>)> {
+    pub fn current_values(&self) -> Vec<(pcg::utils::Place<'tcx>, SymValue<'sym, 'tcx, T>)> {
         self.0
             .iter()
             .filter_map(|(p, v)| {
