@@ -45,7 +45,6 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcg::{borrow_pcg::edge::kind::BorrowPCGEdgeKind, pcg::EvalStmtPhase};
 use pcg::borrow_pcg::edge_data::EdgeData;
 use pcg::free_pcs::PcgLocation;
 use pcg::utils::display::DisplayWithRepacker;
@@ -53,6 +52,7 @@ use pcg::utils::maybe_old::MaybeOldPlace;
 use pcg::utils::maybe_remote::MaybeRemotePlace;
 use pcg::utils::HasPlace;
 use pcg::{borrow_pcg::edge::abstraction::AbstractionType, pcg::MaybeHasLocation};
+use pcg::{borrow_pcg::edge::kind::BorrowPCGEdgeKind, pcg::EvalStmtPhase};
 use pcg::{
     borrow_pcg::{
         region_projection::RegionProjection, unblock_graph::BorrowPCGUnblockAction,
@@ -64,6 +64,7 @@ use pcg::{
 use pcg::{pcg::PCGNode, utils::SnapshotLocation};
 use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
+use pcg::borrow_pcg::edge::outlives::OutlivesEdgeKind;
 use semantics::VerifierSemantics;
 use value::{Constant, SymVar};
 use visualization::{OutputMode, VisFormat};
@@ -225,6 +226,145 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             })
     }
 
+    fn apply_unblock_action(
+        &mut self,
+        action: BorrowPCGUnblockAction<'tcx>,
+        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
+        function_call_snapshots: &FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
+        location: Location,
+    ) {
+        match action.edge().kind() {
+            BorrowPCGEdgeKind::Borrow(borrow) => {
+                if borrow.is_mut(self.repacker()) {
+                    self.handle_removed_borrow(
+                        borrow.blocked_place(),
+                        &borrow.deref_place(self.repacker()),
+                        heap,
+                        location,
+                    );
+                }
+            }
+            BorrowPCGEdgeKind::BorrowPCGExpansion(borrow_pcg_expansion) => {
+                match (
+                    borrow_pcg_expansion.base(),
+                    borrow_pcg_expansion.expansion()[0],
+                ) {
+                    (PCGNode::Place(base), PCGNode::Place(expansion)) => {
+                        self.collapse_place_from(base, expansion, heap, location);
+                    }
+                    _ => {
+                        // TODO: handle errors
+                    }
+                }
+            }
+            BorrowPCGEdgeKind::Abstraction(abstraction_edge) => match &abstraction_edge {
+                AbstractionType::FunctionCall(c) => {
+                    // A snapshot may not exist if the call is specification "ghost" code, e.g. old()
+                    // statements applied to mutable refs in Prusti.
+                    if let Some(snapshot) = function_call_snapshots.get_snapshot(&c.location()) {
+                        for input in abstraction_edge.inputs() {
+                            for output in abstraction_edge.outputs() {
+                                let input: RegionProjection<'tcx> = input.try_into().unwrap();
+                                let idx = snapshot.index_of_arg_local(input.local().unwrap());
+                                let input_place = match input.deref(self.repacker()) {
+                                    Some(place) => place,
+                                    None => {
+                                        // TODO: region projection
+                                        continue;
+                                    }
+                                };
+                                let output_place = match output.deref(self.repacker()) {
+                                    Some(place) => place,
+                                    None => {
+                                        // TODO: region projection
+                                        continue;
+                                    }
+                                };
+                                let value = self.arena.mk_backwards_fn(BackwardsFn::new(
+                                    self.arena.tcx,
+                                    c.def_id(),
+                                    c.substs(),
+                                    Some(self.def_id.into()),
+                                    snapshot.args(),
+                                    self.arena.mk_ref(
+                                        self.encode_maybe_old_place::<LookupGet, _>(
+                                            heap.0,
+                                            &output_place,
+                                        ),
+                                        Mutability::Mut,
+                                    ),
+                                    Local::from_usize(idx + 1),
+                                ));
+                                assert!(!snapshot
+                                    .arg(idx)
+                                    .kind
+                                    .ty(self.tcx)
+                                    .rust_ty()
+                                    .is_primitive());
+                                assert_eq!(value.ty(self.tcx), snapshot.arg(idx).ty(self.tcx));
+                                heap.insert_maybe_old_place(
+                                    input_place,
+                                    self.arena.mk_projection(ProjectionElem::Deref, value),
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    for input in abstraction_edge.inputs().iter() {
+                        match &input {
+                            PCGNode::Place(MaybeRemotePlace::Local(place)) => {
+                                heap.insert(
+                                    *place,
+                                    self.mk_fresh_symvar(place.ty(self.repacker()).ty),
+                                    location,
+                                );
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            },
+            BorrowPCGEdgeKind::Outlives(block_edge) => {
+                if matches!(block_edge.kind(), OutlivesEdgeKind::Move) {
+                    self.handle_removed_borrow(
+                        block_edge.long().deref(self.repacker()).unwrap().into(),
+                        &block_edge.short().deref(self.repacker()).unwrap(),
+                        heap,
+                        location,
+                    );
+                }
+                for input in block_edge.blocked_nodes(self.repacker()).iter() {
+                    if let Ok(place) = TryInto::<MaybeOldPlace<'tcx>>::try_into(*input) {
+                        heap.insert(
+                            place,
+                            self.mk_fresh_symvar(place.ty(self.repacker()).ty),
+                            location,
+                        );
+                    }
+                }
+            }
+            BorrowPCGEdgeKind::FunctionCallRegionCoupling(edge) => {
+                if edge.num_coupled_nodes() == 1 {
+                    let deref_input = edge.inputs()[0].deref(self.repacker());
+                    let deref_output = edge.outputs()[0].deref(self.repacker());
+                    if let Some(deref_input) = deref_input
+                        && let Some(deref_output) = deref_output
+                    {
+                        let later =
+                            self.encode_maybe_old_place::<LookupGet, _>(heap.0, &deref_output);
+                        heap.insert(deref_input, later, location)
+                    }
+                } else {
+                    // TODO
+                }
+            }
+            _ => {
+                todo!()
+            }
+        }
+    }
+
     fn apply_unblock_actions(
         &mut self,
         actions: Vec<BorrowPCGUnblockAction<'tcx>>,
@@ -233,129 +373,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         location: Location,
     ) {
         for action in actions {
-            match action.edge().kind() {
-                BorrowPCGEdgeKind::Borrow(borrow) => {
-                    if borrow.is_mut(self.repacker()) {
-                        self.handle_removed_borrow(
-                            borrow.blocked_place(),
-                            &borrow.deref_place(self.repacker()),
-                            heap,
-                            location,
-                        );
-                    }
-                }
-                BorrowPCGEdgeKind::BorrowPCGExpansion(borrow_pcg_expansion) => {
-                    match (
-                        borrow_pcg_expansion.base(),
-                        borrow_pcg_expansion.expansion()[0],
-                    ) {
-                        (PCGNode::Place(base), PCGNode::Place(expansion)) => {
-                            self.collapse_place_from(base, expansion, heap, location);
-                        }
-                        _ => {
-                            // TODO: handle errors
-                        }
-                    }
-                }
-                BorrowPCGEdgeKind::Abstraction(abstraction_edge) => match &abstraction_edge {
-                    AbstractionType::FunctionCall(c) => {
-                        // A snapshot may not exist if the call is specification "ghost" code, e.g. old()
-                        // statements applied to mutable refs in Prusti.
-                        if let Some(snapshot) = function_call_snapshots.get_snapshot(&c.location())
-                        {
-                            for input in abstraction_edge.inputs() {
-                                for output in abstraction_edge.outputs() {
-                                    let input: RegionProjection<'tcx> = input.try_into().unwrap();
-                                    let idx = snapshot.index_of_arg_local(input.local().unwrap());
-                                    let input_place = match input.deref(self.repacker()) {
-                                        Some(place) => place,
-                                        None => {
-                                            // TODO: region projection
-                                            continue;
-                                        }
-                                    };
-                                    let output_place = match output.deref(self.repacker()) {
-                                        Some(place) => place,
-                                        None => {
-                                            // TODO: region projection
-                                            continue;
-                                        }
-                                    };
-                                    let value = self.arena.mk_backwards_fn(BackwardsFn::new(
-                                        self.arena.tcx,
-                                        c.def_id(),
-                                        c.substs(),
-                                        Some(self.def_id.into()),
-                                        snapshot.args(),
-                                        self.arena.mk_ref(
-                                            self.encode_maybe_old_place::<LookupGet, _>(
-                                                heap.0,
-                                                &output_place,
-                                            ),
-                                            Mutability::Mut,
-                                        ),
-                                        Local::from_usize(idx + 1),
-                                    ));
-                                    assert!(!snapshot
-                                        .arg(idx)
-                                        .kind
-                                        .ty(self.tcx)
-                                        .rust_ty()
-                                        .is_primitive());
-                                    assert_eq!(value.ty(self.tcx), snapshot.arg(idx).ty(self.tcx));
-                                    heap.insert_maybe_old_place(
-                                        input_place,
-                                        self.arena.mk_projection(ProjectionElem::Deref, value),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    _ => {
-                        for input in abstraction_edge.inputs().iter() {
-                            match &input {
-                                PCGNode::Place(MaybeRemotePlace::Local(place)) => {
-                                    heap.insert(
-                                        *place,
-                                        self.mk_fresh_symvar(place.ty(self.repacker()).ty),
-                                        location,
-                                    );
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                },
-                BorrowPCGEdgeKind::Outlives(block_edge) => {
-                    for input in block_edge.blocked_nodes(self.repacker()).iter() {
-                        if let Ok(place) = TryInto::<MaybeOldPlace<'tcx>>::try_into(*input) {
-                            heap.insert(
-                                place,
-                                self.mk_fresh_symvar(place.ty(self.repacker()).ty),
-                                location,
-                            );
-                        }
-                    }
-                }
-                BorrowPCGEdgeKind::FunctionCallRegionCoupling(edge) => {
-                    if edge.num_coupled_nodes() == 1 {
-                        let deref_input = edge.inputs()[0].deref(self.repacker());
-                        let deref_output = edge.outputs()[0].deref(self.repacker());
-                        if let Some(deref_input) = deref_input
-                            && let Some(deref_output) = deref_output
-                        {
-                            let later =
-                                self.encode_maybe_old_place::<LookupGet, _>(heap.0, &deref_output);
-                            heap.insert(deref_input, later, location)
-                        }
-                    } else {
-                        // TODO
-                    }
-                }
-                _ => {
-                    todo!()
-                }
-            }
+            self.apply_unblock_action(action, heap, function_call_snapshots, location);
         }
     }
 
