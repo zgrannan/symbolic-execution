@@ -55,8 +55,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let succ = &fpcs_terminator.succs[0];
                 self.handle_pcg_partial(
                     &mut path,
-                    succ.borrow_ops(),
-                    &succ.owned_ops(),
+                    succ.actions(),
                     &succ.latest(),
                     location.location,
                 );

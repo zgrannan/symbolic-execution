@@ -45,7 +45,7 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcg::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use pcg::{borrow_pcg::edge::kind::BorrowPCGEdgeKind, pcg::EvalStmtPhase};
 use pcg::borrow_pcg::edge_data::EdgeData;
 use pcg::free_pcs::PcgLocation;
 use pcg::utils::display::DisplayWithRepacker;
@@ -372,7 +372,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let mut facts = BackwardsFacts::new();
         if return_place.is_mut_ref(self.body, self.tcx) {
             let borrow_state = {
-                let mut mut_borrow_state = pcs.borrows.post_main().as_ref().clone();
+                let mut mut_borrow_state = pcs.states[EvalStmtPhase::PostMain].borrow_pcg().clone();
                 // let mut mut_borrow_state = pcs.borrows.post_main().clone();
                 mut_borrow_state.filter_for_path(path.blocks());
                 mut_borrow_state

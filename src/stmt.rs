@@ -72,8 +72,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         self.set_error_context(path.path.clone(), ErrorLocation::Location(pcg.location));
         self.handle_pcg_partial(
             path,
-            pcg.borrow_pcg_actions(EvalStmtPhase::PreOperands),
-            &pcg.repacks_start,
+            pcg.actions(EvalStmtPhase::PreOperands),
             pcg.latest(),
             pcg.location,
         );
@@ -81,8 +80,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let rhs = self.handle_stmt_rhs(stmt, &mut heap);
         self.handle_pcg_partial(
             path,
-            pcg.borrow_pcg_actions(EvalStmtPhase::PreMain),
-            &pcg.repacks_middle,
+            pcg.actions(EvalStmtPhase::PreMain),
             pcg.latest(),
             pcg.location,
         );
