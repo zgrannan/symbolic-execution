@@ -1,7 +1,7 @@
 use crate::rustc_interface::hir::Mutability;
 use crate::{path::Path, rustc_interface::middle::mir::Location};
 
-use pcg::action::{PcgAction, PcgActions};
+use pcg::action::PcgActions;
 use pcg::borrow_pcg::action::actions::BorrowPCGActions;
 use pcg::borrow_pcg::action::BorrowPCGActionKind;
 use pcg::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
@@ -94,16 +94,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             heap,
                             latest.get(place.place()),
                         );
-                    }
-                    BorrowPCGEdgeKind::FunctionCallRegionCoupling(fc) => {
-                        if fc.num_coupled_nodes() == 1
-                            && let Some(input) = fc.inputs()[0].deref(self.repacker())
-                            && let Some(output) = fc.outputs()[0].deref(self.repacker())
-                        {
-                            let input_value =
-                                self.encode_maybe_old_place::<LookupGet, _>(heap.0, &input);
-                            heap.insert_maybe_old_place(output, input_value);
-                        }
                     }
                     _ => {}
                 }

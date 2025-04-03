@@ -45,7 +45,7 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcg::borrow_pcg::edge_data::EdgeData;
+use pcg::borrow_pcg::{edge_data::EdgeData, latest::Latest};
 use pcg::free_pcs::PcgLocation;
 use pcg::utils::display::DisplayWithRepacker;
 use pcg::utils::maybe_old::MaybeOldPlace;
@@ -280,6 +280,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                         continue;
                                     }
                                 };
+                                if input_place == output_place {
+                                    // This is the abstraction edge connecting the "before" and "after"
+                                    // values of function call inputs. For now we ignore this.
+                                    continue;
+                                }
                                 let value = self.arena.mk_backwards_fn(BackwardsFn::new(
                                     self.arena.tcx,
                                     c.def_id(),
@@ -342,21 +347,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             location,
                         );
                     }
-                }
-            }
-            BorrowPCGEdgeKind::FunctionCallRegionCoupling(edge) => {
-                if edge.num_coupled_nodes() == 1 {
-                    let deref_input = edge.inputs()[0].deref(self.repacker());
-                    let deref_output = edge.outputs()[0].deref(self.repacker());
-                    if let Some(deref_input) = deref_input
-                        && let Some(deref_output) = deref_output
-                    {
-                        let later =
-                            self.encode_maybe_old_place::<LookupGet, _>(heap.0, &deref_output);
-                        heap.insert(deref_input, later, location)
-                    }
-                } else {
-                    // TODO
                 }
             }
             _ => {
@@ -504,7 +494,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         operand: &mir::Operand<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        latest: &Latest<'tcx>,
     ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>> {
         match operand {
             mir::Operand::Move(place) => {
@@ -514,7 +504,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 {
                     let sym_var = self.mk_fresh_symvar(place.ty(self.body, self.tcx).ty);
                     heap.insert_maybe_old_place(
-                        MaybeOldPlace::new(place.0, Some(location)),
+                        MaybeOldPlace::new(place.0, Some(latest.get(place.0))),
                         sym_var,
                     );
                     Some(sym_var)

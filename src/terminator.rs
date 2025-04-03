@@ -122,7 +122,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         substs,
                         &mut heap,
                         &args.iter().map(|arg| &arg.node).collect(),
-                        location.location,
+                        location,
                         terminator.source_info.span,
                     );
 
@@ -189,13 +189,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         substs: GenericArgsRef<'tcx>,
         heap: &mut SymbolicHeap<'heap, 'mir, 'sym, 'tcx, S::SymValSynthetic>,
         args: &Vec<&Operand<'tcx>>,
-        location: Location,
+        location: &PcgLocation<'tcx>,
         span: Span,
     ) -> FunctionCallEffects<'sym, 'tcx, S::SymValSynthetic>
     where
         'mir: 'heap,
     {
-        if let Some(result) = S::encode_fn_call(span, self, def_id, substs, heap.0, args, location)
+        if let Some(result) =
+            S::encode_fn_call(span, self, def_id, substs, heap.0, args, location.location)
         {
             return result;
         }
@@ -231,7 +232,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     .iter()
                     .zip(encoded_args)
                     .map(|(operand, encoded)| {
-                        self.havoc_operand_ref(operand, heap, location)
+                        self.havoc_operand_ref(operand, heap, location.latest())
                             .unwrap_or(encoded)
                     })
                     .collect::<Vec<_>>();
