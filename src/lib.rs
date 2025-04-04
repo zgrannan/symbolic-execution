@@ -64,7 +64,7 @@ use pcg::{
 use pcg::{pcg::PCGNode, utils::SnapshotLocation};
 use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
-use pcg::borrow_pcg::edge::outlives::OutlivesEdgeKind;
+use pcg::borrow_pcg::edge::outlives::BorrowFlowEdgeKind;
 use semantics::VerifierSemantics;
 use value::{Constant, SymVar};
 use visualization::{OutputMode, VisFormat};
@@ -330,8 +330,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     }
                 }
             },
-            BorrowPCGEdgeKind::Outlives(block_edge) => {
-                if matches!(block_edge.kind(), OutlivesEdgeKind::Move) {
+            BorrowPCGEdgeKind::BorrowFlow(block_edge) => {
+                if matches!(block_edge.kind(), BorrowFlowEdgeKind::Move) {
                     self.handle_removed_borrow(
                         block_edge.long().deref(self.repacker()).unwrap().into(),
                         &block_edge.short().deref(self.repacker()).unwrap(),
