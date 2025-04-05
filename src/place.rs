@@ -1,4 +1,4 @@
-use pcg::utils::PlaceRepacker;
+use pcg::utils::CompilerCtxt;
 use pcg::utils::place::maybe_old::MaybeOldPlace;
 use crate::rustc_interface::middle::{
     mir::{self, tcx::PlaceTy, ProjectionElem},
@@ -61,7 +61,7 @@ impl<'tcx> Place<'tcx> {
         &self.0.projection
     }
 
-    pub fn project_deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+    pub fn project_deref(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
         Place(self.0.project_deref(repacker))
     }
 

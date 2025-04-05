@@ -35,6 +35,7 @@ use crate::{
             mir::{self, Body, Local, Location, PlaceElem, ProjectionElem},
             ty::{self, TyCtxt},
         },
+        borrowck::consumers::RegionInferenceContext,
     },
     value::BackwardsFn,
 };
@@ -58,7 +59,7 @@ use pcg::{
         region_projection::RegionProjection, unblock_graph::BorrowPCGUnblockAction,
         unblock_graph::UnblockGraph,
     },
-    utils::PlaceRepacker,
+    utils::CompilerCtxt,
     FpcsOutput,
 };
 use pcg::{pcg::PCGNode, utils::SnapshotLocation};
@@ -103,6 +104,7 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     new_symvars_allowed: bool,
     result_paths: ResultPaths<'sym, 'tcx, S::SymValSynthetic>,
     debug_paths: Vec<Path<'sym, 'tcx, S::SymValSynthetic>>,
+    region_infer_ctxt: &'mir RegionInferenceContext<'tcx>,
 }
 
 trait LookupType {
@@ -159,6 +161,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             fresh_symvars: vec![],
             result_paths: ResultPaths::new(),
             debug_paths: vec![],
+            region_infer_ctxt: params.region_infer_ctxt,
         }
     }
 
@@ -188,7 +191,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>> {
         let place: MaybeOldPlace<'tcx> = (*place).into();
         if let Some(PlaceElem::Deref) = place.place().projection.last() {
-            if let Some(base_place) = place.place().prefix_place(self.repacker()) {
+            if let Some(base_place) = place.place().prefix_place() {
                 if base_place.is_ref(self.repacker()) {
                     return Some(self.arena.mk_projection(
                         ProjectionElem::Deref,
@@ -486,8 +489,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         ));
     }
 
-    fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
-        PlaceRepacker::new(&self.body, self.tcx)
+    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx> {
+        CompilerCtxt::new(&self.body, self.tcx, self.region_infer_ctxt)
     }
 
     fn havoc_operand_ref(

@@ -8,7 +8,7 @@ use crate::value::SymVar;
 use crate::visualization::OutputMode;
 use crate::{place::Place, VisFormat};
 use pcg::pcg::MaybeHasLocation;
-use pcg::utils::{PlaceRepacker, PlaceSnapshot, SnapshotLocation};
+use pcg::utils::{CompilerCtxt, PlaceSnapshot, SnapshotLocation};
 use pcg::utils::HasPlace;
 use pcg::utils::place::maybe_old::MaybeOldPlace;
 use std::collections::BTreeMap;
@@ -42,8 +42,8 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
         self.0
     }
 
-    fn repacker(&self) -> PlaceRepacker<'_, 'tcx> {
-        PlaceRepacker::new(self.2, self.1)
+    fn ctxt(&self) -> CompilerCtxt<'_, 'tcx, ()> {
+        CompilerCtxt::new(self.2, self.1, ())
     }
 
     pub fn new(
@@ -91,8 +91,8 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
         value: SymValue<'sym, 'tcx, T>,
     ) {
         if let Some(PlaceElem::Deref) = place.place().projection.last() {
-            if let Some(base_place) = place.place().prefix_place(self.repacker()) {
-                if let Some(mutability) = base_place.ref_mutability(self.repacker()) {
+            if let Some(base_place) = place.place().prefix_place() {
+                if let Some(mutability) = base_place.ref_mutability(self.ctxt()) {
                     let place = MaybeOldPlace::new(base_place, place.location());
                     let value = self.arena().mk_ref(value, mutability);
                     self.0.insert(place, value);
@@ -150,7 +150,7 @@ impl<'sym, 'tcx, T: VisFormat> HeapData<'sym, 'tcx, T> {
 impl<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug>
     HeapData<'sym, 'tcx, T>
 {
-    pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    pub fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         let map = self
             .0
             .iter()

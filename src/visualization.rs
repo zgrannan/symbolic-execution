@@ -1,4 +1,4 @@
-use pcg::utils::PlaceRepacker;
+use pcg::utils::CompilerCtxt;
 use serde_json::json;
 
 use crate::{
@@ -78,7 +78,7 @@ pub (crate) fn export_path_json<
     debug_output_dir: &str,
     path: &Path<'sym, 'tcx, T>,
     step: StepType,
-    repacker: PlaceRepacker<'_, 'tcx>,
+    repacker: CompilerCtxt<'_, 'tcx>,
 ) {
     let path_component = path
         .path
