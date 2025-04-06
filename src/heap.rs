@@ -12,7 +12,7 @@ use pcg::utils::{CompilerCtxt, PlaceSnapshot, SnapshotLocation};
 use pcg::utils::HasPlace;
 use pcg::utils::place::maybe_old::MaybeOldPlace;
 use std::collections::BTreeMap;
-use pcg::utils::display::DisplayWithRepacker;
+use pcg::utils::display::DisplayWithCompilerCtxt;
 
 use super::value::{SymValue, SyntheticSymValue};
 

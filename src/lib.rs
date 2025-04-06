@@ -48,7 +48,7 @@ use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
 use pcg::borrow_pcg::{edge_data::EdgeData, latest::Latest};
 use pcg::free_pcs::PcgLocation;
-use pcg::utils::display::DisplayWithRepacker;
+use pcg::utils::display::DisplayWithCompilerCtxt;
 use pcg::utils::maybe_old::MaybeOldPlace;
 use pcg::utils::maybe_remote::MaybeRemotePlace;
 use pcg::utils::HasPlace;
@@ -351,9 +351,6 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         );
                     }
                 }
-            }
-            _ => {
-                todo!()
             }
         }
     }
