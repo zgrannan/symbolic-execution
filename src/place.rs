@@ -61,7 +61,7 @@ impl<'tcx> Place<'tcx> {
         &self.0.projection
     }
 
-    pub fn project_deref(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
+    pub fn project_deref(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> Self {
         Place(self.0.project_deref(repacker))
     }
 

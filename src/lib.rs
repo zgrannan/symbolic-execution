@@ -46,7 +46,7 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcg::borrow_pcg::{edge_data::EdgeData, latest::Latest};
+use pcg::{borrow_pcg::{edge_data::EdgeData, latest::Latest}, PcgOutput};
 use pcg::free_pcs::PcgLocation;
 use pcg::utils::display::DisplayWithCompilerCtxt;
 use pcg::utils::maybe_old::MaybeOldPlace;
@@ -60,7 +60,6 @@ use pcg::{
         unblock_graph::UnblockGraph,
     },
     utils::CompilerCtxt,
-    FpcsOutput,
 };
 use pcg::{pcg::PCGNode, utils::SnapshotLocation};
 use predicate::Predicate;
@@ -90,11 +89,11 @@ impl<'sym, 'tcx, T> From<SymValue<'sym, 'tcx, T>> for Assertion<'sym, 'tcx, T> {
     }
 }
 
-pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>> {
+pub struct SymbolicExecution<'mir, 'sym, 'tcx, 'bc, S: VerifierSemantics<'sym, 'tcx>> {
     pub tcx: TyCtxt<'tcx>,
     pub def_id: LocalDefId,
     pub body: &'mir Body<'tcx>,
-    fpcs_analysis: FpcsOutput<'mir, 'tcx>,
+    fpcs_analysis: PcgOutput<'mir, 'tcx, 'bc>,
     havoc: LoopData,
     fresh_symvars: Vec<ty::Ty<'tcx>>,
     pub arena: &'sym SymExContext<'tcx>,
@@ -143,10 +142,10 @@ impl LookupType for LookupTake {
     }
 }
 
-impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
-    SymbolicExecution<'mir, 'sym, 'tcx, S>
+impl<'mir, 'sym, 'tcx, 'bc, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
+    SymbolicExecution<'mir, 'sym, 'tcx, 'bc, S>
 {
-    pub fn new(params: SymExParams<'mir, 'sym, 'tcx, S>) -> Self {
+    pub fn new(params: SymExParams<'mir, 'sym, 'tcx, 'bc, S>) -> Self {
         SymbolicExecution {
             new_symvars_allowed: params.new_symvars_allowed,
             tcx: params.tcx,
@@ -486,8 +485,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         ));
     }
 
-    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx> {
-        CompilerCtxt::new(&self.body, self.tcx, self.region_infer_ctxt)
+    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx, 'bc> {
+        self.fpcs_analysis.ctxt()
     }
 
     fn havoc_operand_ref(
@@ -556,7 +555,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             self.encode_maybe_old_place::<LookupGet, _>(heap.0, place)
         };
         let expansion = place
-            .expand_one_level(*guide, self.fpcs_analysis.repacker())
+            .expand_one_level(*guide, self.fpcs_analysis.ctxt())
             .unwrap();
         self.explode_value(
             value,
@@ -573,20 +572,20 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
-        let place_ty = place.ty(self.fpcs_analysis.repacker());
+        let place_ty = place.ty(self.fpcs_analysis.ctxt());
         let args: Vec<_> = if from.place().is_downcast_of(place.place()).is_some()
             || place_ty.ty.is_box()
         {
             vec![heap.0.take(&from).unwrap_or_else(|| {
                 self.mk_internal_err_expr(
                     format!("Place {:?} not found in heap[collapse]", from),
-                    from.ty(self.fpcs_analysis.repacker()).ty,
+                    from.ty(self.fpcs_analysis.ctxt()).ty,
                 )
             })]
         } else {
             place
                 .place()
-                .expand_field(None, self.fpcs_analysis.repacker())
+                .expand_field(None, self.fpcs_analysis.ctxt())
                 .unwrap()
                 .iter()
                 .map(|p| {
@@ -596,7 +595,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         .unwrap_or_else(|| {
                             self.mk_internal_err_expr(
                                 format!("Place {:?} not found in heap[collapse]", place_to_take),
-                                place_to_take.ty(self.fpcs_analysis.repacker()).ty,
+                                place_to_take.ty(self.fpcs_analysis.ctxt()).ty,
                             )
                         })
                 })
@@ -614,9 +613,10 @@ pub fn run_symbolic_execution<
     'mir,
     'sym,
     'tcx,
+    'bc,
     S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat> + 'sym,
 >(
-    params: SymExParams<'mir, 'sym, 'tcx, S>,
+    params: SymExParams<'mir, 'sym, 'tcx, 'bc, S>,
 ) -> SymbolicExecutionResult<'sym, 'tcx, S>
 where
     S::SymValSynthetic: Eq,

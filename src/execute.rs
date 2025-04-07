@@ -9,8 +9,8 @@ use crate::{
     SymbolicExecution,
 };
 
-impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
-    SymbolicExecution<'mir, 'sym, 'tcx, S>
+impl<'mir, 'sym, 'tcx, 'bc, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
+    SymbolicExecution<'mir, 'sym, 'tcx, 'bc, S>
 {
     pub fn execute(
         mut self,
@@ -51,7 +51,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     &debug_output_dir,
                     &path,
                     StepType::Instruction(block_data.statements.len()),
-                    self.fpcs_analysis.repacker(),
+                    self.fpcs_analysis.ctxt(),
                 );
             }
             self.handle_terminator(

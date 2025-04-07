@@ -19,8 +19,8 @@ use crate::rustc_interface::middle::{
 };
 use crate::rustc_interface::span::Span;
 
-impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
-    SymbolicExecution<'mir, 'sym, 'tcx, S>
+impl<'mir, 'sym, 'tcx, 'bc, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
+    SymbolicExecution<'mir, 'sym, 'tcx, 'bc, S>
 {
     pub fn handle_terminator(
         &mut self,
@@ -64,7 +64,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         &debug_output_dir,
                         &path,
                         StepType::Transition,
-                        self.fpcs_analysis.repacker(),
+                        self.fpcs_analysis.ctxt(),
                     );
                 }
                 paths.push(path);

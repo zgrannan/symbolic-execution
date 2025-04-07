@@ -24,7 +24,7 @@ pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S> {
         self.arena().alloc(t)
     }
     fn arena(&self) -> &'sym SymExContext<'tcx>;
-    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx, ()>;
+    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx, '_, ()>;
     fn encode_rvalue<'ctxt>(
         &self,
         ctxt: &mut Self::Ctxt<'ctxt>,
@@ -116,8 +116,8 @@ pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S> {
         'tcx: 'ctxt;
 }
 
-impl<'mir, 'sym, 'tcx: 'mir, S> Encoder<'mir, 'sym, 'tcx, S::SymValSynthetic>
-    for SymbolicExecution<'mir, 'sym, 'tcx, S>
+impl<'mir, 'sym, 'tcx: 'mir, 'bc, S> Encoder<'mir, 'sym, 'tcx, S::SymValSynthetic>
+    for SymbolicExecution<'mir, 'sym, 'tcx, 'bc, S>
 where
     S: VerifierSemantics<'sym, 'tcx>,
     S::SymValSynthetic: VisFormat,
@@ -130,7 +130,7 @@ where
         self.arena
     }
 
-    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx, ()> {
+    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx, '_, ()> {
         CompilerCtxt::new(self.body, self.tcx, ())
     }
 

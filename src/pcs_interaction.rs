@@ -18,8 +18,8 @@ use crate::{
     LookupTake, SymbolicExecution,
 };
 
-impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
-    SymbolicExecution<'mir, 'sym, 'tcx, S>
+impl<'mir, 'sym, 'tcx, 'bc, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
+    SymbolicExecution<'mir, 'sym, 'tcx, 'bc, S>
 {
     pub(crate) fn handle_pcg(
         &mut self,
@@ -159,7 +159,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) {
         for repack in repacks {
             if let RepackOp::Expand(place, guide, capability) = repack {
-                let is_shared_ref = place.ty(self.fpcs_analysis.repacker()).ty.ref_mutability()
+                let is_shared_ref = place.ty(self.fpcs_analysis.ctxt()).ty.ref_mutability()
                     == Some(Mutability::Not);
                 let take = capability == &CapabilityKind::Exclusive && !is_shared_ref;
                 self.expand_place_with_guide(place, guide, heap, location, take)

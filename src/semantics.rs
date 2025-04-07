@@ -16,15 +16,15 @@ pub trait VerifierSemantics<'sym, 'tcx>: std::marker::Sized {
     type SymValSynthetic: Clone + std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>;
 
     /// Symbolic execution calls this function at the condition_valid_block
-    fn encode_loop_invariant<'heap, 'mir: 'heap>(
+    fn encode_loop_invariant<'heap, 'mir: 'heap, 'bc>(
         loop_head: mir::BasicBlock,
         path: Path<'sym, 'tcx, Self::SymValSynthetic>,
-        sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, Self>,
+        sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, 'bc, Self>,
     ) -> Vec<Assertion<'sym, 'tcx, Self::SymValSynthetic>>;
 
-    fn encode_fn_call<'mir>(
+    fn encode_fn_call<'mir, 'bc>(
         span: Span,
-        sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, Self>,
+        sym_ex: &mut SymbolicExecution<'mir, 'sym, 'tcx, 'bc, Self>,
         def_id: DefId,
         substs: GenericArgsRef<'tcx>,
         heap: &mut HeapData<'sym, 'tcx, Self::SymValSynthetic>,
