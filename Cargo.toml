@@ -10,7 +10,7 @@ doctest = false # we have no doc tests
 [dependencies]
 tracing = "0.1"
 bumpalo = { version = "3.12.0", features = ["collections"] }
-pcg = { path = "../pcg" }
+pcg = { path = "../pcg", default-features = false }
 serde = { version = "1.0.133", features = ["derive"] }
 serde_json = "1.0.64"
 

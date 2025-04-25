@@ -30,12 +30,12 @@ pub mod visualization;
 use crate::{
     rustc_interface::{
         ast::Mutability,
+        borrowck::consumers::RegionInferenceContext,
         hir::def_id::LocalDefId,
         middle::{
             mir::{self, Body, Local, Location, PlaceElem, ProjectionElem},
             ty::{self, TyCtxt},
         },
-        borrowck::consumers::RegionInferenceContext,
     },
     value::BackwardsFn,
 };
@@ -46,7 +46,7 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcg::{borrow_pcg::{edge_data::EdgeData, latest::Latest}, PcgOutput};
+use pcg::borrow_pcg::edge::outlives::BorrowFlowEdgeKind;
 use pcg::free_pcs::PcgLocation;
 use pcg::utils::display::DisplayWithCompilerCtxt;
 use pcg::utils::maybe_old::MaybeOldPlace;
@@ -54,6 +54,10 @@ use pcg::utils::maybe_remote::MaybeRemotePlace;
 use pcg::utils::HasPlace;
 use pcg::{borrow_pcg::edge::abstraction::AbstractionType, pcg::MaybeHasLocation};
 use pcg::{borrow_pcg::edge::kind::BorrowPCGEdgeKind, pcg::EvalStmtPhase};
+use pcg::{
+    borrow_pcg::{edge_data::EdgeData, latest::Latest},
+    PcgOutput,
+};
 use pcg::{
     borrow_pcg::{
         region_projection::RegionProjection, unblock_graph::BorrowPCGUnblockAction,
@@ -64,7 +68,6 @@ use pcg::{
 use pcg::{pcg::PCGNode, utils::SnapshotLocation};
 use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
-use pcg::borrow_pcg::edge::outlives::BorrowFlowEdgeKind;
 use semantics::VerifierSemantics;
 use value::{Constant, SymVar};
 use visualization::{OutputMode, VisFormat};
@@ -89,11 +92,11 @@ impl<'sym, 'tcx, T> From<SymValue<'sym, 'tcx, T>> for Assertion<'sym, 'tcx, T> {
     }
 }
 
-pub struct SymbolicExecution<'mir, 'sym, 'tcx, 'bc, S: VerifierSemantics<'sym, 'tcx>> {
+pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>> {
     pub tcx: TyCtxt<'tcx>,
     pub def_id: LocalDefId,
     pub body: &'mir Body<'tcx>,
-    fpcs_analysis: PcgOutput<'mir, 'tcx, 'bc>,
+    fpcs_analysis: PcgOutput<'mir, 'tcx>,
     havoc: LoopData,
     fresh_symvars: Vec<ty::Ty<'tcx>>,
     pub arena: &'sym SymExContext<'tcx>,
@@ -142,10 +145,10 @@ impl LookupType for LookupTake {
     }
 }
 
-impl<'mir, 'sym, 'tcx, 'bc, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
-    SymbolicExecution<'mir, 'sym, 'tcx, 'bc, S>
+impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
+    SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
-    pub fn new(params: SymExParams<'mir, 'sym, 'tcx, 'bc, S>) -> Self {
+    pub fn new(params: SymExParams<'mir, 'sym, 'tcx, S>) -> Self {
         SymbolicExecution {
             new_symvars_allowed: params.new_symvars_allowed,
             tcx: params.tcx,
@@ -485,7 +488,7 @@ impl<'mir, 'sym, 'tcx, 'bc, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: Vi
         ));
     }
 
-    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx, 'bc> {
+    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx> {
         self.fpcs_analysis.ctxt()
     }
 
@@ -613,10 +616,9 @@ pub fn run_symbolic_execution<
     'mir,
     'sym,
     'tcx,
-    'bc,
     S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat> + 'sym,
 >(
-    params: SymExParams<'mir, 'sym, 'tcx, 'bc, S>,
+    params: SymExParams<'mir, 'sym, 'tcx, S>,
 ) -> SymbolicExecutionResult<'sym, 'tcx, S>
 where
     S::SymValSynthetic: Eq,

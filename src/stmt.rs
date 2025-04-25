@@ -13,8 +13,8 @@ use crate::{
 };
 use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExecution};
 
-impl<'mir, 'sym, 'tcx, 'bc, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
-    SymbolicExecution<'mir, 'sym, 'tcx, 'bc, S>
+impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
+    SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
     pub fn handle_stmt_rhs<'heap>(
         &mut self,

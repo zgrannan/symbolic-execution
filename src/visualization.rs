@@ -78,7 +78,7 @@ pub (crate) fn export_path_json<
     debug_output_dir: &str,
     path: &Path<'sym, 'tcx, T>,
     step: StepType,
-    repacker: CompilerCtxt<'_, 'tcx, '_>,
+    repacker: CompilerCtxt<'_, 'tcx>,
 ) {
     let path_component = path
         .path

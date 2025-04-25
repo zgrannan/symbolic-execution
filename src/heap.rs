@@ -42,7 +42,7 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
         self.0
     }
 
-    fn ctxt(&self) -> CompilerCtxt<'_, 'tcx, '_, ()> {
+    fn ctxt(&self) -> CompilerCtxt<'_, 'tcx, ()> {
         CompilerCtxt::new(self.2, self.1, ())
     }
 
@@ -150,7 +150,7 @@ impl<'sym, 'tcx, T: VisFormat> HeapData<'sym, 'tcx, T> {
 impl<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug>
     HeapData<'sym, 'tcx, T>
 {
-    pub fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, '_>) -> serde_json::Value {
+    pub fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         let map = self
             .0
             .iter()

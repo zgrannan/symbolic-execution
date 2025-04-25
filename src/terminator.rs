@@ -14,13 +14,13 @@ use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExec
 
 use crate::rustc_interface::hir::def_id::DefId;
 use crate::rustc_interface::middle::{
-    mir::{self, Location, Operand},
+    mir::{self, Operand},
     ty::{self, GenericArgsRef},
 };
 use crate::rustc_interface::span::Span;
 
-impl<'mir, 'sym, 'tcx, 'bc, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
-    SymbolicExecution<'mir, 'sym, 'tcx, 'bc, S>
+impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisFormat>>
+    SymbolicExecution<'mir, 'sym, 'tcx, S>
 {
     pub fn handle_terminator(
         &mut self,
