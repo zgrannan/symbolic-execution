@@ -4,8 +4,8 @@ use crate::{path::Path, rustc_interface::middle::mir::Location};
 use pcg::action::PcgActions;
 use pcg::borrow_pcg::action::actions::BorrowPCGActions;
 use pcg::borrow_pcg::action::BorrowPCGActionKind;
-use pcg::borrow_pcg::borrow_pcg_expansion::BorrowPCGExpansion;
-use pcg::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
+use pcg::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion;
+use pcg::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use pcg::borrow_pcg::latest::Latest;
 use pcg::free_pcs::{CapabilityKind, PcgLocation, RepackOp};
 use pcg::pcg::EvalStmtPhase;
@@ -77,8 +77,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         for action in borrow_pcg_actions.iter() {
             if let BorrowPCGActionKind::AddEdge { edge, .. } = action.kind() {
                 match edge.kind() {
-                    BorrowPCGEdgeKind::BorrowPCGExpansion(ep) => {
-                        let ep: BorrowPCGExpansion<'tcx, MaybeOldPlace<'tcx>> =
+                    BorrowPcgEdgeKind::BorrowPcgExpansion(ep) => {
+                        let ep: BorrowPcgExpansion<'tcx, MaybeOldPlace<'tcx>> =
                             if let Ok(ep) = (ep.clone()).try_into() {
                                 ep
                             } else {

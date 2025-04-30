@@ -53,7 +53,7 @@ use pcg::utils::maybe_old::MaybeOldPlace;
 use pcg::utils::maybe_remote::MaybeRemotePlace;
 use pcg::utils::HasPlace;
 use pcg::{borrow_pcg::edge::abstraction::AbstractionType, pcg::MaybeHasLocation};
-use pcg::{borrow_pcg::edge::kind::BorrowPCGEdgeKind, pcg::EvalStmtPhase};
+use pcg::{borrow_pcg::edge::kind::BorrowPcgEdgeKind, pcg::EvalStmtPhase};
 use pcg::{
     borrow_pcg::{edge_data::EdgeData, latest::Latest},
     PcgOutput,
@@ -239,7 +239,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         location: Location,
     ) {
         match action.edge().kind() {
-            BorrowPCGEdgeKind::Borrow(borrow) => {
+            BorrowPcgEdgeKind::Borrow(borrow) => {
                 if borrow.is_mut(self.repacker()) {
                     self.handle_removed_borrow(
                         borrow.blocked_place(),
@@ -249,7 +249,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     );
                 }
             }
-            BorrowPCGEdgeKind::BorrowPCGExpansion(borrow_pcg_expansion) => {
+            BorrowPcgEdgeKind::BorrowPcgExpansion(borrow_pcg_expansion) => {
                 match (
                     borrow_pcg_expansion.base(),
                     borrow_pcg_expansion.expansion()[0],
@@ -262,7 +262,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     }
                 }
             }
-            BorrowPCGEdgeKind::Abstraction(abstraction_edge) => match &abstraction_edge {
+            BorrowPcgEdgeKind::Abstraction(abstraction_edge) => match &abstraction_edge {
                 AbstractionType::FunctionCall(c) => {
                     // A snapshot may not exist if the call is specification "ghost" code, e.g. old()
                     // statements applied to mutable refs in Prusti.
@@ -335,7 +335,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     }
                 }
             },
-            BorrowPCGEdgeKind::BorrowFlow(block_edge) => {
+            BorrowPcgEdgeKind::BorrowFlow(block_edge) => {
                 if matches!(block_edge.kind(), BorrowFlowEdgeKind::Move) {
                     self.handle_removed_borrow(
                         block_edge.long().deref(self.repacker()).unwrap().into(),
