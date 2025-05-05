@@ -16,7 +16,7 @@ pub struct SymExParams<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>> {
     pub def_id: LocalDefId,
     pub body: &'mir Body<'tcx>,
     pub tcx: TyCtxt<'tcx>,
-    pub fpcs_analysis: PcgOutput<'mir, 'tcx>,
+    pub fpcs_analysis: PcgOutput<'mir, 'tcx, &'sym bumpalo::Bump>,
     pub verifier_semantics: S,
     pub arena: &'sym SymExContext<'tcx>,
     pub debug_output_dir: Option<String>,

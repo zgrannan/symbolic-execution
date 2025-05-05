@@ -34,7 +34,7 @@ impl std::fmt::Debug for SymExContext<'_> {
 }
 
 pub struct SymExContext<'tcx> {
-    bump: bumpalo::Bump,
+    pub bump: bumpalo::Bump,
     pub tcx: TyCtxt<'tcx>,
 }
 
