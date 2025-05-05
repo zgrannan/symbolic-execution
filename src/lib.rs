@@ -292,8 +292,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 }
                                 let value = self.arena.mk_backwards_fn(BackwardsFn::new(
                                     self.arena.tcx,
-                                    c.def_id(),
-                                    c.substs(),
+                                    c.def_id().unwrap(),
+                                    c.substs().unwrap(),
                                     Some(self.def_id.into()),
                                     snapshot.args(),
                                     self.arena.mk_ref(
