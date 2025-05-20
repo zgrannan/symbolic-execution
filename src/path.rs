@@ -54,7 +54,7 @@ impl SymExPath {
     pub fn blocks(&self) -> Vec<BasicBlock> {
         match self {
             SymExPath::Acyclic(path) => path.to_vec(),
-            SymExPath::Loop(path) => path.blocks(),
+            SymExPath::Loop(path) => path.ret.to_vec(),
         }
     }
 
