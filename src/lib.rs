@@ -194,7 +194,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let place: MaybeOldPlace<'tcx> = (*place).into();
         if let Some(PlaceElem::Deref) = place.place().projection.last() {
             if let Some(base_place) = place.place().prefix_place() {
-                if base_place.is_ref(self.repacker()) {
+                if base_place.is_ref(self.ctxt()) {
                     return Some(self.arena.mk_projection(
                         ProjectionElem::Deref,
                         T::lookup(heap, &MaybeOldPlace::new(base_place, place.location()))?,
@@ -222,11 +222,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 self.mk_internal_err_expr(
                     format!(
                         "Heap lookup failed for place [{}: {:?}] in {}",
-                        place.to_short_string(self.repacker()),
-                        place.place().ty(self.repacker()),
+                        place.to_short_string(self.ctxt()),
+                        place.place().ty(self.ctxt()),
                         heap_str
                     ),
-                    place.place().ty(self.repacker()).ty,
+                    place.place().ty(self.ctxt()).ty,
                 )
             })
     }
@@ -240,10 +240,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) {
         match action.edge().kind() {
             BorrowPcgEdgeKind::Borrow(borrow) => {
-                if borrow.is_mut(self.repacker()) {
+                if borrow.is_mut(self.ctxt()) {
                     self.handle_removed_borrow(
                         borrow.blocked_place(),
-                        &borrow.deref_place(self.repacker()),
+                        &borrow.deref_place(self.ctxt()),
                         heap,
                         location,
                     );
@@ -271,14 +271,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             for output in abstraction_edge.outputs() {
                                 let input: RegionProjection<'tcx> = input.try_into().unwrap();
                                 let idx = snapshot.index_of_arg_local(input.local().unwrap());
-                                let input_place = match input.deref(self.repacker()) {
+                                let input_place = match input.deref(self.ctxt()) {
                                     Some(place) => place,
                                     None => {
                                         // TODO: region projection
                                         continue;
                                     }
                                 };
-                                let output_place = match output.deref(self.repacker()) {
+                                let output_place = match output.deref(self.ctxt()) {
                                     Some(place) => place,
                                     None => {
                                         // TODO: region projection
@@ -326,7 +326,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             PCGNode::Place(MaybeRemotePlace::Local(place)) => {
                                 heap.insert(
                                     *place,
-                                    self.mk_fresh_symvar(place.ty(self.repacker()).ty),
+                                    self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
                                     location,
                                 );
                             }
@@ -338,17 +338,17 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             BorrowPcgEdgeKind::BorrowFlow(block_edge) => {
                 if matches!(block_edge.kind(), BorrowFlowEdgeKind::Move) {
                     self.handle_removed_borrow(
-                        block_edge.long().deref(self.repacker()).unwrap().into(),
-                        &block_edge.short().deref(self.repacker()).unwrap(),
+                        block_edge.long().deref(self.ctxt()).unwrap().into(),
+                        &block_edge.short().deref(self.ctxt()).unwrap(),
                         heap,
                         location,
                     );
                 }
-                for input in block_edge.blocked_nodes(self.repacker()).iter() {
+                for input in block_edge.blocked_nodes(self.ctxt()).iter() {
                     if let Ok(place) = TryInto::<MaybeOldPlace<'tcx>>::try_into(*input) {
                         heap.insert(
                             place,
-                            self.mk_fresh_symvar(place.ty(self.repacker()).ty),
+                            self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
                             location,
                         );
                     }
@@ -384,7 +384,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             let borrow_state = {
                 let mut mut_borrow_state = pcs.states[EvalStmtPhase::PostMain].borrow_pcg().clone();
                 // let mut mut_borrow_state = pcs.borrows.post_main().clone();
-                mut_borrow_state.filter_for_path(path.blocks());
+                mut_borrow_state.filter_for_path(path.blocks(), self.ctxt());
                 mut_borrow_state
             };
             for arg in self.body.args_iter() {
@@ -393,7 +393,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 if arg_place.is_mut_ref(self.body, self.tcx) {
                     let remote_place = MaybeRemotePlace::place_assigned_to_local(arg);
                     let blocked_place =
-                        match borrow_state.get_place_blocking(remote_place, self.repacker()) {
+                        match borrow_state.get_place_blocking(remote_place, self.ctxt()) {
                             Some(blocked_place) => blocked_place,
                             None => {
                                 eprintln!(
@@ -406,19 +406,19 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let mut heap = heap_data.clone();
                     let mut heap = SymbolicHeap::new(&mut heap, self.tcx, self.body, &self.arena);
                     heap.insert(
-                        return_place.project_deref(self.repacker()),
+                        return_place.project_deref(self.ctxt()),
                         self.arena.mk_var(
                             SymVar::ReservedBackwardsFnResult,
                             return_place
-                                .project_deref(self.repacker())
+                                .project_deref(self.ctxt())
                                 .ty(self.body, self.tcx)
                                 .ty,
                         ),
                         pcs.location,
                     );
-                    let ug = UnblockGraph::for_node(blocked_place, &borrow_state, self.repacker());
+                    let ug = UnblockGraph::for_node(blocked_place, &borrow_state, self.ctxt());
 
-                    let actions = ug.actions(self.repacker()).unwrap();
+                    let actions = ug.actions(self.ctxt()).unwrap();
                     self.apply_unblock_actions(
                         actions,
                         &mut heap,
@@ -488,7 +488,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         ));
     }
 
-    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx> {
+    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx> {
         self.fpcs_analysis.ctxt()
     }
 

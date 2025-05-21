@@ -3,7 +3,7 @@ use crate::{path::Path, rustc_interface::middle::mir::Location};
 
 use pcg::action::PcgActions;
 use pcg::borrow_pcg::action::actions::BorrowPCGActions;
-use pcg::borrow_pcg::action::BorrowPCGActionKind;
+use pcg::borrow_pcg::action::BorrowPcgActionKind;
 use pcg::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion;
 use pcg::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use pcg::borrow_pcg::latest::Latest;
@@ -53,7 +53,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         location: Location,
     ) {
         let mut ug_actions = actions.borrow_pcg_unblock_actions();
-        ug_actions.retain(|action| action.edge().valid_for_path(&path.path.blocks()));
+        ug_actions.retain(|action| {
+            action
+                .edge()
+                .valid_for_path(&path.path.blocks(), self.ctxt().body())
+        });
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         self.apply_unblock_actions(
             ug_actions,
@@ -75,7 +79,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         latest: &Latest<'tcx>,
     ) {
         for action in borrow_pcg_actions.iter() {
-            if let BorrowPCGActionKind::AddEdge { edge, .. } = action.kind() {
+            if let BorrowPcgActionKind::AddEdge { edge, .. } = action.kind() {
                 match edge.kind() {
                     BorrowPcgEdgeKind::BorrowPcgExpansion(ep) => {
                         let ep: BorrowPcgExpansion<'tcx, MaybeOldPlace<'tcx>> =
