@@ -344,8 +344,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         location,
                     );
                 }
-                for input in block_edge.blocked_nodes(self.ctxt()).iter() {
-                    if let Ok(place) = TryInto::<MaybeOldPlace<'tcx>>::try_into(*input) {
+                for input in block_edge.blocked_nodes(self.ctxt()) {
+                    if let Ok(place) = TryInto::<MaybeOldPlace<'tcx>>::try_into(input) {
                         heap.insert(
                             place,
                             self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
