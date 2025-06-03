@@ -112,7 +112,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
     ) {
-        let heap_value = self.encode_maybe_old_place::<LookupTake, _>(heap.0, assigned_place);
+        let heap_value = self.encode_maybe_old_place::<LookupGet, _>(heap.0, assigned_place);
         match blocked_place {
             MaybeRemotePlace::Local(blocked_place) => {
                 if blocked_place.is_old() {
