@@ -65,7 +65,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             &path.function_call_snapshots,
             location,
         );
-        let repacks = actions.owned_pcg_actions();
+        let repacks = actions
+            .owned_pcg_actions()
+            .into_iter()
+            .map(|action| action.kind())
+            .collect::<Vec<_>>();
         self.handle_repack_collapses(&repacks, &mut heap, location);
         self.handle_repack_weakens(&repacks, &mut heap, location);
         self.handle_repack_expands(&repacks, &mut heap, location);
@@ -96,7 +100,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             value,
                             ep.expansion().into_iter().copied(),
                             heap,
-                            latest.get(place.place()),
+                            latest.get(place.place(), self.ctxt()),
                         );
                     }
                     _ => {}

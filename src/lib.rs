@@ -506,7 +506,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 {
                     let sym_var = self.mk_fresh_symvar(place.ty(self.body, self.tcx).ty);
                     heap.insert_maybe_old_place(
-                        MaybeOldPlace::new(place.0, Some(latest.get(place.0))),
+                        MaybeOldPlace::new(place.0, Some(latest.get(place.0, self.ctxt()))),
                         sym_var,
                     );
                     Some(sym_var)
