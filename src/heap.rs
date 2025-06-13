@@ -8,11 +8,11 @@ use crate::value::SymVar;
 use crate::visualization::OutputMode;
 use crate::{place::Place, VisFormat};
 use pcg::pcg::MaybeHasLocation;
-use pcg::utils::{CompilerCtxt, PlaceSnapshot, SnapshotLocation};
-use pcg::utils::HasPlace;
-use pcg::utils::place::maybe_old::MaybeOldPlace;
-use std::collections::BTreeMap;
 use pcg::utils::display::DisplayWithCompilerCtxt;
+use pcg::utils::place::maybe_old::MaybeOldPlace;
+use pcg::utils::HasPlace;
+use pcg::utils::{CompilerCtxt, PlaceSnapshot, SnapshotLocation};
+use std::collections::BTreeMap;
 
 use super::value::{SymValue, SyntheticSymValue};
 
@@ -69,7 +69,7 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
 
     /// Sets the heap entry for this place to `value`. If `place` is a current
     /// place, also sets the heap entry for the place snapshot at `location`.
-    pub (crate) fn insert<P: Clone + Into<MaybeOldPlace<'tcx>>>(
+    pub(crate) fn insert<P: Clone + Into<MaybeOldPlace<'tcx>>>(
         &mut self,
         place: P,
         value: SymValue<'sym, 'tcx, T>,
@@ -189,7 +189,7 @@ impl<'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>> HeapData<'s
                 arg,
                 body.span
             );
-            heap.insert(place, sym_var, Location::START);
+            heap.insert(place, sym_var, SnapshotLocation::After(Location::START));
         }
         heap_data
     }

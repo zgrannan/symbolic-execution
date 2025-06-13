@@ -1,5 +1,6 @@
 use pcg::pcg::EvalStmtPhase;
 use pcg::free_pcs::PcgBasicBlock;
+use pcg::utils::SnapshotLocation;
 
 use crate::visualization::{export_path_json, StepType};
 use crate::{
@@ -47,7 +48,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 // Could be undefined if the assignment doesn't need to be handled,
                 // e.g. assigning a fake borrow
                 if let Some(rhs) = rhs {
-                    heap.insert(*place, rhs, location);
+                    heap.insert(*place, rhs, SnapshotLocation::After(location));
                 }
             }
             mir::StatementKind::StorageDead(local) => {

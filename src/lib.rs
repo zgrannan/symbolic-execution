@@ -327,7 +327,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 heap.insert(
                                     *place,
                                     self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
-                                    location,
+                                    SnapshotLocation::After(location),
                                 );
                             }
                             _ => {}
@@ -349,7 +349,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         heap.insert(
                             place,
                             self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
-                            location,
+                            SnapshotLocation::After(location),
                         );
                     }
                 }
@@ -414,7 +414,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 .ty(self.body, self.tcx)
                                 .ty,
                         ),
-                        pcs.location,
+                        SnapshotLocation::After(pcs.location),
                     );
                     let ug = UnblockGraph::for_node(blocked_place, &borrow_state, self.ctxt());
 
@@ -564,7 +564,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             value,
             expansion.expansion().into_iter().map(|p| p.into()),
             heap,
-            location,
+            SnapshotLocation::After(location),
         );
     }
 
@@ -608,7 +608,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             AggregateKind::pcs(place_ty.ty, place_ty.variant_index),
             self.arena.alloc_slice(&args),
         );
-        heap.insert(place, value, location);
+        heap.insert(place, value, SnapshotLocation::After(location));
     }
 }
 

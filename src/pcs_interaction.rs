@@ -12,6 +12,7 @@ use pcg::pcg::EvalStmtPhase;
 use pcg::utils::place::maybe_old::MaybeOldPlace;
 use pcg::utils::place::maybe_remote::MaybeRemotePlace;
 use pcg::utils::HasPlace;
+use pcg::utils::SnapshotLocation;
 
 use crate::{
     heap::SymbolicHeap, semantics::VerifierSemantics, visualization::VisFormat, LookupGet,
@@ -122,7 +123,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 if blocked_place.is_old() {
                     heap.insert_maybe_old_place(blocked_place, heap_value);
                 } else {
-                    heap.insert(blocked_place.place(), heap_value, location);
+                    heap.insert(blocked_place.place(), heap_value, SnapshotLocation::After(location));
                 }
             }
             MaybeRemotePlace::Remote(_) => {

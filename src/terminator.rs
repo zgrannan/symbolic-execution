@@ -1,4 +1,5 @@
 use pcg::free_pcs::{PcgLocation, PcgTerminator};
+use pcg::utils::SnapshotLocation;
 
 use crate::context::ErrorLocation;
 use crate::encoder::Encoder;
@@ -137,7 +138,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             value,
                             postcondition,
                         } => {
-                            heap.insert(*destination, value, location.location);
+                            heap.insert(*destination, value, SnapshotLocation::After(location.location));
                             if let Some(postcondition) = postcondition {
                                 path.add_path_condition(postcondition);
                             }
@@ -153,7 +154,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             let sym_var = self.mk_fresh_symvar(
                                 destination.ty(&self.body.local_decls, self.tcx).ty,
                             );
-                            heap.insert(*destination, sym_var, location.location);
+                            heap.insert(*destination, sym_var, SnapshotLocation::After(location.location));
                             path.add_path_condition(Predicate::Postcondition {
                                 expr: sym_var,
                                 def_id: *def_id,

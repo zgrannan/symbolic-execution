@@ -1,3 +1,5 @@
+use pcg::utils::SnapshotLocation;
+
 use crate::{
     encoder::Encoder,
     havoc::InvariantInfo,
@@ -43,10 +45,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             heap.insert(
                 place,
                 self.mk_fresh_symvar(self.body.local_decls[*local].ty),
-                Location {
+                SnapshotLocation::After(Location {
                     block: condition_valid_block,
                     statement_index: 0,
-                },
+                }),
             );
         }
 
