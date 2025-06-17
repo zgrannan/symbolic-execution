@@ -154,8 +154,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         location: Location,
     ) {
         for repack in repacks {
-            if let RepackOp::Collapse(place, from, CapabilityKind::Exclusive) = repack {
-                self.collapse_place_from((*place).into(), (*from).into(), heap, location)
+            if let RepackOp::Collapse(collapse) = repack && collapse.capability() == CapabilityKind::Exclusive {
+                self.handle_collapse(*collapse, heap, location)
             }
         }
     }
@@ -167,11 +167,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         location: Location,
     ) {
         for repack in repacks {
-            if let RepackOp::Expand(place, guide, capability) = repack {
-                let is_shared_ref = place.ty(self.fpcs_analysis.ctxt()).ty.ref_mutability()
+            if let RepackOp::Expand(expansion) = repack {
+                let is_shared_ref = expansion.from().ty(self.fpcs_analysis.ctxt()).ty.ref_mutability()
                     == Some(Mutability::Not);
-                let take = capability == &CapabilityKind::Exclusive && !is_shared_ref;
-                self.expand_place_with_guide(place, guide, heap, location, take)
+                let take = expansion.capability() == CapabilityKind::Exclusive && !is_shared_ref;
+                self.handle_expand(*expansion, heap, location, take)
             }
         }
     }

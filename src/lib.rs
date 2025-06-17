@@ -46,14 +46,14 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcg::borrow_pcg::edge::outlives::BorrowFlowEdgeKind;
-use pcg::free_pcs::PcgLocation;
+use pcg::free_pcs::{PcgLocation, RepackExpand};
 use pcg::utils::display::DisplayWithCompilerCtxt;
 use pcg::utils::maybe_old::MaybeOldPlace;
 use pcg::utils::maybe_remote::MaybeRemotePlace;
 use pcg::utils::HasPlace;
 use pcg::{borrow_pcg::edge::abstraction::AbstractionType, pcg::MaybeHasLocation};
 use pcg::{borrow_pcg::edge::kind::BorrowPcgEdgeKind, pcg::EvalStmtPhase};
+use pcg::{borrow_pcg::edge::outlives::BorrowFlowEdgeKind, free_pcs::RepackCollapse};
 use pcg::{
     borrow_pcg::{edge_data::EdgeData, latest::Latest},
     PcgOutput,
@@ -544,28 +544,67 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
     }
 
-    fn expand_place_with_guide(
+    fn handle_expand(
         &self,
-        place: &pcg::utils::Place<'tcx>,
-        guide: &pcg::utils::Place<'tcx>,
+        expand: RepackExpand<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
         take: bool,
     ) {
         let value = if take {
-            self.encode_maybe_old_place::<LookupTake, _>(heap.0, place)
+            self.encode_maybe_old_place::<LookupTake, _>(heap.0, &expand.from())
         } else {
-            self.encode_maybe_old_place::<LookupGet, _>(heap.0, place)
+            self.encode_maybe_old_place::<LookupGet, _>(heap.0, &expand.from())
         };
-        let expansion = place
-            .expand_one_level(*guide, self.fpcs_analysis.ctxt())
-            .unwrap();
+        let expansion = expand.target_places(self.fpcs_analysis.ctxt());
         self.explode_value(
             value,
-            expansion.expansion().into_iter().map(|p| p.into()),
+            expansion.into_iter().map(|p| p.into()),
             heap,
             SnapshotLocation::After(location),
         );
+    }
+
+    fn handle_collapse(
+        &self,
+        collapse: RepackCollapse<'tcx>,
+        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
+        location: Location,
+    ) {
+        let args = if let Some(from) = collapse
+            .downcast_place(self.fpcs_analysis.ctxt())
+            .or(collapse.box_deref_place(self.fpcs_analysis.ctxt()))
+        {
+            vec![heap.0.take(&from).unwrap_or_else(|| {
+                self.mk_internal_err_expr(
+                    format!("Place {:?} not found in heap[collapse]", from),
+                    from.ty(self.fpcs_analysis.ctxt()).ty,
+                )
+            })]
+        } else {
+            collapse
+                .to()
+                .expand_field(None, self.fpcs_analysis.ctxt())
+                .unwrap()
+                .iter()
+                .map(|p| {
+                    let place_to_take: MaybeOldPlace<'tcx> = (*p).into();
+                    self.encode_place_opt::<LookupTake, MaybeOldPlace<'tcx>>(heap.0, &place_to_take)
+                        .unwrap_or_else(|| {
+                            self.mk_internal_err_expr(
+                                format!("Place {:?} not found in heap[collapse]", place_to_take),
+                                place_to_take.ty(self.fpcs_analysis.ctxt()).ty,
+                            )
+                        })
+                })
+                .collect()
+        };
+        let place_ty = collapse.to().ty(self.fpcs_analysis.ctxt());
+        let value = self.arena.mk_aggregate(
+            AggregateKind::pcs(place_ty.ty, place_ty.variant_index),
+            self.arena.alloc_slice(&args),
+        );
+        heap.insert(collapse.to(), value, SnapshotLocation::After(location));
     }
 
     fn collapse_place_from(
