@@ -2,7 +2,7 @@ use crate::rustc_interface::hir::Mutability;
 use crate::{path::Path, rustc_interface::middle::mir::Location};
 
 use pcg::action::PcgActions;
-use pcg::borrow_pcg::action::actions::BorrowPCGActions;
+use pcg::borrow_pcg::action::actions::BorrowPcgActions;
 use pcg::borrow_pcg::action::BorrowPcgActionKind;
 use pcg::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion;
 use pcg::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
@@ -79,7 +79,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn handle_reborrow_added_edges(
         &self,
-        borrow_pcg_actions: BorrowPCGActions<'tcx>,
+        borrow_pcg_actions: BorrowPcgActions<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         latest: &Latest<'tcx>,
     ) {

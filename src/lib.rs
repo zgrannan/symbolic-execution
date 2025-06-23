@@ -60,7 +60,7 @@ use pcg::{
 };
 use pcg::{
     borrow_pcg::{
-        region_projection::RegionProjection, unblock_graph::BorrowPCGUnblockAction,
+        region_projection::RegionProjection, unblock_graph::BorrowPcgUnblockAction,
         unblock_graph::UnblockGraph,
     },
     utils::CompilerCtxt,
@@ -233,7 +233,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn apply_unblock_action(
         &mut self,
-        action: BorrowPCGUnblockAction<'tcx>,
+        action: BorrowPcgUnblockAction<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         function_call_snapshots: &FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
@@ -359,7 +359,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     fn apply_unblock_actions(
         &mut self,
-        actions: Vec<BorrowPCGUnblockAction<'tcx>>,
+        actions: Vec<BorrowPcgUnblockAction<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         function_call_snapshots: &FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
         location: Location,
