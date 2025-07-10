@@ -267,9 +267,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     // A snapshot may not exist if the call is specification "ghost" code, e.g. old()
                     // statements applied to mutable refs in Prusti.
                     if let Some(snapshot) = function_call_snapshots.get_snapshot(&c.location()) {
-                        for input in abstraction_edge.inputs() {
-                            for output in abstraction_edge.outputs() {
-                                let input: RegionProjection<'tcx> = input.try_into().unwrap();
+                        for input in c.edge().inputs() {
+                            for output in c.edge().outputs() {
+                                let input: RegionProjection<'tcx> = (*input).into();
                                 let idx = snapshot.index_of_arg_local(input.local().unwrap());
                                 let input_place = match input.deref(self.ctxt()) {
                                     Some(place) => place,
@@ -278,7 +278,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                         continue;
                                     }
                                 };
-                                let output_place = match output.deref(self.ctxt()) {
+                                let output_place = match (*output).deref(self.ctxt()) {
                                     Some(place) => place,
                                     None => {
                                         // TODO: region projection
@@ -322,10 +322,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 }
                 _ => {
                     for input in abstraction_edge.inputs().iter() {
-                        match &input {
+                        match **input {
                             PCGNode::Place(MaybeRemotePlace::Local(place)) => {
                                 heap.insert(
-                                    *place,
+                                    place,
                                     self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
                                     SnapshotLocation::After(location),
                                 );
