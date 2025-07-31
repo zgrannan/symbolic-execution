@@ -1,4 +1,4 @@
-use pcg::utils::SnapshotLocation;
+use pcg::utils::{AnalysisLocation, SnapshotLocation};
 
 use crate::{
     encoder::Encoder,
@@ -27,11 +27,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     where
         S::SymValSynthetic: Eq,
     {
-        for assertion in S::encode_loop_invariant(
-            invariant_info.loop_head,
-            path.clone(),
-            self,
-        ) {
+        for assertion in S::encode_loop_invariant(invariant_info.loop_head, path.clone(), self) {
             assertions.insert(path.conditional_assertion(assertion));
         }
         if let SymExPath::Loop(loop_path) = &path.path {
@@ -40,15 +36,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
 
+        let curr_snapshot_location =
+            SnapshotLocation::Before(AnalysisLocation::first(condition_valid_block));
         for local in invariant_info.havoced_locals.iter() {
             let place = Place::new(*local, &[]);
             heap.insert(
                 place,
                 self.mk_fresh_symvar(self.body.local_decls[*local].ty),
-                SnapshotLocation::After(Location {
-                    block: condition_valid_block,
-                    statement_index: 0,
-                }),
+                curr_snapshot_location,
             );
         }
 
@@ -81,11 +76,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
         // Assume invariant
 
-        for assertion in S::encode_loop_invariant(
-            invariant_info.loop_head,
-            path.clone(),
-            self,
-        ) {
+        for assertion in S::encode_loop_invariant(invariant_info.loop_head, path.clone(), self) {
             path.add_path_condition(assertion);
         }
         true

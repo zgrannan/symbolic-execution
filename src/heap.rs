@@ -60,7 +60,7 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
             self.0.insert(
                 MaybeOldPlace::OldPlace(PlaceSnapshot::new(
                     place.clone(),
-                    SnapshotLocation::Start(block),
+                    SnapshotLocation::before_block(block),
                 )),
                 value,
             );
@@ -79,7 +79,7 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
         self.insert_maybe_old_place(place.clone(), value);
         if let MaybeOldPlace::Current { place } = place {
             self.insert_maybe_old_place(
-                MaybeOldPlace::OldPlace(PlaceSnapshot::new(place, location)),
+                MaybeOldPlace::OldPlace(PlaceSnapshot::new(place, location.into())),
                 value,
             );
         }
@@ -189,7 +189,7 @@ impl<'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>> HeapData<'s
                 arg,
                 body.span
             );
-            heap.insert(place, sym_var, SnapshotLocation::After(Location::START));
+            heap.insert(place, sym_var, SnapshotLocation::first());
         }
         heap_data
     }

@@ -6,13 +6,12 @@ use pcg::borrow_pcg::action::actions::BorrowPcgActions;
 use pcg::borrow_pcg::action::BorrowPcgActionKind;
 use pcg::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion;
 use pcg::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
-use pcg::borrow_pcg::latest::Latest;
 use pcg::free_pcs::{CapabilityKind, PcgLocation, RepackOp};
 use pcg::pcg::EvalStmtPhase;
 use pcg::utils::place::maybe_old::MaybeOldPlace;
 use pcg::utils::place::maybe_remote::MaybeRemotePlace;
-use pcg::utils::HasPlace;
 use pcg::utils::SnapshotLocation;
+use pcg::utils::{AnalysisLocation, HasPlace};
 
 use crate::{
     heap::SymbolicHeap, semantics::VerifierSemantics, visualization::VisFormat, LookupGet,
@@ -28,30 +27,35 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         pcg: &PcgLocation<'tcx>,
         location: Location,
     ) {
+        let pre_operands_loc = AnalysisLocation::new(location, EvalStmtPhase::PreOperands);
         self.handle_pcg_partial(
             path,
             pcg.actions(EvalStmtPhase::PreOperands),
-            pcg.latest(),
-            location,
+            SnapshotLocation::Before(pre_operands_loc),
+            pre_operands_loc.next_snapshot_location(self.ctxt().body()),
         );
+
+        let pre_main_loc = AnalysisLocation::new(location, EvalStmtPhase::PreMain);
         self.handle_pcg_partial(
             path,
             pcg.actions(EvalStmtPhase::PreMain),
-            pcg.latest(),
-            location,
+            SnapshotLocation::Before(pre_main_loc),
+            pre_main_loc.next_snapshot_location(self.ctxt().body()),
         );
+        let post_main_loc = AnalysisLocation::new(location, EvalStmtPhase::PostMain);
+        let curr_snapshot_location = SnapshotLocation::Before(post_main_loc);
         self.handle_reborrow_added_edges(
             pcg.borrow_pcg_actions(EvalStmtPhase::PostMain),
             &mut SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena),
-            pcg.latest(),
+            curr_snapshot_location,
         );
     }
     pub(crate) fn handle_pcg_partial(
         &mut self,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         actions: &PcgActions<'tcx>,
-        latest: &Latest<'tcx>,
-        location: Location,
+        prev_snapshot_location: SnapshotLocation,
+        curr_snapshot_location: SnapshotLocation,
     ) {
         let mut ug_actions = actions.borrow_pcg_unblock_actions();
         ug_actions.retain(|action| {
@@ -64,24 +68,28 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             ug_actions,
             &mut heap,
             &path.function_call_snapshots,
-            location,
+            prev_snapshot_location,
+            curr_snapshot_location,
         );
         let repacks = actions
             .owned_pcg_actions()
             .into_iter()
             .map(|action| action.kind())
             .collect::<Vec<_>>();
-        self.handle_repack_collapses(&repacks, &mut heap, location);
-        self.handle_repack_weakens(&repacks, &mut heap, location);
-        self.handle_repack_expands(&repacks, &mut heap, location);
-        self.handle_reborrow_added_edges(actions.borrow_pcg_actions(), &mut heap, latest);
+        self.handle_repack_collapses(&repacks, &mut heap, curr_snapshot_location);
+        self.handle_repack_expands(&repacks, &mut heap, curr_snapshot_location);
+        self.handle_reborrow_added_edges(
+            actions.borrow_pcg_actions(),
+            &mut heap,
+            curr_snapshot_location,
+        );
     }
 
     fn handle_reborrow_added_edges(
         &self,
         borrow_pcg_actions: BorrowPcgActions<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        latest: &Latest<'tcx>,
+        curr_snapshot_location: SnapshotLocation,
     ) {
         for action in borrow_pcg_actions.iter() {
             if let BorrowPcgActionKind::AddEdge { edge, .. } = action.kind() {
@@ -101,7 +109,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             value,
                             ep.expansion().into_iter().copied(),
                             heap,
-                            latest.get(place.place(), self.ctxt()),
+                            curr_snapshot_location,
                         );
                     }
                     _ => {}
@@ -115,7 +123,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         blocked_place: MaybeRemotePlace<'tcx>,
         assigned_place: &MaybeOldPlace<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        curr_snapshot_location: SnapshotLocation,
     ) {
         let heap_value = self.encode_maybe_old_place::<LookupGet, _>(heap.0, assigned_place);
         match blocked_place {
@@ -123,7 +131,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 if blocked_place.is_old() {
                     heap.insert_maybe_old_place(blocked_place, heap_value);
                 } else {
-                    heap.insert(blocked_place.place(), heap_value, SnapshotLocation::After(location));
+                    heap.insert(blocked_place.place(), heap_value, curr_snapshot_location);
                 }
             }
             MaybeRemotePlace::Remote(_) => {
@@ -133,29 +141,17 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         }
     }
 
-    pub(crate) fn handle_repack_weakens(
-        &self,
-        _repacks: &[&RepackOp<'tcx>],
-        _heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        _location: Location,
-    ) {
-        // TODO: Check why this doesn't work
-        // for repack in repacks {
-        //     if let RepackOp::Weaken(place, _, CapabilityKind::Write) = repack {
-        //         heap.0.remove(place);
-        //     }
-        // }
-    }
-
     pub(crate) fn handle_repack_collapses(
         &self,
         repacks: &[&RepackOp<'tcx>],
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        curr_snapshot_location: SnapshotLocation,
     ) {
         for repack in repacks {
-            if let RepackOp::Collapse(collapse) = repack && collapse.capability() == CapabilityKind::Exclusive {
-                self.handle_collapse(*collapse, heap, location)
+            if let RepackOp::Collapse(collapse) = repack
+                && collapse.capability() == CapabilityKind::Exclusive
+            {
+                self.handle_collapse(*collapse, heap, curr_snapshot_location)
             }
         }
     }
@@ -164,14 +160,18 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &self,
         repacks: &[&RepackOp<'tcx>],
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        curr_snapshot_location: SnapshotLocation,
     ) {
         for repack in repacks {
             if let RepackOp::Expand(expansion) = repack {
-                let is_shared_ref = expansion.from().ty(self.fpcs_analysis.ctxt()).ty.ref_mutability()
+                let is_shared_ref = expansion
+                    .from()
+                    .ty(self.fpcs_analysis.ctxt())
+                    .ty
+                    .ref_mutability()
                     == Some(Mutability::Not);
                 let take = expansion.capability() == CapabilityKind::Exclusive && !is_shared_ref;
-                self.handle_expand(*expansion, heap, location, take)
+                self.handle_expand(*expansion, heap, curr_snapshot_location, take)
             }
         }
     }

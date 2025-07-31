@@ -1,6 +1,6 @@
-use pcg::pcg::EvalStmtPhase;
 use pcg::free_pcs::PcgBasicBlock;
-use pcg::utils::SnapshotLocation;
+use pcg::pcg::EvalStmtPhase;
+use pcg::utils::{AnalysisLocation, SnapshotLocation};
 
 use crate::visualization::{export_path_json, StepType};
 use crate::{
@@ -43,12 +43,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         location: mir::Location,
         rhs: Option<SymValue<'sym, 'tcx, S::SymValSynthetic>>,
     ) {
+        let analysis_location = AnalysisLocation::new(location, EvalStmtPhase::PostMain);
+        let curr_snapshot_location = analysis_location.next_snapshot_location(self.ctxt().body());
         match &stmt.kind {
             mir::StatementKind::Assign(box (place, _)) => {
                 // Could be undefined if the assignment doesn't need to be handled,
                 // e.g. assigning a fake borrow
                 if let Some(rhs) = rhs {
-                    heap.insert(*place, rhs, SnapshotLocation::After(location));
+                    heap.insert(*place, rhs, curr_snapshot_location);
                 }
             }
             mir::StatementKind::StorageDead(local) => {
@@ -71,19 +73,23 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) {
         let pcg = &pcs_block.statements[stmt_idx];
         self.set_error_context(path.path.clone(), ErrorLocation::Location(pcg.location));
+        let pre_operands_loc = AnalysisLocation::new(pcg.location, EvalStmtPhase::PreOperands);
         self.handle_pcg_partial(
             path,
             pcg.actions(EvalStmtPhase::PreOperands),
-            pcg.latest(),
-            pcg.location,
+            SnapshotLocation::Before(pre_operands_loc),
+            pre_operands_loc.next_snapshot_location(self.ctxt().body()),
         );
+
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         let rhs = self.handle_stmt_rhs(stmt, &mut heap);
+
+        let pre_main_loc = AnalysisLocation::new(pcg.location, EvalStmtPhase::PreMain);
         self.handle_pcg_partial(
             path,
             pcg.actions(EvalStmtPhase::PreMain),
-            pcg.latest(),
-            pcg.location,
+            SnapshotLocation::Before(pre_main_loc),
+            pre_main_loc.next_snapshot_location(self.ctxt().body()),
         );
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         self.handle_stmt_lhs(stmt, &mut heap, pcg.location, rhs);

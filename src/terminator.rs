@@ -54,11 +54,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let mut path = path.push(*target);
                 self.set_error_context(old_path.clone(), ErrorLocation::Terminator(*target));
                 let succ = &fpcs_terminator.succs[0];
+                let prev_snapshot_location = SnapshotLocation::After(location.location.block);
+                let curr_snapshot_location = SnapshotLocation::before_block(*target);
                 self.handle_pcg_partial(
                     &mut path,
                     succ.actions(),
-                    &succ.latest(),
-                    location.location,
+                    prev_snapshot_location,
+                    curr_snapshot_location,
                 );
                 if let Some(debug_output_dir) = &self.debug_output_dir {
                     export_path_json(
@@ -138,7 +140,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             value,
                             postcondition,
                         } => {
-                            heap.insert(*destination, value, SnapshotLocation::After(location.location));
+                            heap.insert(
+                                *destination,
+                                value,
+                                SnapshotLocation::After(location.location.block),
+                            );
                             if let Some(postcondition) = postcondition {
                                 path.add_path_condition(postcondition);
                             }
@@ -154,7 +160,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             let sym_var = self.mk_fresh_symvar(
                                 destination.ty(&self.body.local_decls, self.tcx).ty,
                             );
-                            heap.insert(*destination, sym_var, SnapshotLocation::After(location.location));
+                            heap.insert(
+                                *destination,
+                                sym_var,
+                                SnapshotLocation::After(location.location.block),
+                            );
                             path.add_path_condition(Predicate::Postcondition {
                                 expr: sym_var,
                                 def_id: *def_id,
@@ -233,8 +243,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     .iter()
                     .zip(encoded_args)
                     .map(|(operand, encoded)| {
-                        self.havoc_operand_ref(operand, heap, location.latest())
-                            .unwrap_or(encoded)
+                        self.havoc_operand_ref(
+                            operand,
+                            heap,
+                            SnapshotLocation::After(location.location.block),
+                        )
+                        .unwrap_or(encoded)
                     })
                     .collect::<Vec<_>>();
                 FunctionCallResult::Unknown {

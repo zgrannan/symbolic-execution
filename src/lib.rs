@@ -46,7 +46,6 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcg::free_pcs::{PcgLocation, RepackExpand};
 use pcg::utils::display::DisplayWithCompilerCtxt;
 use pcg::utils::maybe_old::MaybeOldPlace;
 use pcg::utils::maybe_remote::MaybeRemotePlace;
@@ -54,16 +53,17 @@ use pcg::utils::HasPlace;
 use pcg::{borrow_pcg::edge::abstraction::AbstractionType, pcg::MaybeHasLocation};
 use pcg::{borrow_pcg::edge::kind::BorrowPcgEdgeKind, pcg::EvalStmtPhase};
 use pcg::{borrow_pcg::edge::outlives::BorrowFlowEdgeKind, free_pcs::RepackCollapse};
-use pcg::{
-    borrow_pcg::{edge_data::EdgeData, latest::Latest},
-    PcgOutput,
-};
+use pcg::{borrow_pcg::edge_data::EdgeData, PcgOutput};
 use pcg::{
     borrow_pcg::{
         region_projection::RegionProjection, unblock_graph::BorrowPcgUnblockAction,
         unblock_graph::UnblockGraph,
     },
     utils::CompilerCtxt,
+};
+use pcg::{
+    free_pcs::{PcgLocation, RepackExpand},
+    utils::AnalysisLocation,
 };
 use pcg::{pcg::PCGNode, utils::SnapshotLocation};
 use predicate::Predicate;
@@ -236,7 +236,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         action: BorrowPcgUnblockAction<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         function_call_snapshots: &FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        prev_snapshot_location: SnapshotLocation,
+        curr_snapshot_location: SnapshotLocation,
     ) {
         match action.edge().kind() {
             BorrowPcgEdgeKind::Borrow(borrow) => {
@@ -245,7 +246,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         borrow.blocked_place(),
                         &borrow.deref_place(self.ctxt()),
                         heap,
-                        location,
+                        curr_snapshot_location,
                     );
                 }
             }
@@ -255,7 +256,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     borrow_pcg_expansion.expansion()[0],
                 ) {
                     (PCGNode::Place(base), PCGNode::Place(expansion)) => {
-                        self.collapse_place_from(base, expansion, heap, location);
+                        self.collapse_place_from(base, expansion, heap, curr_snapshot_location);
                     }
                     _ => {
                         // TODO: handle errors
@@ -327,7 +328,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 heap.insert(
                                     place,
                                     self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
-                                    SnapshotLocation::After(location),
+                                    curr_snapshot_location,
                                 );
                             }
                             _ => {}
@@ -341,7 +342,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         block_edge.long().deref(self.ctxt()).unwrap().into(),
                         &block_edge.short().deref(self.ctxt()).unwrap(),
                         heap,
-                        location,
+                        curr_snapshot_location,
                     );
                 }
                 for input in block_edge.blocked_nodes(self.ctxt()) {
@@ -349,7 +350,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         heap.insert(
                             place,
                             self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
-                            SnapshotLocation::After(location),
+                            curr_snapshot_location,
                         );
                     }
                 }
@@ -362,10 +363,17 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         actions: Vec<BorrowPcgUnblockAction<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         function_call_snapshots: &FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        prev_snapshot_location: SnapshotLocation,
+        curr_snapshot_location: SnapshotLocation,
     ) {
         for action in actions {
-            self.apply_unblock_action(action, heap, function_call_snapshots, location);
+            self.apply_unblock_action(
+                action,
+                heap,
+                function_call_snapshots,
+                prev_snapshot_location,
+                curr_snapshot_location,
+            );
         }
     }
 
@@ -380,6 +388,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let return_place: mir::Place<'tcx> = mir::RETURN_PLACE.into();
         let return_place: Place<'tcx> = return_place.into();
         let mut facts = BackwardsFacts::new();
+        let prev_snapshot_location =
+            SnapshotLocation::Before(AnalysisLocation::new(pcs.location, EvalStmtPhase::last()));
+        let current_snapshot_location =
+            SnapshotLocation::after_statement_at(pcs.location, self.ctxt());
         if return_place.is_mut_ref(self.body, self.tcx) {
             let borrow_state = {
                 let mut mut_borrow_state = pcs.states[EvalStmtPhase::PostMain].borrow_pcg().clone();
@@ -414,7 +426,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                                 .ty(self.body, self.tcx)
                                 .ty,
                         ),
-                        SnapshotLocation::After(pcs.location),
+                        current_snapshot_location,
                     );
                     let ug = UnblockGraph::for_node(blocked_place, &borrow_state, self.ctxt());
 
@@ -423,7 +435,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         actions,
                         &mut heap,
                         &function_call_snapshots,
-                        pcs.location,
+                        prev_snapshot_location,
+                        current_snapshot_location,
                     );
                     let blocked_place_value =
                         self.encode_maybe_old_place::<LookupGet, _>(heap.0, &blocked_place);
@@ -488,7 +501,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         ));
     }
 
-    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx> {
+    pub fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx> {
         self.fpcs_analysis.ctxt()
     }
 
@@ -496,7 +509,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &mut self,
         operand: &mir::Operand<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        latest: &Latest<'tcx>,
+        location: SnapshotLocation,
     ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>> {
         match operand {
             mir::Operand::Move(place) => {
@@ -506,7 +519,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 {
                     let sym_var = self.mk_fresh_symvar(place.ty(self.body, self.tcx).ty);
                     heap.insert_maybe_old_place(
-                        MaybeOldPlace::new(place.0, Some(latest.get(place.0, self.ctxt()))),
+                        MaybeOldPlace::new(place.0, Some(location)),
                         sym_var,
                     );
                     Some(sym_var)
@@ -534,13 +547,13 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         base_value: SymValue<'sym, 'tcx, S::SymValSynthetic>,
         places: impl Iterator<Item = MaybeOldPlace<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: impl Copy + Into<SnapshotLocation>,
+        curr_snapshot_location: SnapshotLocation,
     ) {
         for f in places {
             let value = self
                 .arena
                 .mk_projection(f.last_projection().unwrap().1, base_value);
-            heap.insert(f, value, location);
+            heap.insert(f, value, curr_snapshot_location);
         }
     }
 
@@ -548,7 +561,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &self,
         expand: RepackExpand<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        curr_snapshot_location: SnapshotLocation,
         take: bool,
     ) {
         let value = if take {
@@ -561,7 +574,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             value,
             expansion.into_iter().map(|p| p.into()),
             heap,
-            SnapshotLocation::After(location),
+            curr_snapshot_location,
         );
     }
 
@@ -569,7 +582,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         &self,
         collapse: RepackCollapse<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        curr_snapshot_location: SnapshotLocation,
     ) {
         let args = if let Some(from) = collapse
             .downcast_place(self.fpcs_analysis.ctxt())
@@ -604,7 +617,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             AggregateKind::pcs(place_ty.ty, place_ty.variant_index),
             self.arena.alloc_slice(&args),
         );
-        heap.insert(collapse.to(), value, SnapshotLocation::After(location));
+        heap.insert(collapse.to(), value, curr_snapshot_location);
     }
 
     fn collapse_place_from(
@@ -612,7 +625,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         place: MaybeOldPlace<'tcx>,
         from: MaybeOldPlace<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        curr_snapshot_location: SnapshotLocation,
     ) {
         let place_ty = place.ty(self.fpcs_analysis.ctxt());
         let args: Vec<_> = if from.place().is_downcast_of(place.place()).is_some()
@@ -647,7 +660,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             AggregateKind::pcs(place_ty.ty, place_ty.variant_index),
             self.arena.alloc_slice(&args),
         );
-        heap.insert(place, value, SnapshotLocation::After(location));
+        heap.insert(place, value, curr_snapshot_location);
     }
 }
 
