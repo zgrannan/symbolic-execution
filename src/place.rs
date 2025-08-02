@@ -11,7 +11,7 @@ pub struct Place<'tcx>(pub pcg::utils::Place<'tcx>);
 
 impl<'tcx> From<Place<'tcx>> for MaybeOldPlace<'tcx> {
     fn from(place: Place<'tcx>) -> Self {
-        MaybeOldPlace::Current { place: place.0 }
+        MaybeOldPlace::Current(place.0)
     }
 }
 

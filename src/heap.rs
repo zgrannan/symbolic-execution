@@ -9,7 +9,7 @@ use crate::visualization::OutputMode;
 use crate::{place::Place, VisFormat};
 use pcg::pcg::MaybeHasLocation;
 use pcg::utils::display::DisplayWithCompilerCtxt;
-use pcg::utils::place::maybe_old::MaybeOldPlace;
+use pcg::utils::place::maybe_old::{MaybeLabelledPlace, MaybeOldPlace};
 use pcg::utils::HasPlace;
 use pcg::utils::{CompilerCtxt, PlaceSnapshot, SnapshotLocation};
 use std::collections::BTreeMap;
@@ -58,7 +58,7 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
     pub fn snapshot_values(&mut self, block: mir::BasicBlock) {
         for (place, value) in &self.0.current_values() {
             self.0.insert(
-                MaybeOldPlace::OldPlace(PlaceSnapshot::new(
+                MaybeLabelledPlace::Labelled(PlaceSnapshot::new(
                     place.clone(),
                     SnapshotLocation::before_block(block),
                 )),
@@ -77,9 +77,9 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
     ) {
         let place: MaybeOldPlace<'tcx> = place.into();
         self.insert_maybe_old_place(place.clone(), value);
-        if let MaybeOldPlace::Current { place } = place {
+        if let MaybeOldPlace::Current(place) = place {
             self.insert_maybe_old_place(
-                MaybeOldPlace::OldPlace(PlaceSnapshot::new(place, location.into())),
+                MaybeOldPlace::Labelled(PlaceSnapshot::new(place, location.into())),
                 value,
             );
         }
