@@ -44,7 +44,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         );
         let post_main_loc = AnalysisLocation::new(location, EvalStmtPhase::PostMain);
         let curr_snapshot_location = SnapshotLocation::Before(post_main_loc);
-        self.handle_reborrow_added_edges(
+        self.handle_borrow_pcg_added_edges(
             pcg.borrow_pcg_actions(EvalStmtPhase::PostMain),
             &mut SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena),
             curr_snapshot_location,
@@ -78,14 +78,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             .collect::<Vec<_>>();
         self.handle_repack_collapses(&repacks, &mut heap, curr_snapshot_location);
         self.handle_repack_expands(&repacks, &mut heap, curr_snapshot_location);
-        self.handle_reborrow_added_edges(
+        self.handle_borrow_pcg_added_edges(
             actions.borrow_pcg_actions(),
             &mut heap,
             curr_snapshot_location,
         );
     }
 
-    fn handle_reborrow_added_edges(
+    fn handle_borrow_pcg_added_edges(
         &self,
         borrow_pcg_actions: BorrowPcgActions<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
@@ -94,6 +94,19 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         for action in borrow_pcg_actions.iter() {
             if let BorrowPcgActionKind::AddEdge { edge, .. } = action.kind() {
                 match edge.kind() {
+                    BorrowPcgEdgeKind::Deref(deref_edge) => {
+                        let value = self.encode_maybe_old_place::<LookupGet, _>(
+                            heap.0,
+                            &deref_edge.blocked_place(),
+                        );
+
+                        self.explode_value(
+                            value,
+                            vec![deref_edge.deref_place().into()].into_iter(),
+                            heap,
+                            curr_snapshot_location,
+                        );
+                    }
                     BorrowPcgEdgeKind::BorrowPcgExpansion(ep) => {
                         let ep: BorrowPcgExpansion<'tcx, MaybeOldPlace<'tcx>> =
                             if let Ok(ep) = (ep.clone()).try_into() {

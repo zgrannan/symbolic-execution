@@ -47,7 +47,7 @@ use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
 use pcg::utils::display::DisplayWithCompilerCtxt;
-use pcg::utils::maybe_old::MaybeOldPlace;
+use pcg::utils::maybe_old::{MaybeLabelledPlace, MaybeOldPlace};
 use pcg::utils::maybe_remote::MaybeRemotePlace;
 use pcg::utils::HasPlace;
 use pcg::{borrow_pcg::edge::abstraction::AbstractionType, pcg::MaybeHasLocation};
@@ -65,7 +65,7 @@ use pcg::{
     free_pcs::{PcgLocation, RepackExpand},
     utils::AnalysisLocation,
 };
-use pcg::{pcg::PCGNode, utils::SnapshotLocation};
+use pcg::{pcg::PcgNode, utils::SnapshotLocation};
 use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
 use semantics::VerifierSemantics;
@@ -250,12 +250,17 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     );
                 }
             }
+            BorrowPcgEdgeKind::Deref(deref_edge) => {
+                let base_place = deref_edge.blocked_place();
+                let expansion_place = deref_edge.deref_place();
+                self.collapse_place_from(base_place, expansion_place, heap, curr_snapshot_location);
+            }
             BorrowPcgEdgeKind::BorrowPcgExpansion(borrow_pcg_expansion) => {
                 match (
                     borrow_pcg_expansion.base(),
                     borrow_pcg_expansion.expansion()[0],
                 ) {
-                    (PCGNode::Place(base), PCGNode::Place(expansion)) => {
+                    (PcgNode::Place(base), PcgNode::Place(expansion)) => {
                         self.collapse_place_from(base, expansion, heap, curr_snapshot_location);
                     }
                     _ => {
@@ -324,7 +329,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 _ => {
                     for input in abstraction_edge.inputs().iter() {
                         match **input {
-                            PCGNode::Place(MaybeRemotePlace::Local(place)) => {
+                            PcgNode::Place(MaybeRemotePlace::Local(place)) => {
                                 heap.insert(
                                     place,
                                     self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
@@ -406,7 +411,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let remote_place = MaybeRemotePlace::place_assigned_to_local(arg);
                     let blocked_place =
                         match borrow_state.get_place_blocking(remote_place, self.ctxt()) {
-                            Some(blocked_place) => blocked_place,
+                            Some(blocked_place) => {
+                                eprintln!("Blocked place: {:?}", blocked_place);
+                                blocked_place
+                            }
                             None => {
                                 eprintln!(
                                     "{:?} No blocked place found for {:?} in path {:?}",
@@ -584,10 +592,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         curr_snapshot_location: SnapshotLocation,
     ) {
-        let args = if let Some(from) = collapse
-            .downcast_place(self.fpcs_analysis.ctxt())
-            .or(collapse.box_deref_place(self.fpcs_analysis.ctxt()))
-        {
+        let args = if let Some(from) = collapse.box_deref_place(self.fpcs_analysis.ctxt()) {
             vec![heap.0.take(&from).unwrap_or_else(|| {
                 self.mk_internal_err_expr(
                     format!("Place {:?} not found in heap[collapse]", from),
@@ -595,22 +600,42 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 )
             })]
         } else {
-            collapse
-                .to()
-                .expand_field(None, self.fpcs_analysis.ctxt())
-                .unwrap()
-                .iter()
-                .map(|p| {
-                    let place_to_take: MaybeOldPlace<'tcx> = (*p).into();
-                    self.encode_place_opt::<LookupTake, MaybeOldPlace<'tcx>>(heap.0, &place_to_take)
+            let place_ty = collapse.to().ty(self.fpcs_analysis.ctxt());
+            if place_ty.ty.is_enum() && place_ty.variant_index.is_none() {
+                let place_to_take = heap.0.current_values().iter().find_map(|(p, _)| {
+                    if p.is_downcast_of(collapse.to()).is_some() {
+                        Some(*p)
+                    } else {
+                        None
+                    }
+                });
+                vec![self
+                    .encode_place_opt::<LookupTake, MaybeLabelledPlace<'tcx>>(
+                        heap.0,
+                        &place_to_take.unwrap().into(),
+                    )
+                    .unwrap()]
+            } else {
+                collapse
+                    .to()
+                    .expand_field(None, self.fpcs_analysis.ctxt())
+                    .unwrap()
+                    .iter()
+                    .map(|p| {
+                        let place_to_take: MaybeOldPlace<'tcx> = (*p).into();
+                        self.encode_place_opt::<LookupTake, MaybeOldPlace<'tcx>>(
+                            heap.0,
+                            &place_to_take,
+                        )
                         .unwrap_or_else(|| {
                             self.mk_internal_err_expr(
                                 format!("Place {:?} not found in heap[collapse]", place_to_take),
                                 place_to_take.ty(self.fpcs_analysis.ctxt()).ty,
                             )
                         })
-                })
-                .collect()
+                    })
+                    .collect()
+            }
         };
         let place_ty = collapse.to().ty(self.fpcs_analysis.ctxt());
         let value = self.arena.mk_aggregate(
