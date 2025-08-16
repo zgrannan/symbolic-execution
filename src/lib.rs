@@ -96,7 +96,7 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     pub tcx: TyCtxt<'tcx>,
     pub def_id: LocalDefId,
     pub body: &'mir Body<'tcx>,
-    fpcs_analysis: PcgOutput<'mir, 'tcx, &'sym bumpalo::Bump>,
+    fpcs_analysis: PcgOutput<'mir, 'tcx>,
     havoc: LoopData,
     fresh_symvars: Vec<ty::Ty<'tcx>>,
     pub arena: &'sym SymExContext<'tcx>,
