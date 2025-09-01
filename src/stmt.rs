@@ -1,4 +1,4 @@
-use pcg::free_pcs::PcgBasicBlock;
+use pcg::results::PcgBasicBlock;
 use pcg::pcg::EvalStmtPhase;
 use pcg::utils::{AnalysisLocation, SnapshotLocation};
 

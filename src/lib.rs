@@ -62,7 +62,8 @@ use pcg::{
     utils::CompilerCtxt,
 };
 use pcg::{
-    free_pcs::{PcgLocation, RepackExpand},
+    results::PcgLocation,
+    free_pcs::RepackExpand,
     utils::AnalysisLocation,
 };
 use pcg::{pcg::PcgNode, utils::SnapshotLocation};

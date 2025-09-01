@@ -1,4 +1,4 @@
-use pcg::free_pcs::{PcgLocation, PcgTerminator};
+use pcg::results::{PcgLocation, PcgTerminator};
 use pcg::utils::SnapshotLocation;
 
 use crate::context::ErrorLocation;
