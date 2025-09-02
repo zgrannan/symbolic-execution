@@ -61,11 +61,7 @@ use pcg::{
     },
     utils::CompilerCtxt,
 };
-use pcg::{
-    results::PcgLocation,
-    free_pcs::RepackExpand,
-    utils::AnalysisLocation,
-};
+use pcg::{free_pcs::RepackExpand, results::PcgLocation, utils::AnalysisLocation};
 use pcg::{pcg::PcgNode, utils::SnapshotLocation};
 use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
@@ -274,72 +270,57 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     // A snapshot may not exist if the call is specification "ghost" code, e.g. old()
                     // statements applied to mutable refs in Prusti.
                     if let Some(snapshot) = function_call_snapshots.get_snapshot(&c.location()) {
-                        for input in c.edge().inputs() {
-                            for output in c.edge().outputs() {
-                                let input: RegionProjection<'tcx> = (*input).into();
-                                let idx = snapshot.index_of_arg_local(input.local().unwrap());
-                                let input_place = match input.deref(self.ctxt()) {
-                                    Some(place) => place,
-                                    None => {
-                                        // TODO: region projection
-                                        continue;
-                                    }
-                                };
-                                let output_place = match (*output).deref(self.ctxt()) {
-                                    Some(place) => place,
-                                    None => {
-                                        // TODO: region projection
-                                        continue;
-                                    }
-                                };
-                                if input_place == output_place {
-                                    // This is the abstraction edge connecting the "before" and "after"
-                                    // values of function call inputs. For now we ignore this.
-                                    continue;
-                                }
-                                let value = self.arena.mk_backwards_fn(BackwardsFn::new(
-                                    self.arena.tcx,
-                                    c.def_id().unwrap(),
-                                    c.substs().unwrap(),
-                                    Some(self.def_id.into()),
-                                    snapshot.args(),
-                                    self.arena.mk_ref(
-                                        self.encode_maybe_old_place::<LookupGet, _>(
-                                            heap.0,
-                                            &output_place,
-                                        ),
-                                        Mutability::Mut,
-                                    ),
-                                    Local::from_usize(idx + 1),
-                                ));
-                                assert!(!snapshot
-                                    .arg(idx)
-                                    .kind
-                                    .ty(self.tcx)
-                                    .rust_ty()
-                                    .is_primitive());
-                                assert_eq!(value.ty(self.tcx), snapshot.arg(idx).ty(self.tcx));
-                                heap.insert_maybe_old_place(
-                                    input_place,
-                                    self.arena.mk_projection(ProjectionElem::Deref, value),
-                                );
+                        let input = c.edge().input();
+                        let output = c.edge().output();
+                        let input: RegionProjection<'tcx> = (*input).into();
+                        let idx = snapshot.index_of_arg_local(input.local().unwrap());
+                        let input_place = match input.deref(self.ctxt()) {
+                            Some(place) => place,
+                            None => {
+                                // TODO: region projection
+                                return;
                             }
+                        };
+                        let output_place = match (*output).deref(self.ctxt()) {
+                            Some(place) => place,
+                            None => {
+                                // TODO: region projection
+                                return;
+                            }
+                        };
+                        if input_place == output_place {
+                            // This is the abstraction edge connecting the "before" and "after"
+                            // values of function call inputs. For now we ignore this.
+                            return;
                         }
+                        let value = self.arena.mk_backwards_fn(BackwardsFn::new(
+                            self.arena.tcx,
+                            c.def_id().unwrap(),
+                            c.substs().unwrap(),
+                            Some(self.def_id.into()),
+                            snapshot.args(),
+                            self.arena.mk_ref(
+                                self.encode_maybe_old_place::<LookupGet, _>(heap.0, &output_place),
+                                Mutability::Mut,
+                            ),
+                            Local::from_usize(idx + 1),
+                        ));
+                        assert!(!snapshot.arg(idx).kind.ty(self.tcx).rust_ty().is_primitive());
+                        assert_eq!(value.ty(self.tcx), snapshot.arg(idx).ty(self.tcx));
+                        heap.insert_maybe_old_place(
+                            input_place,
+                            self.arena.mk_projection(ProjectionElem::Deref, value),
+                        );
                     }
                 }
                 _ => {
-                    for input in abstraction_edge.inputs().iter() {
-                        match **input {
-                            PcgNode::Place(MaybeRemotePlace::Local(place)) => {
+                            if let PcgNode::Place(MaybeRemotePlace::Local(place)) = *abstraction_edge.input() {
                                 heap.insert(
                                     place,
                                     self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
                                     curr_snapshot_location,
                                 );
                             }
-                            _ => {}
-                        }
-                    }
                 }
             },
             BorrowPcgEdgeKind::BorrowFlow(block_edge) => {
