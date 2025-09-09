@@ -30,6 +30,7 @@ pub mod visualization;
 use crate::{
     rustc_interface::{
         ast::Mutability,
+        borrowck::consumers::RegionInferenceContext,
         hir::def_id::LocalDefId,
         middle::{
             mir::{self, Body, Local, Location, PlaceElem, ProjectionElem},
@@ -45,23 +46,23 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcs::borrow_pcg::edge::abstraction::AbstractionType;
-use pcs::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
-use pcs::borrow_pcg::edge_data::EdgeData;
-use pcs::free_pcs::PcgLocation;
-use pcs::utils::display::DisplayWithRepacker;
-use pcs::utils::maybe_old::MaybeOldPlace;
-use pcs::utils::maybe_remote::MaybeRemotePlace;
-use pcs::utils::HasPlace;
-use pcs::{
+use pcg::utils::display::DisplayWithCompilerCtxt;
+use pcg::utils::maybe_old::{MaybeLabelledPlace, MaybeOldPlace};
+use pcg::utils::maybe_remote::MaybeRemotePlace;
+use pcg::utils::HasPlace;
+use pcg::{borrow_pcg::edge::abstraction::AbstractionType, pcg::MaybeHasLocation};
+use pcg::{borrow_pcg::edge::kind::BorrowPcgEdgeKind, pcg::EvalStmtPhase};
+use pcg::{borrow_pcg::edge::outlives::BorrowFlowEdgeKind, free_pcs::RepackCollapse};
+use pcg::{borrow_pcg::edge_data::EdgeData, PcgOutput};
+use pcg::{
     borrow_pcg::{
-        latest::Latest, region_projection::RegionProjection, unblock_graph::BorrowPCGUnblockAction,
+        region_projection::RegionProjection, unblock_graph::BorrowPcgUnblockAction,
         unblock_graph::UnblockGraph,
     },
-    utils::PlaceRepacker,
-    FpcsOutput,
+    utils::CompilerCtxt,
 };
-use pcs::{combined_pcs::PCGNode, utils::SnapshotLocation};
+use pcg::{free_pcs::RepackExpand, results::PcgLocation, utils::AnalysisLocation};
+use pcg::{pcg::PcgNode, utils::SnapshotLocation};
 use predicate::Predicate;
 use results::{BackwardsFacts, ResultPath, ResultPaths, SymbolicExecutionResult};
 use semantics::VerifierSemantics;
@@ -92,7 +93,7 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     pub tcx: TyCtxt<'tcx>,
     pub def_id: LocalDefId,
     pub body: &'mir Body<'tcx>,
-    fpcs_analysis: FpcsOutput<'mir, 'tcx>,
+    fpcs_analysis: PcgOutput<'mir, 'tcx>,
     havoc: LoopData,
     fresh_symvars: Vec<ty::Ty<'tcx>>,
     pub arena: &'sym SymExContext<'tcx>,
@@ -102,6 +103,7 @@ pub struct SymbolicExecution<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx>>
     new_symvars_allowed: bool,
     result_paths: ResultPaths<'sym, 'tcx, S::SymValSynthetic>,
     debug_paths: Vec<Path<'sym, 'tcx, S::SymValSynthetic>>,
+    region_infer_ctxt: &'mir RegionInferenceContext<'tcx>,
 }
 
 trait LookupType {
@@ -158,6 +160,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             fresh_symvars: vec![],
             result_paths: ResultPaths::new(),
             debug_paths: vec![],
+            region_infer_ctxt: params.region_infer_ctxt,
         }
     }
 
@@ -187,8 +190,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>> {
         let place: MaybeOldPlace<'tcx> = (*place).into();
         if let Some(PlaceElem::Deref) = place.place().projection.last() {
-            if let Some(base_place) = place.place().prefix_place(self.repacker()) {
-                if base_place.is_ref(self.repacker()) {
+            if let Some(base_place) = place.place().prefix_place() {
+                if base_place.is_ref(self.ctxt()) {
                     return Some(self.arena.mk_projection(
                         ProjectionElem::Deref,
                         T::lookup(heap, &MaybeOldPlace::new(base_place, place.location()))?,
@@ -216,124 +219,156 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 self.mk_internal_err_expr(
                     format!(
                         "Heap lookup failed for place [{}: {:?}] in {}",
-                        place.to_short_string(self.repacker()),
-                        place.place().ty(self.repacker()),
+                        place.to_short_string(self.ctxt()),
+                        place.place().ty(self.ctxt()),
                         heap_str
                     ),
-                    place.place().ty(self.repacker()).ty,
+                    place.place().ty(self.ctxt()).ty,
                 )
             })
     }
 
-    fn apply_unblock_actions(
+    fn apply_unblock_action(
         &mut self,
-        actions: Vec<BorrowPCGUnblockAction<'tcx>>,
+        action: BorrowPcgUnblockAction<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         function_call_snapshots: &FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        prev_snapshot_location: SnapshotLocation,
+        curr_snapshot_location: SnapshotLocation,
     ) {
-        for action in actions {
-            match action.edge().kind() {
-                BorrowPCGEdgeKind::Borrow(borrow) => {
-                    if borrow.is_mut(self.repacker()) {
-                        self.handle_removed_borrow(
-                            borrow.blocked_place(),
-                            &borrow.deref_place(self.repacker()),
-                            heap,
-                            location,
+        match action.edge().kind() {
+            BorrowPcgEdgeKind::Borrow(borrow) => {
+                if borrow.is_mut(self.ctxt()) {
+                    self.handle_removed_borrow(
+                        borrow.blocked_place(),
+                        &borrow.deref_place(self.ctxt()),
+                        heap,
+                        curr_snapshot_location,
+                    );
+                }
+            }
+            BorrowPcgEdgeKind::Deref(deref_edge) => {
+                let base_place = deref_edge.blocked_place();
+                let expansion_place = deref_edge.deref_place();
+                self.collapse_place_from(base_place, expansion_place, heap, curr_snapshot_location);
+            }
+            BorrowPcgEdgeKind::BorrowPcgExpansion(borrow_pcg_expansion) => {
+                match (
+                    borrow_pcg_expansion.base(),
+                    borrow_pcg_expansion.expansion()[0],
+                ) {
+                    (PcgNode::Place(base), PcgNode::Place(expansion)) => {
+                        self.collapse_place_from(base, expansion, heap, curr_snapshot_location);
+                    }
+                    _ => {
+                        // TODO: handle errors
+                    }
+                }
+            }
+            BorrowPcgEdgeKind::Abstraction(abstraction_edge) => match &abstraction_edge {
+                AbstractionType::FunctionCall(c) => {
+                    // A snapshot may not exist if the call is specification "ghost" code, e.g. old()
+                    // statements applied to mutable refs in Prusti.
+                    if let Some(snapshot) = function_call_snapshots.get_snapshot(&c.location()) {
+                        let input = c.edge().input();
+                        let output = c.edge().output();
+                        let Some(input) = input.try_to_local_lifetime_projection() else {
+                            return;
+                        };
+                        let idx = snapshot.index_of_arg_local(input.local());
+                        let input_place = match input.deref(self.ctxt()) {
+                            Some(place) => place,
+                            None => {
+                                // TODO: region projection
+                                return;
+                            }
+                        };
+                        let output_place = match (*output).deref(self.ctxt()) {
+                            Some(place) => place,
+                            None => {
+                                // TODO: region projection
+                                return;
+                            }
+                        };
+                        if input_place == output_place {
+                            // This is the abstraction edge connecting the "before" and "after"
+                            // values of function call inputs. For now we ignore this.
+                            return;
+                        }
+                        let value = self.arena.mk_backwards_fn(BackwardsFn::new(
+                            self.arena.tcx,
+                            c.def_id().unwrap(),
+                            c.substs().unwrap(),
+                            Some(self.def_id.into()),
+                            snapshot.args(),
+                            self.arena.mk_ref(
+                                self.encode_maybe_old_place::<LookupGet, _>(heap.0, &output_place),
+                                Mutability::Mut,
+                            ),
+                            Local::from_usize(idx + 1),
+                        ));
+                        assert!(!snapshot.arg(idx).kind.ty(self.tcx).rust_ty().is_primitive());
+                        assert_eq!(value.ty(self.tcx), snapshot.arg(idx).ty(self.tcx));
+                        heap.insert_maybe_old_place(
+                            input_place,
+                            self.arena.mk_projection(ProjectionElem::Deref, value),
                         );
                     }
                 }
-                BorrowPCGEdgeKind::BorrowPCGExpansion(borrow_pcg_expansion) => {
-                    match (
-                        borrow_pcg_expansion.base(),
-                        borrow_pcg_expansion.expansion()[0],
-                    ) {
-                        (PCGNode::Place(base), PCGNode::Place(expansion)) => {
-                            self.collapse_place_from(base, expansion, heap, location);
-                        }
-                        _ => {
-                            // TODO: handle errors
-                        }
-                    }
-                }
-                BorrowPCGEdgeKind::Abstraction(abstraction_edge) => match &abstraction_edge {
-                    AbstractionType::FunctionCall(c) => {
-                        // A snapshot may not exist if the call is specification "ghost" code, e.g. old()
-                        // statements applied to mutable refs in Prusti.
-                        if let Some(snapshot) = function_call_snapshots.get_snapshot(&c.location())
-                        {
-                            for input in abstraction_edge.inputs() {
-                                for output in abstraction_edge.outputs() {
-                                    let input: RegionProjection<'tcx> = input.try_into().unwrap();
-                                    let idx = snapshot.index_of_arg_local(input.local().unwrap());
-                                    let input_place = match input.deref(self.repacker()) {
-                                        Some(place) => place,
-                                        None => {
-                                            // TODO: region projection
-                                            continue;
-                                        }
-                                    };
-                                    let output_place = match output.deref(self.repacker()) {
-                                        Some(place) => place,
-                                        None => {
-                                            // TODO: region projection
-                                            continue;
-                                        }
-                                    };
-                                    let value = self.arena.mk_backwards_fn(BackwardsFn::new(
-                                        self.arena.tcx,
-                                        c.def_id(),
-                                        c.substs(),
-                                        Some(self.def_id.into()),
-                                        snapshot.args(),
-                                        self.arena.mk_ref(
-                                            self.encode_maybe_old_place::<LookupGet, _>(
-                                                heap.0,
-                                                &output_place,
-                                            ),
-                                            Mutability::Mut,
-                                        ),
-                                        Local::from_usize(idx + 1),
-                                    ));
-                                    assert!(!snapshot
-                                        .arg(idx)
-                                        .kind
-                                        .ty(self.tcx)
-                                        .rust_ty()
-                                        .is_primitive());
-                                    assert_eq!(value.ty(self.tcx), snapshot.arg(idx).ty(self.tcx));
-                                    heap.insert_maybe_old_place(
-                                        input_place,
-                                        self.arena.mk_projection(ProjectionElem::Deref, value),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    _ => {
-                        // TODO: loops
-                    }
-                },
-                BorrowPCGEdgeKind::Outlives(block_edge) => {
-                    for input in block_edge.blocked_nodes(self.repacker()).iter() {
-                        if let Ok(place) = TryInto::<MaybeOldPlace<'tcx>>::try_into(*input) {
-                            heap.insert(
-                                place,
-                                self.mk_fresh_symvar(place.ty(self.repacker()).ty),
-                                location,
-                            );
-                        }
-                    }
-                }
                 _ => {
-                    todo!()
+                    if let PcgNode::Place(MaybeRemotePlace::Local(place)) =
+                        *abstraction_edge.input(self.ctxt())
+                    {
+                        heap.insert(
+                            place,
+                            self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
+                            curr_snapshot_location,
+                        );
+                    }
+                }
+            },
+            BorrowPcgEdgeKind::BorrowFlow(block_edge) => {
+                if matches!(block_edge.kind(), BorrowFlowEdgeKind::Move) {
+                    self.handle_removed_borrow(
+                        block_edge.long().deref(self.ctxt()).unwrap().into(),
+                        &block_edge.short().deref(self.ctxt()).unwrap(),
+                        heap,
+                        curr_snapshot_location,
+                    );
+                }
+                for input in block_edge.blocked_nodes(self.ctxt()) {
+                    if let Ok(place) = TryInto::<MaybeOldPlace<'tcx>>::try_into(input) {
+                        heap.insert(
+                            place,
+                            self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
+                            curr_snapshot_location,
+                        );
+                    }
                 }
             }
         }
     }
 
-    #[tracing::instrument(skip(self,path,heap_data,function_call_snapshots, pcs))]
+    fn apply_unblock_actions(
+        &mut self,
+        actions: Vec<BorrowPcgUnblockAction<'tcx>>,
+        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
+        function_call_snapshots: &FunctionCallSnapshots<'sym, 'tcx, S::SymValSynthetic>,
+        prev_snapshot_location: SnapshotLocation,
+        curr_snapshot_location: SnapshotLocation,
+    ) {
+        for action in actions {
+            self.apply_unblock_action(
+                action,
+                heap,
+                function_call_snapshots,
+                prev_snapshot_location,
+                curr_snapshot_location,
+            );
+        }
+    }
+
+    #[tracing::instrument(skip(self, path, heap_data, function_call_snapshots, pcs))]
     fn compute_backwards_facts(
         &mut self,
         path: &AcyclicPath,
@@ -344,11 +379,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let return_place: mir::Place<'tcx> = mir::RETURN_PLACE.into();
         let return_place: Place<'tcx> = return_place.into();
         let mut facts = BackwardsFacts::new();
+        let prev_snapshot_location =
+            SnapshotLocation::Before(AnalysisLocation::new(pcs.location, EvalStmtPhase::last()));
+        let current_snapshot_location =
+            SnapshotLocation::after_statement_at(pcs.location, self.ctxt());
         if return_place.is_mut_ref(self.body, self.tcx) {
             let borrow_state = {
-                let mut mut_borrow_state = pcs.borrows.post_main().as_ref().clone();
+                let mut mut_borrow_state = pcs.states[EvalStmtPhase::PostMain].borrow_pcg().clone();
                 // let mut mut_borrow_state = pcs.borrows.post_main().clone();
-                mut_borrow_state.filter_for_path(path.blocks());
+                mut_borrow_state.filter_for_path(path.blocks(), self.ctxt());
                 mut_borrow_state
             };
             for arg in self.body.args_iter() {
@@ -357,8 +396,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 if arg_place.is_mut_ref(self.body, self.tcx) {
                     let remote_place = MaybeRemotePlace::place_assigned_to_local(arg);
                     let blocked_place =
-                        match borrow_state.get_place_blocking(remote_place, self.repacker()) {
-                            Some(blocked_place) => blocked_place,
+                        match borrow_state.get_place_blocking(remote_place, self.ctxt()) {
+                            Some(blocked_place) => {
+                                eprintln!("Blocked place: {:?}", blocked_place);
+                                blocked_place
+                            }
                             None => {
                                 eprintln!(
                                     "{:?} No blocked place found for {:?} in path {:?}",
@@ -370,24 +412,25 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     let mut heap = heap_data.clone();
                     let mut heap = SymbolicHeap::new(&mut heap, self.tcx, self.body, &self.arena);
                     heap.insert(
-                        return_place.project_deref(self.repacker()),
+                        return_place.project_deref(self.ctxt()),
                         self.arena.mk_var(
                             SymVar::ReservedBackwardsFnResult,
                             return_place
-                                .project_deref(self.repacker())
+                                .project_deref(self.ctxt())
                                 .ty(self.body, self.tcx)
                                 .ty,
                         ),
-                        pcs.location,
+                        current_snapshot_location,
                     );
-                    let ug = UnblockGraph::for_node(blocked_place, &borrow_state, self.repacker());
+                    let ug = UnblockGraph::for_node(blocked_place, &borrow_state, self.ctxt());
 
-                    let actions = ug.actions(self.repacker()).unwrap();
+                    let actions = ug.actions(self.ctxt()).unwrap();
                     self.apply_unblock_actions(
                         actions,
                         &mut heap,
                         &function_call_snapshots,
-                        pcs.location,
+                        prev_snapshot_location,
+                        current_snapshot_location,
                     );
                     let blocked_place_value =
                         self.encode_maybe_old_place::<LookupGet, _>(heap.0, &blocked_place);
@@ -452,15 +495,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         ));
     }
 
-    fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
-        PlaceRepacker::new(&self.body, self.tcx)
+    pub fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx> {
+        self.fpcs_analysis.ctxt()
     }
 
     fn havoc_operand_ref(
         &mut self,
         operand: &mir::Operand<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        latest: &Latest<'tcx>,
+        location: SnapshotLocation,
     ) -> Option<SymValue<'sym, 'tcx, S::SymValSynthetic>> {
         match operand {
             mir::Operand::Move(place) => {
@@ -469,8 +512,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     place.ty(self.body, self.tcx).ty.kind()
                 {
                     let sym_var = self.mk_fresh_symvar(place.ty(self.body, self.tcx).ty);
-                    let latest = latest.get(place.0);
-                    heap.insert_maybe_old_place(MaybeOldPlace::new(place.0, Some(latest)), sym_var);
+                    heap.insert_maybe_old_place(
+                        MaybeOldPlace::new(place.0, Some(location)),
+                        sym_var,
+                    );
                     Some(sym_var)
                 } else {
                     None
@@ -496,38 +541,94 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         base_value: SymValue<'sym, 'tcx, S::SymValSynthetic>,
         places: impl Iterator<Item = MaybeOldPlace<'tcx>>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: impl Copy + Into<SnapshotLocation>,
+        curr_snapshot_location: SnapshotLocation,
     ) {
         for f in places {
             let value = self
                 .arena
                 .mk_projection(f.last_projection().unwrap().1, base_value);
-            heap.insert(f, value, location);
+            heap.insert(f, value, curr_snapshot_location);
         }
     }
 
-    fn expand_place_with_guide(
+    fn handle_expand(
         &self,
-        place: &pcs::utils::Place<'tcx>,
-        guide: &pcs::utils::Place<'tcx>,
+        expand: RepackExpand<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        curr_snapshot_location: SnapshotLocation,
         take: bool,
     ) {
         let value = if take {
-            self.encode_maybe_old_place::<LookupTake, _>(heap.0, place)
+            self.encode_maybe_old_place::<LookupTake, _>(heap.0, &expand.from())
         } else {
-            self.encode_maybe_old_place::<LookupGet, _>(heap.0, place)
+            self.encode_maybe_old_place::<LookupGet, _>(heap.0, &expand.from())
         };
-        let expansion = place
-            .expand_one_level(*guide, self.fpcs_analysis.repacker())
-            .unwrap();
+        let expansion = expand.target_places(self.fpcs_analysis.ctxt());
         self.explode_value(
             value,
-            expansion.expansion().into_iter().map(|p| p.into()),
+            expansion.into_iter().map(|p| p.into()),
             heap,
-            location,
+            curr_snapshot_location,
         );
+    }
+
+    fn handle_collapse(
+        &self,
+        collapse: RepackCollapse<'tcx>,
+        heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
+        curr_snapshot_location: SnapshotLocation,
+    ) {
+        let args = if let Some(from) = collapse.box_deref_place(self.fpcs_analysis.ctxt()) {
+            vec![heap.0.take(&from).unwrap_or_else(|| {
+                self.mk_internal_err_expr(
+                    format!("Place {:?} not found in heap[collapse]", from),
+                    from.ty(self.fpcs_analysis.ctxt()).ty,
+                )
+            })]
+        } else {
+            let place_ty = collapse.to().ty(self.fpcs_analysis.ctxt());
+            if place_ty.ty.is_enum() && place_ty.variant_index.is_none() {
+                let place_to_take = heap.0.current_values().iter().find_map(|(p, _)| {
+                    if p.is_downcast_of(collapse.to()).is_some() {
+                        Some(*p)
+                    } else {
+                        None
+                    }
+                });
+                vec![self
+                    .encode_place_opt::<LookupTake, MaybeLabelledPlace<'tcx>>(
+                        heap.0,
+                        &place_to_take.unwrap().into(),
+                    )
+                    .unwrap()]
+            } else {
+                collapse
+                    .to()
+                    .expand_field(None, self.fpcs_analysis.ctxt())
+                    .unwrap()
+                    .iter()
+                    .map(|p| {
+                        let place_to_take: MaybeOldPlace<'tcx> = (*p).into();
+                        self.encode_place_opt::<LookupTake, MaybeOldPlace<'tcx>>(
+                            heap.0,
+                            &place_to_take,
+                        )
+                        .unwrap_or_else(|| {
+                            self.mk_internal_err_expr(
+                                format!("Place {:?} not found in heap[collapse]", place_to_take),
+                                place_to_take.ty(self.fpcs_analysis.ctxt()).ty,
+                            )
+                        })
+                    })
+                    .collect()
+            }
+        };
+        let place_ty = collapse.to().ty(self.fpcs_analysis.ctxt());
+        let value = self.arena.mk_aggregate(
+            AggregateKind::pcs(place_ty.ty, place_ty.variant_index),
+            self.arena.alloc_slice(&args),
+        );
+        heap.insert(collapse.to(), value, curr_snapshot_location);
     }
 
     fn collapse_place_from(
@@ -535,22 +636,22 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         place: MaybeOldPlace<'tcx>,
         from: MaybeOldPlace<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
-        location: Location,
+        curr_snapshot_location: SnapshotLocation,
     ) {
-        let place_ty = place.ty(self.fpcs_analysis.repacker());
+        let place_ty = place.ty(self.fpcs_analysis.ctxt());
         let args: Vec<_> = if from.place().is_downcast_of(place.place()).is_some()
             || place_ty.ty.is_box()
         {
             vec![heap.0.take(&from).unwrap_or_else(|| {
                 self.mk_internal_err_expr(
                     format!("Place {:?} not found in heap[collapse]", from),
-                    from.ty(self.fpcs_analysis.repacker()).ty,
+                    from.ty(self.fpcs_analysis.ctxt()).ty,
                 )
             })]
         } else {
             place
                 .place()
-                .expand_field(None, self.fpcs_analysis.repacker())
+                .expand_field(None, self.fpcs_analysis.ctxt())
                 .unwrap()
                 .iter()
                 .map(|p| {
@@ -560,7 +661,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         .unwrap_or_else(|| {
                             self.mk_internal_err_expr(
                                 format!("Place {:?} not found in heap[collapse]", place_to_take),
-                                place_to_take.ty(self.fpcs_analysis.repacker()).ty,
+                                place_to_take.ty(self.fpcs_analysis.ctxt()).ty,
                             )
                         })
                 })
@@ -570,7 +671,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
             AggregateKind::pcs(place_ty.ty, place_ty.variant_index),
             self.arena.alloc_slice(&args),
         );
-        heap.insert(place, value, location);
+        heap.insert(place, value, curr_snapshot_location);
     }
 }
 

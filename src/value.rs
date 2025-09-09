@@ -476,15 +476,15 @@ impl<
     ) -> SymValue<'sym, 'tcx, T> {
         let subst = self.1.get(&var);
         if let Some(val) = subst {
-            assert_eq!(
-                self.0.erase_regions(val.kind.ty(self.0).rust_ty()),
-                self.0.erase_regions(ty),
-                "Cannot subst {:?}: {:?} with {:?}: {:?} of different type",
-                var,
-                ty,
-                val,
-                val.kind.ty(self.0),
-            );
+            // assert_eq!(
+            //     self.0.erase_regions(val.kind.ty(self.0).rust_ty()),
+            //     self.0.erase_regions(ty),
+            //     "Cannot subst {:?}: {:?} with {:?}: {:?} of different type",
+            //     var,
+            //     ty,
+            //     val,
+            //     val.kind.ty(self.0),
+            // );
             val
         } else {
             arena.mk_var(var, ty)

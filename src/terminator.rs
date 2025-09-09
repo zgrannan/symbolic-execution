@@ -1,5 +1,5 @@
-use pcs::borrow_pcg::latest::Latest;
-use pcs::free_pcs::{PcgLocation, PcgTerminator};
+use pcg::results::{PcgLocation, PcgTerminator};
+use pcg::utils::SnapshotLocation;
 
 use crate::context::ErrorLocation;
 use crate::encoder::Encoder;
@@ -15,7 +15,7 @@ use crate::{semantics::VerifierSemantics, visualization::VisFormat, SymbolicExec
 
 use crate::rustc_interface::hir::def_id::DefId;
 use crate::rustc_interface::middle::{
-    mir::{self, Location, Operand},
+    mir::{self, Operand},
     ty::{self, GenericArgsRef},
 };
 use crate::rustc_interface::span::Span;
@@ -54,19 +54,20 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 let mut path = path.push(*target);
                 self.set_error_context(old_path.clone(), ErrorLocation::Terminator(*target));
                 let succ = &fpcs_terminator.succs[0];
+                let prev_snapshot_location = SnapshotLocation::After(location.location.block);
+                let curr_snapshot_location = SnapshotLocation::before_block(*target);
                 self.handle_pcg_partial(
                     &mut path,
-                    succ.borrow_ops(),
-                    &succ.owned_ops(),
-                    &succ.latest(),
-                    location.location,
+                    succ.actions(),
+                    prev_snapshot_location,
+                    curr_snapshot_location,
                 );
                 if let Some(debug_output_dir) = &self.debug_output_dir {
                     export_path_json(
                         &debug_output_dir,
                         &path,
                         StepType::Transition,
-                        self.fpcs_analysis.repacker(),
+                        self.fpcs_analysis.ctxt(),
                     );
                 }
                 paths.push(path);
@@ -124,8 +125,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         substs,
                         &mut heap,
                         &args.iter().map(|arg| &arg.node).collect(),
-                        location.location,
-                        &location.borrows.post_main().latest,
+                        location,
                         terminator.source_info.span,
                     );
 
@@ -140,7 +140,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             value,
                             postcondition,
                         } => {
-                            heap.insert(*destination, value, location.location);
+                            heap.insert(
+                                *destination,
+                                value,
+                                SnapshotLocation::After(location.location.block),
+                            );
                             if let Some(postcondition) = postcondition {
                                 path.add_path_condition(postcondition);
                             }
@@ -156,7 +160,11 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             let sym_var = self.mk_fresh_symvar(
                                 destination.ty(&self.body.local_decls, self.tcx).ty,
                             );
-                            heap.insert(*destination, sym_var, location.location);
+                            heap.insert(
+                                *destination,
+                                sym_var,
+                                SnapshotLocation::After(location.location.block),
+                            );
                             path.add_path_condition(Predicate::Postcondition {
                                 expr: sym_var,
                                 def_id: *def_id,
@@ -192,14 +200,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         substs: GenericArgsRef<'tcx>,
         heap: &mut SymbolicHeap<'heap, 'mir, 'sym, 'tcx, S::SymValSynthetic>,
         args: &Vec<&Operand<'tcx>>,
-        location: Location,
-        latest: &Latest<'tcx>,
+        location: &PcgLocation<'tcx>,
         span: Span,
     ) -> FunctionCallEffects<'sym, 'tcx, S::SymValSynthetic>
     where
         'mir: 'heap,
     {
-        if let Some(result) = S::encode_fn_call(span, self, def_id, substs, heap.0, args, location)
+        if let Some(result) =
+            S::encode_fn_call(span, self, def_id, substs, heap.0, args, location.location)
         {
             return result;
         }
@@ -235,8 +243,12 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     .iter()
                     .zip(encoded_args)
                     .map(|(operand, encoded)| {
-                        self.havoc_operand_ref(operand, heap, latest)
-                            .unwrap_or(encoded)
+                        self.havoc_operand_ref(
+                            operand,
+                            heap,
+                            SnapshotLocation::After(location.location.block),
+                        )
+                        .unwrap_or(encoded)
                     })
                     .collect::<Vec<_>>();
                 FunctionCallResult::Unknown {

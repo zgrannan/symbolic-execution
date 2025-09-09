@@ -1,5 +1,5 @@
-use pcs::utils::PlaceRepacker;
-use pcs::utils::place::maybe_old::MaybeOldPlace;
+use pcg::utils::CompilerCtxt;
+use pcg::utils::place::maybe_old::MaybeOldPlace;
 use crate::rustc_interface::middle::{
     mir::{self, tcx::PlaceTy, ProjectionElem},
     ty,
@@ -7,11 +7,11 @@ use crate::rustc_interface::middle::{
 use std::hash::Hash;
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct Place<'tcx>(pub pcs::utils::Place<'tcx>);
+pub struct Place<'tcx>(pub pcg::utils::Place<'tcx>);
 
 impl<'tcx> From<Place<'tcx>> for MaybeOldPlace<'tcx> {
     fn from(place: Place<'tcx>) -> Self {
-        MaybeOldPlace::Current { place: place.0 }
+        MaybeOldPlace::Current(place.0)
     }
 }
 
@@ -23,12 +23,12 @@ impl<'tcx> std::fmt::Debug for Place<'tcx> {
 
 impl<'tcx> From<mir::Local> for Place<'tcx> {
     fn from(value: mir::Local) -> Self {
-        Place(pcs::utils::Place::new(value, &[]))
+        Place(pcg::utils::Place::new(value, &[]))
     }
 }
 
-impl<'tcx> From<pcs::utils::Place<'tcx>> for Place<'tcx> {
-    fn from(place: pcs::utils::Place<'tcx>) -> Self {
+impl<'tcx> From<pcg::utils::Place<'tcx>> for Place<'tcx> {
+    fn from(place: pcg::utils::Place<'tcx>) -> Self {
         Place(place)
     }
 }
@@ -50,7 +50,7 @@ impl<'tcx> Place<'tcx> {
         local: mir::Local,
         projection: &'tcx [ProjectionElem<mir::Local, ty::Ty<'tcx>>],
     ) -> Self {
-        Place(pcs::utils::Place::new(local, projection))
+        Place(pcg::utils::Place::new(local, projection))
     }
 
     pub fn local(&self) -> mir::Local {
@@ -61,7 +61,7 @@ impl<'tcx> Place<'tcx> {
         &self.0.projection
     }
 
-    pub fn project_deref(&self, repacker: PlaceRepacker<'_, 'tcx>) -> Self {
+    pub fn project_deref(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
         Place(self.0.project_deref(repacker))
     }
 

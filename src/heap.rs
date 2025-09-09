@@ -7,11 +7,12 @@ use crate::rustc_interface::middle::{
 use crate::value::SymVar;
 use crate::visualization::OutputMode;
 use crate::{place::Place, VisFormat};
-use pcs::utils::{PlaceRepacker, PlaceSnapshot, SnapshotLocation};
-use pcs::utils::HasPlace;
-use pcs::utils::place::maybe_old::MaybeOldPlace;
+use pcg::pcg::MaybeHasLocation;
+use pcg::utils::display::DisplayWithCompilerCtxt;
+use pcg::utils::place::maybe_old::{MaybeLabelledPlace, MaybeOldPlace};
+use pcg::utils::HasPlace;
+use pcg::utils::{CompilerCtxt, PlaceSnapshot, SnapshotLocation};
 use std::collections::BTreeMap;
-use pcs::utils::display::DisplayWithRepacker;
 
 use super::value::{SymValue, SyntheticSymValue};
 
@@ -41,8 +42,8 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
         self.0
     }
 
-    fn repacker(&self) -> PlaceRepacker<'_, 'tcx> {
-        PlaceRepacker::new(self.2, self.1)
+    fn ctxt(&self) -> CompilerCtxt<'_, 'tcx, ()> {
+        CompilerCtxt::new(self.2, self.1, ())
     }
 
     pub fn new(
@@ -57,9 +58,9 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
     pub fn snapshot_values(&mut self, block: mir::BasicBlock) {
         for (place, value) in &self.0.current_values() {
             self.0.insert(
-                MaybeOldPlace::OldPlace(PlaceSnapshot::new(
+                MaybeLabelledPlace::Labelled(PlaceSnapshot::new(
                     place.clone(),
-                    SnapshotLocation::Start(block),
+                    SnapshotLocation::before_block(block),
                 )),
                 value,
             );
@@ -68,7 +69,7 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
 
     /// Sets the heap entry for this place to `value`. If `place` is a current
     /// place, also sets the heap entry for the place snapshot at `location`.
-    pub (crate) fn insert<P: Clone + Into<MaybeOldPlace<'tcx>>>(
+    pub(crate) fn insert<P: Clone + Into<MaybeOldPlace<'tcx>>>(
         &mut self,
         place: P,
         value: SymValue<'sym, 'tcx, T>,
@@ -76,9 +77,9 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
     ) {
         let place: MaybeOldPlace<'tcx> = place.into();
         self.insert_maybe_old_place(place.clone(), value);
-        if let MaybeOldPlace::Current { place } = place {
+        if let MaybeOldPlace::Current(place) = place {
             self.insert_maybe_old_place(
-                MaybeOldPlace::OldPlace(PlaceSnapshot::new(place, location)),
+                MaybeOldPlace::Labelled(PlaceSnapshot::new(place, location.into())),
                 value,
             );
         }
@@ -90,8 +91,8 @@ impl<'heap, 'mir, 'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>
         value: SymValue<'sym, 'tcx, T>,
     ) {
         if let Some(PlaceElem::Deref) = place.place().projection.last() {
-            if let Some(base_place) = place.place().prefix_place(self.repacker()) {
-                if let Some(mutability) = base_place.ref_mutability(self.repacker()) {
+            if let Some(base_place) = place.place().prefix_place() {
+                if let Some(mutability) = base_place.ref_mutability(self.ctxt()) {
                     let place = MaybeOldPlace::new(base_place, place.location());
                     let value = self.arena().mk_ref(value, mutability);
                     self.0.insert(place, value);
@@ -149,7 +150,7 @@ impl<'sym, 'tcx, T: VisFormat> HeapData<'sym, 'tcx, T> {
 impl<'sym, 'tcx, T: VisFormat + SyntheticSymValue<'sym, 'tcx> + std::fmt::Debug>
     HeapData<'sym, 'tcx, T>
 {
-    pub fn to_json(&self, repacker: PlaceRepacker<'_, 'tcx>) -> serde_json::Value {
+    pub fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx>) -> serde_json::Value {
         let map = self
             .0
             .iter()
@@ -188,7 +189,7 @@ impl<'sym, 'tcx, T: std::fmt::Debug + SyntheticSymValue<'sym, 'tcx>> HeapData<'s
                 arg,
                 body.span
             );
-            heap.insert(place, sym_var, Location::START);
+            heap.insert(place, sym_var, SnapshotLocation::first());
         }
         heap_data
     }
@@ -217,7 +218,7 @@ impl<'sym, 'tcx, T: std::fmt::Debug> HeapData<'sym, 'tcx, T> {
             .copied()
     }
 
-    pub fn take<P: Into<MaybeOldPlace<'tcx>> + Copy>(
+    pub(crate) fn take<P: Into<MaybeOldPlace<'tcx>> + Copy>(
         &mut self,
         place: &P,
     ) -> Option<SymValue<'sym, 'tcx, T>> {
@@ -234,7 +235,7 @@ impl<'sym, 'tcx, T: std::fmt::Debug> HeapData<'sym, 'tcx, T> {
         self.0.retain(|(p, _)| *p != place);
     }
 
-    pub fn current_values(&self) -> Vec<(pcs::utils::Place<'tcx>, SymValue<'sym, 'tcx, T>)> {
+    pub fn current_values(&self) -> Vec<(pcg::utils::Place<'tcx>, SymValue<'sym, 'tcx, T>)> {
         self.0
             .iter()
             .filter_map(|(p, v)| {

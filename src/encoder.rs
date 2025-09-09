@@ -1,4 +1,4 @@
-use pcs::utils::PlaceRepacker;
+use pcg::utils::CompilerCtxt;
 
 use crate::context::SymExContext;
 use crate::heap::SymbolicHeap;
@@ -24,7 +24,7 @@ pub trait Encoder<'mir, 'sym, 'tcx: 'mir, S> {
         self.arena().alloc(t)
     }
     fn arena(&self) -> &'sym SymExContext<'tcx>;
-    fn repacker(&self) -> PlaceRepacker<'mir, 'tcx>;
+    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx, ()>;
     fn encode_rvalue<'ctxt>(
         &self,
         ctxt: &mut Self::Ctxt<'ctxt>,
@@ -130,8 +130,8 @@ where
         self.arena
     }
 
-    fn repacker(&self) -> PlaceRepacker<'mir, 'tcx> {
-        PlaceRepacker::new(self.body, self.tcx)
+    fn repacker(&self) -> CompilerCtxt<'mir, 'tcx, ()> {
+        CompilerCtxt::new(self.body, self.tcx, ())
     }
 
     fn encode_place<'ctxt>(

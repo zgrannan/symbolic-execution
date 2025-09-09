@@ -51,7 +51,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     &debug_output_dir,
                     &path,
                     StepType::Instruction(block_data.statements.len()),
-                    self.fpcs_analysis.repacker(),
+                    self.fpcs_analysis.ctxt(),
                 );
             }
             self.handle_terminator(

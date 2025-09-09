@@ -1,5 +1,6 @@
-use pcs::combined_pcs::EvalStmtPhase;
-use pcs::free_pcs::PcgBasicBlock;
+use pcg::results::PcgBasicBlock;
+use pcg::pcg::EvalStmtPhase;
+use pcg::utils::{AnalysisLocation, SnapshotLocation};
 
 use crate::visualization::{export_path_json, StepType};
 use crate::{
@@ -42,12 +43,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         location: mir::Location,
         rhs: Option<SymValue<'sym, 'tcx, S::SymValSynthetic>>,
     ) {
+        let analysis_location = AnalysisLocation::new(location, EvalStmtPhase::PostMain);
+        let curr_snapshot_location = analysis_location.next_snapshot_location(self.ctxt().body());
         match &stmt.kind {
             mir::StatementKind::Assign(box (place, _)) => {
                 // Could be undefined if the assignment doesn't need to be handled,
                 // e.g. assigning a fake borrow
                 if let Some(rhs) = rhs {
-                    heap.insert(*place, rhs, location);
+                    heap.insert(*place, rhs, curr_snapshot_location);
                 }
             }
             mir::StatementKind::StorageDead(local) => {
@@ -70,21 +73,23 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) {
         let pcg = &pcs_block.statements[stmt_idx];
         self.set_error_context(path.path.clone(), ErrorLocation::Location(pcg.location));
+        let pre_operands_loc = AnalysisLocation::new(pcg.location, EvalStmtPhase::PreOperands);
         self.handle_pcg_partial(
             path,
-            pcg.borrow_pcg_actions(EvalStmtPhase::PreOperands),
-            &pcg.repacks_start,
-            pcg.latest(),
-            pcg.location,
+            pcg.actions(EvalStmtPhase::PreOperands),
+            SnapshotLocation::Before(pre_operands_loc),
+            pre_operands_loc.next_snapshot_location(self.ctxt().body()),
         );
+
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         let rhs = self.handle_stmt_rhs(stmt, &mut heap);
+
+        let pre_main_loc = AnalysisLocation::new(pcg.location, EvalStmtPhase::PreMain);
         self.handle_pcg_partial(
             path,
-            pcg.borrow_pcg_actions(EvalStmtPhase::PreMain),
-            &pcg.repacks_middle,
-            pcg.latest(),
-            pcg.location,
+            pcg.actions(EvalStmtPhase::PreMain),
+            SnapshotLocation::Before(pre_main_loc),
+            pre_main_loc.next_snapshot_location(self.ctxt().body()),
         );
         let mut heap = SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena);
         self.handle_stmt_lhs(stmt, &mut heap, pcg.location, rhs);
@@ -105,7 +110,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                         &debug_output_dir,
                         &path,
                         StepType::Instruction(stmt_idx),
-                        self.fpcs_analysis.repacker(),
+                        self.fpcs_analysis.ctxt(),
                     );
                 }
             }
