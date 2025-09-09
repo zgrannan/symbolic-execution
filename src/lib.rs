@@ -272,8 +272,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     if let Some(snapshot) = function_call_snapshots.get_snapshot(&c.location()) {
                         let input = c.edge().input();
                         let output = c.edge().output();
-                        let input: RegionProjection<'tcx> = (*input).into();
-                        let idx = snapshot.index_of_arg_local(input.local().unwrap());
+                        let Some(input) = input.try_to_local_lifetime_projection() else {
+                            return;
+                        };
+                        let idx = snapshot.index_of_arg_local(input.local());
                         let input_place = match input.deref(self.ctxt()) {
                             Some(place) => place,
                             None => {
@@ -314,13 +316,15 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                     }
                 }
                 _ => {
-                            if let PcgNode::Place(MaybeRemotePlace::Local(place)) = *abstraction_edge.input() {
-                                heap.insert(
-                                    place,
-                                    self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
-                                    curr_snapshot_location,
-                                );
-                            }
+                    if let PcgNode::Place(MaybeRemotePlace::Local(place)) =
+                        *abstraction_edge.input(self.ctxt())
+                    {
+                        heap.insert(
+                            place,
+                            self.mk_fresh_symvar(place.ty(self.ctxt()).ty),
+                            curr_snapshot_location,
+                        );
+                    }
                 }
             },
             BorrowPcgEdgeKind::BorrowFlow(block_edge) => {
