@@ -1,14 +1,14 @@
 use crate::debug_info::DebugInfo;
 
 use crate::rustc_interface::{
+    abi::VariantIdx,
     ast::Mutability,
     data_structures::fx::FxHasher,
     middle::{
-        mir::{self, tcx::PlaceTy, ConstValue, PlaceElem, ProjectionElem, VarDebugInfo},
+        mir::{self, ConstValue, PlaceElem, ProjectionElem, VarDebugInfo},
         ty::{self, GenericArgsRef},
     },
     span::def_id::DefId,
-    target::abi::VariantIdx,
 };
 use crate::transform::{BaseSymValueTransformer, SymValueTransformer};
 use crate::visualization::OutputMode;
@@ -46,8 +46,8 @@ impl<'tcx> Ty<'tcx> {
     }
 }
 
-impl<'tcx> From<PlaceTy<'tcx>> for Ty<'tcx> {
-    fn from(ty: PlaceTy<'tcx>) -> Self {
+impl<'tcx> From<mir::PlaceTy<'tcx>> for Ty<'tcx> {
+    fn from(ty: mir::PlaceTy<'tcx>) -> Self {
         Ty(ty.ty, ty.variant_index)
     }
 }
@@ -363,11 +363,6 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T
                 ProjectionElem::Deref => {
                     let ty = val.kind.ty(tcx);
                     match ty.rust_ty().kind() {
-                        ty::TyKind::Bool => panic!(),
-                        ty::TyKind::Char => panic!(),
-                        ty::TyKind::Int(_) => panic!(),
-                        ty::TyKind::Uint(_) => panic!(),
-                        ty::TyKind::Float(_) => panic!(),
                         ty::TyKind::Adt(def, substs) => {
                             if let Some(box_def_id) = tcx.lang_items().owned_box() {
                                 if def.did() == box_def_id {
@@ -379,47 +374,15 @@ impl<'sym, 'tcx, T: SyntheticSymValue<'sym, 'tcx>, V> SymValueKind<'sym, 'tcx, T
                                 panic!()
                             }
                         }
-                        ty::TyKind::Foreign(_) => todo!(),
-                        ty::TyKind::Str => todo!(),
-                        ty::TyKind::Array(_, _) => todo!(),
-                        ty::TyKind::Slice(_) => todo!(),
-                        ty::TyKind::RawPtr(..) => todo!(),
                         ty::TyKind::Ref(_, target_ty, _) => Ty::new(*target_ty, ty.variant_index()),
-                        ty::TyKind::FnDef(_, _) => todo!(),
-                        ty::TyKind::FnPtr(..) => todo!(),
-                        ty::TyKind::Dynamic(_, _, _) => todo!(),
-                        ty::TyKind::Closure(_, _) => todo!(),
-                        ty::TyKind::Coroutine(..) => todo!(),
-                        ty::TyKind::CoroutineWitness(..) => todo!(),
-                        ty::TyKind::Never => todo!(),
-                        ty::TyKind::Tuple(_) => todo!(),
-                        ty::TyKind::Alias(_, _) => todo!(),
-                        ty::TyKind::Param(_) => todo!(),
-                        ty::TyKind::Bound(_, _) => todo!(),
-                        ty::TyKind::Placeholder(_) => todo!(),
-                        ty::TyKind::Infer(_) => todo!(),
-                        ty::TyKind::Error(_) => ty,
-                        ty::TyKind::CoroutineClosure(..) => todo!(),
-                        ty::TyKind::Pat(..) => todo!(),
+                        _ => todo!(),
                     }
                 }
                 ProjectionElem::Field(_, ty) => Ty::new(*ty, None),
-                ProjectionElem::Index(_) => todo!(),
-                ProjectionElem::ConstantIndex {
-                    offset: _,
-                    min_length: _,
-                    from_end: _,
-                } => todo!(),
-                ProjectionElem::Subslice {
-                    from: _,
-                    to: _,
-                    from_end: _,
-                } => todo!(),
                 ProjectionElem::Downcast(_, vidx) => {
                     Ty::new(val.kind.ty(tcx).rust_ty(), Some(*vidx))
                 }
-                ProjectionElem::OpaqueCast(_) => todo!(),
-                ProjectionElem::Subtype(_) => todo!(),
+                _ => todo!(),
             },
             SymValueKind::Aggregate(kind, _) => kind.ty(),
             SymValueKind::Discriminant(sym_val) => {

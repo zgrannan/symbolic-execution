@@ -1,7 +1,7 @@
 use pcg::utils::CompilerCtxt;
 use pcg::utils::place::maybe_old::MaybeOldPlace;
 use crate::rustc_interface::middle::{
-    mir::{self, tcx::PlaceTy, ProjectionElem},
+    mir::{self, PlaceTy, ProjectionElem},
     ty,
 };
 use std::hash::Hash;

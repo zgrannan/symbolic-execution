@@ -245,20 +245,8 @@ impl<'sym, 'tcx, T> SymValueKind<'sym, 'tcx, T> {
             SymValueKind::Projection(elem, _) => match elem {
                 ProjectionElem::Deref => PrecCategory::Prefix,
                 ProjectionElem::Field(..) => PrecCategory::Field,
-                ProjectionElem::Index(_) => todo!(),
-                ProjectionElem::ConstantIndex {
-                    offset: _,
-                    min_length: _,
-                    from_end: _,
-                } => todo!(),
-                ProjectionElem::Subslice {
-                    from: _,
-                    to: _,
-                    from_end: _,
-                } => todo!(),
-                ProjectionElem::Downcast(_, _) => PrecCategory::Prefix, // TODO
-                ProjectionElem::OpaqueCast(_) => todo!(),
-                ProjectionElem::Subtype(_) => todo!(),
+                ProjectionElem::Downcast(_, _) => PrecCategory::Prefix,
+                _ => todo!(),
             },
             SymValueKind::Aggregate(_, _) | SymValueKind::Discriminant(_) => PrecCategory::Atom,
             SymValueKind::Cast(_, _, _) => PrecCategory::Prefix,
@@ -346,17 +334,6 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                     value.to_vis_string_prec(tcx, debug_info, self_category, mode),
                     lhs
                 ),
-                ProjectionElem::Index(_) => todo!(),
-                ProjectionElem::ConstantIndex {
-                    offset: _,
-                    min_length: _,
-                    from_end: _,
-                } => todo!(),
-                ProjectionElem::Subslice {
-                    from: _,
-                    to: _,
-                    from_end: _,
-                } => todo!(),
                 ProjectionElem::Downcast(Some(sym), _) => format!(
                     "{}@{}",
                     value.to_vis_string_prec(tcx, debug_info, self_category, mode),
@@ -367,8 +344,7 @@ impl<'sym, 'tcx, T: VisFormat> SymValueData<'sym, 'tcx, T> {
                     value.to_vis_string_prec(tcx, debug_info, self_category, mode),
                     idx
                 ),
-                ProjectionElem::OpaqueCast(_) => todo!(),
-                ProjectionElem::Subtype(_) => todo!(),
+                _ => todo!(),
             },
             SymValueKind::Aggregate(kind, values) => {
                 let pack_ty = match kind {
@@ -427,19 +403,7 @@ fn get_fn_name(tcx: Option<TyCtxt<'_>>, fn_def_id: DefId) -> String {
     return format!("{:?}", fn_def_id);
 }
 
-fn get_arg_name(tcx: Option<TyCtxt<'_>>, fn_def_id: DefId, arg_idx: usize) -> String {
-    if let Some(tcx) = tcx {
-        if let Some(Node::Item(item)) = tcx.hir().get_if_local(fn_def_id) {
-            if let ItemKind::Fn(_, _, body_id) = item.kind {
-                let body = tcx.hir().body(body_id);
-                if let Some(arg) = body.params.get(arg_idx) {
-                    if let Some(ident) = arg.pat.simple_ident() {
-                        return ident.name.to_string();
-                    }
-                }
-            }
-        }
-    }
+fn get_arg_name(_tcx: Option<TyCtxt<'_>>, _fn_def_id: DefId, arg_idx: usize) -> String {
     return format!("arg{}", arg_idx);
 }
 

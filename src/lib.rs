@@ -46,11 +46,11 @@ use heap::{HeapData, SymbolicHeap};
 use params::SymExParams;
 use path::{LoopPath, SymExPath};
 use path_conditions::PathConditions;
-use pcg::utils::display::DisplayWithCompilerCtxt;
+use pcg::{borrow_pcg::edge::abstraction::AbstractionEdge, utils::display::DisplayWithCompilerCtxt};
 use pcg::utils::maybe_old::{MaybeLabelledPlace, MaybeOldPlace};
 use pcg::utils::maybe_remote::MaybeRemotePlace;
 use pcg::utils::HasPlace;
-use pcg::{borrow_pcg::edge::abstraction::AbstractionType, pcg::MaybeHasLocation};
+use pcg::{pcg::MaybeHasLocation};
 use pcg::{borrow_pcg::edge::kind::BorrowPcgEdgeKind, pcg::EvalStmtPhase};
 use pcg::{borrow_pcg::edge::outlives::BorrowFlowEdgeKind, free_pcs::RepackCollapse};
 use pcg::{borrow_pcg::edge_data::EdgeData, PcgOutput};
@@ -266,7 +266,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 }
             }
             BorrowPcgEdgeKind::Abstraction(abstraction_edge) => match &abstraction_edge {
-                AbstractionType::FunctionCall(c) => {
+                AbstractionEdge::FunctionCall(c) => {
                     // A snapshot may not exist if the call is specification "ghost" code, e.g. old()
                     // statements applied to mutable refs in Prusti.
                     if let Some(snapshot) = function_call_snapshots.get_snapshot(&c.location()) {
