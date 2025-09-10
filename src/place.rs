@@ -1,10 +1,16 @@
 use pcg::utils::CompilerCtxt;
 use pcg::utils::place::maybe_old::MaybeOldPlace;
 use crate::rustc_interface::middle::{
-    mir::{self, PlaceTy, ProjectionElem},
+    mir::{self, ProjectionElem},
     ty,
 };
 use std::hash::Hash;
+
+#[rustversion::since(2025-03-02)]
+type PlaceTy<'tcx> = mir::PlaceTy<'tcx>;
+
+#[rustversion::before(2025-03-02)]
+type PlaceTy<'tcx> = mir::tcx::PlaceTy<'tcx>;
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Place<'tcx>(pub pcg::utils::Place<'tcx>);

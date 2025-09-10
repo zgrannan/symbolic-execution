@@ -46,8 +46,16 @@ impl<'tcx> Ty<'tcx> {
     }
 }
 
+#[rustversion::since(2025-03-02)]
 impl<'tcx> From<mir::PlaceTy<'tcx>> for Ty<'tcx> {
     fn from(ty: mir::PlaceTy<'tcx>) -> Self {
+        Ty(ty.ty, ty.variant_index)
+    }
+}
+
+#[rustversion::before(2025-03-02)]
+impl<'tcx> From<mir::tcx::PlaceTy<'tcx>> for Ty<'tcx> {
+    fn from(ty: mir::tcx::PlaceTy<'tcx>) -> Self {
         Ty(ty.ty, ty.variant_index)
     }
 }
