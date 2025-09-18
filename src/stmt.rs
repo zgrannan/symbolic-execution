@@ -66,7 +66,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub(crate) fn handle_stmt(
         &mut self,
-        pcs_block: &PcgBasicBlock<'tcx>,
+        pcs_block: &PcgBasicBlock<'_, 'tcx>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         stmt: &mir::Statement<'tcx>,
         stmt_idx: usize,
@@ -97,7 +97,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub fn execute_stmts_in_block(
         &mut self,
-        pcs_block: &PcgBasicBlock<'tcx>,
+        pcs_block: &PcgBasicBlock<'_, 'tcx>,
         block_data: &mir::BasicBlockData<'tcx>,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
         output_debug_json: bool,

@@ -29,8 +29,8 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         paths: &mut Vec<Path<'sym, 'tcx, S::SymValSynthetic>>,
         assertions: &mut ResultAssertions<'sym, 'tcx, S::SymValSynthetic>,
         mut path: Path<'sym, 'tcx, S::SymValSynthetic>,
-        fpcs_terminator: PcgTerminator<'tcx>,
-        location: &PcgLocation<'tcx>,
+        fpcs_terminator: PcgTerminator<'_, 'tcx>,
+        location: &PcgLocation<'_, 'tcx>,
     ) where
         S::SymValSynthetic: Eq,
     {
@@ -200,7 +200,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         substs: GenericArgsRef<'tcx>,
         heap: &mut SymbolicHeap<'heap, 'mir, 'sym, 'tcx, S::SymValSynthetic>,
         args: &Vec<&Operand<'tcx>>,
-        location: &PcgLocation<'tcx>,
+        location: &PcgLocation<'_, 'tcx>,
         span: Span,
     ) -> FunctionCallEffects<'sym, 'tcx, S::SymValSynthetic>
     where

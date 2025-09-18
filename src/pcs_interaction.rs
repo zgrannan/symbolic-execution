@@ -25,7 +25,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     pub(crate) fn handle_pcg(
         &mut self,
         path: &mut Path<'sym, 'tcx, S::SymValSynthetic>,
-        pcg: &PcgLocation<'tcx>,
+        pcg: &PcgLocation<'_, 'tcx>,
         location: Location,
     ) {
         let pre_operands_loc = AnalysisLocation::new(location, EvalStmtPhase::PreOperands);
