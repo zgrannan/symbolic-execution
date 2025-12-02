@@ -9,7 +9,7 @@ use pcg::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use pcg::free_pcs::{CapabilityKind, RepackOp};
 use pcg::results::PcgLocation;
 use pcg::pcg::EvalStmtPhase;
-use pcg::utils::place::maybe_old::MaybeOldPlace;
+use pcg::utils::place::maybe_old::{MaybeLabelledPlace, MaybeOldPlace};
 use pcg::utils::place::maybe_remote::MaybeRemotePlace;
 use pcg::utils::SnapshotLocation;
 use pcg::utils::{AnalysisLocation, HasPlace};
@@ -134,25 +134,18 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
 
     pub(crate) fn handle_removed_borrow(
         &self,
-        blocked_place: MaybeRemotePlace<'tcx>,
+        blocked_place: MaybeLabelledPlace<'tcx>,
         assigned_place: &MaybeOldPlace<'tcx>,
         heap: &mut SymbolicHeap<'_, '_, 'sym, 'tcx, S::SymValSynthetic>,
         curr_snapshot_location: SnapshotLocation,
     ) {
         let heap_value = self.encode_maybe_old_place::<LookupGet, _>(heap.0, assigned_place);
-        match blocked_place {
-            MaybeRemotePlace::Local(blocked_place) => {
+
                 if blocked_place.is_old() {
                     heap.insert_maybe_old_place(blocked_place, heap_value);
                 } else {
                     heap.insert(blocked_place.place(), heap_value, curr_snapshot_location);
                 }
-            }
-            MaybeRemotePlace::Remote(_) => {
-                // Presumably this is to determine the result value for a pledge
-                // Don't do anything, we'll use the assigned place from the heap
-            }
-        }
     }
 
     pub(crate) fn handle_repack_collapses(

@@ -238,7 +238,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
     ) {
         match action.edge().kind() {
             BorrowPcgEdgeKind::Borrow(borrow) => {
-                        if borrow.is_mut(self.ctxt()) {
+                        if borrow.is_mut() {
                             self.handle_removed_borrow(
                                 borrow.blocked_place(),
                                 &borrow.deref_place(self.ctxt()),
