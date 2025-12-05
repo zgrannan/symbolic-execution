@@ -331,7 +331,10 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                 }
             },
             BorrowPcgEdgeKind::BorrowFlow(block_edge) => {
-                if matches!(block_edge.kind(), BorrowFlowEdgeKind::Move) {
+                if matches!(
+                    block_edge.kind(),
+                    BorrowFlowEdgeKind::Assignment(assignment) if assignment.operand_type().is_place()
+                ) {
                     self.handle_removed_borrow(
                         block_edge.long().deref(self.ctxt()).unwrap().into(),
                         &block_edge.short().deref(self.ctxt()).unwrap(),
