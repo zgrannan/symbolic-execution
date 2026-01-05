@@ -4,7 +4,7 @@ use crate::{path::Path, rustc_interface::middle::mir::Location};
 use pcg::action::PcgActions;
 use pcg::borrow_pcg::action::actions::BorrowPcgActions;
 use pcg::borrow_pcg::action::BorrowPcgActionKind;
-use pcg::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion;
+use pcg::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, BorrowPcgPlaceExpansion};
 use pcg::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use pcg::free_pcs::{CapabilityKind, RepackOp};
 use pcg::results::PcgLocation;
@@ -108,14 +108,9 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
                             curr_snapshot_location,
                         );
                     }
-                    BorrowPcgEdgeKind::BorrowPcgExpansion(ep) => {
-                        let ep: BorrowPcgExpansion<'tcx, MaybeOldPlace<'tcx>> =
-                            if let Ok(ep) = (ep.clone()).try_into() {
-                                ep
-                            } else {
-                                // Expansion of region projections are not supported
-                                continue;
-                            };
+
+                    // Expansion of region projections are not supported
+                    BorrowPcgEdgeKind::BorrowPcgExpansion(BorrowPcgExpansion::Place(ep)) => {
                         let place = ep.base();
                         let value = self.encode_maybe_old_place::<LookupGet, _>(heap.0, &place);
 
