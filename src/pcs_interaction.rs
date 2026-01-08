@@ -31,7 +31,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let pre_operands_loc = AnalysisLocation::new(location, EvalStmtPhase::PreOperands);
         self.handle_pcg_partial(
             path,
-            pcg.actions(EvalStmtPhase::PreOperands),
+            &pcg.actions(EvalStmtPhase::PreOperands),
             SnapshotLocation::Before(pre_operands_loc),
             pre_operands_loc.next_snapshot_location(self.ctxt().body()),
         );
@@ -39,14 +39,14 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let pre_main_loc = AnalysisLocation::new(location, EvalStmtPhase::PreMain);
         self.handle_pcg_partial(
             path,
-            pcg.actions(EvalStmtPhase::PreMain),
+            &pcg.actions(EvalStmtPhase::PreMain),
             SnapshotLocation::Before(pre_main_loc),
             pre_main_loc.next_snapshot_location(self.ctxt().body()),
         );
         let post_main_loc = AnalysisLocation::new(location, EvalStmtPhase::PostMain);
         let curr_snapshot_location = SnapshotLocation::Before(post_main_loc);
         self.handle_borrow_pcg_added_edges(
-            pcg.borrow_pcg_actions(EvalStmtPhase::PostMain),
+            pcg.actions(EvalStmtPhase::PostMain).borrow_pcg_actions(),
             &mut SymbolicHeap::new(&mut path.heap, self.tcx, &self.body, &self.arena),
             curr_snapshot_location,
         );

@@ -76,7 +76,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let pre_operands_loc = AnalysisLocation::new(pcg.location, EvalStmtPhase::PreOperands);
         self.handle_pcg_partial(
             path,
-            pcg.actions(EvalStmtPhase::PreOperands),
+            &pcg.actions(EvalStmtPhase::PreOperands),
             SnapshotLocation::Before(pre_operands_loc),
             pre_operands_loc.next_snapshot_location(self.ctxt().body()),
         );
@@ -87,7 +87,7 @@ impl<'mir, 'sym, 'tcx, S: VerifierSemantics<'sym, 'tcx, SymValSynthetic: VisForm
         let pre_main_loc = AnalysisLocation::new(pcg.location, EvalStmtPhase::PreMain);
         self.handle_pcg_partial(
             path,
-            pcg.actions(EvalStmtPhase::PreMain),
+            &pcg.actions(EvalStmtPhase::PreMain),
             SnapshotLocation::Before(pre_main_loc),
             pre_main_loc.next_snapshot_location(self.ctxt().body()),
         );
