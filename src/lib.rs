@@ -58,7 +58,7 @@ use pcg::pcg::MaybeHasLocation;
 use pcg::utils::HasPlace;
 use pcg::{PcgOutput, borrow_pcg::edge_data::EdgeData};
 use pcg::{borrow_pcg::edge::kind::BorrowPcgEdgeKind, pcg::EvalStmtPhase};
-use pcg::{borrow_pcg::edge::outlives::BorrowFlowEdgeKind, free_pcs::RepackCollapse};
+use pcg::{borrow_pcg::edge::borrow_flow::BorrowFlowEdgeKind, free_pcs::RepackCollapse};
 use pcg::{
     borrow_pcg::{
         region_projection::RegionProjection, unblock_graph::BorrowPcgUnblockAction,
